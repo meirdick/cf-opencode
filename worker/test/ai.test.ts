@@ -227,4 +227,22 @@ describe("read a page (POST /page)", () => {
     const down = pages(() => new Response("rate limited", { status: 429 }));
     expect((await page({ url: "https://example.com" }, down.browser)).status).toBe(502);
   });
+
+  // Regression: with lockdown on the container has no general internet, but /page loaded any URL through
+  // the Worker's Browser Run binding, so the workspace could still reach (and send data to) any site.
+  it("refuses with lockdown on, before Browser Run sees the URL", async () => {
+    const { browser, calls } = pages(() => Response.json({ success: true, result: "x" }));
+    const res = await handleAi(
+      post("/page", { url: "https://example.com/?data=secret" }),
+      undefined,
+      "default",
+      undefined,
+      browser,
+      undefined,
+      { lockdown: true },
+    );
+    expect(res.status).toBe(403);
+    expect(JSON.stringify(await res.json())).toMatch(/lockdown/);
+    expect(calls).toHaveLength(0);
+  });
 });

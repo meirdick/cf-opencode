@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { OpRequest, OrbRecord } from "../src/core/types";
+import { BROWSE_SESSIONS_KEY } from "../src/orb/browse";
 import { runDelete } from "../src/orb/delete";
 import { runPause } from "../src/orb/pause";
 import { PREPARE_SH } from "../src/orb/scripts";
 import { runSpawn } from "../src/orb/spawn";
+import { SSH_KEYS_KEY } from "../src/orb/ssh-keys";
 import { makeOrbCtx, type OrbHarness } from "./fake-registry";
 
 const spawnReq: OpRequest = { op: "spawn", password: "tok-123456" };
@@ -29,6 +31,15 @@ describe("runDelete", () => {
       ok: true,
       source: "image",
     });
+  });
+
+  it("forgets the old workspace's SSH keys and browser sessions", async () => {
+    const h = makeOrbCtx();
+    await h.kv.put(SSH_KEYS_KEY, { "ssh-ed25519 AAAA": { line: "ssh-ed25519 AAAA x", at: 1 } });
+    await h.kv.put(BROWSE_SESSIONS_KEY, ["sess-1"]);
+    await runDelete(h.newOp());
+    expect(await h.kv.get(SSH_KEYS_KEY)).toBeUndefined();
+    expect(await h.kv.get(BROWSE_SESSIONS_KEY)).toBeUndefined();
   });
 
   it("leaves a project snapshot that another workspace made", async () => {

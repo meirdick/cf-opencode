@@ -7,6 +7,7 @@
 //
 // Docs: https://developers.cloudflare.com/browser-run/reference/browser-binding-api/
 // (fetched 2026-11-11). keepAlive is 10 s–20 min.
+import type { KV } from "../core/container-port";
 
 /** 10 minutes. The documented maximum is 20; a forgotten session should not run that long. */
 export const KEEP_ALIVE_MS = 600_000;
@@ -83,6 +84,24 @@ export async function connectCdp(
       status: 502,
     };
   }
+}
+
+/**
+ * Session ids this workspace opened, newest last, in its Durable Object. The relay serves only these: a
+ * Browser Run session belongs to the account, so without this any workspace's password opened any
+ * workspace's session. Capped; a dropped id is old, and Browser Run closes an idle session in minutes.
+ */
+export const BROWSE_SESSIONS_KEY = "browseSessions";
+export const MAX_BROWSE_SESSIONS = 50;
+
+export async function rememberSession(kv: KV, sessionId: string): Promise<void> {
+  const ids = ((await kv.get<string[]>(BROWSE_SESSIONS_KEY)) ?? []).filter((s) => s !== sessionId);
+  ids.push(sessionId);
+  await kv.put(BROWSE_SESSIONS_KEY, ids.slice(-MAX_BROWSE_SESSIONS));
+}
+
+export async function ownsSession(kv: KV, sessionId: string): Promise<boolean> {
+  return ((await kv.get<string[]>(BROWSE_SESSIONS_KEY)) ?? []).includes(sessionId);
 }
 
 /** Relay every frame between two accepted websockets until either closes. */

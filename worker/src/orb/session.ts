@@ -29,10 +29,11 @@ import {
 } from "../core/types";
 import type { Env } from "../env";
 import { REGISTRY_DO_NAME, workspaceDoName } from "../env";
+import { unauthorized } from "../gate";
 import { checkPort, previewKey } from "../preview-auth";
 import { AI_HOST } from "./ai";
 import { idleTick, LAST_USE_KEY, runAlarm } from "./alarm";
-import { type BrowserSession, openBrowserSession } from "./browse";
+import { type BrowserSession, openBrowserSession, ownsSession, rememberSession } from "./browse";
 import type { OrbContext } from "./context";
 import { runDelete } from "./delete";
 import { ExclusiveQueue } from "./exclusive";
@@ -67,6 +68,7 @@ import { type RebuildTarget, receiveRebuild, runRebuild } from "./rebuild";
 import { LOGTAIL_SH, SSH_PREP_SH } from "./scripts";
 import { readSessions, type SessionList } from "./sessions";
 import { runSpawn, SCRIPT_ENV, sh, WORKSPACE_USER } from "./spawn";
+import { installSshKeys } from "./ssh-keys";
 import { readTasks, type StartResult, startTask, type TaskInput, type TaskList } from "./tasks";
 import { bridge, isPublicKey, type StdioProcess, shellParams } from "./terminal";
 
@@ -419,18 +421,10 @@ export class WorkspaceSession extends DurableObject<Env> implements WorkspaceSes
    */
   private async admit(password: string | null): Promise<Response | null> {
     const rec = await loadOrb(this.kv);
+    // The password first: only its holder learns that the workspace exists or was deleted.
+    if (!(await passwordMatches(rec?.passwordSha, password))) return unauthorized();
     if (rec?.deletedAt)
       return jsonError(410, "workspace deleted", "start a new workspace with cf-opencode connect");
-    if (!(await passwordMatches(rec?.passwordSha, password))) {
-      // JSON: OpenCode 2's client reads a plain-text 401 as "not a compatible server".
-      return new Response(JSON.stringify({ _tag: "UnauthorizedError", message: "Authentication required" }), {
-        status: 401,
-        headers: {
-          "content-type": "application/json",
-          "www-authenticate": `Basic realm="cf-opencode ${await this.workspaceId()}"`,
-        },
-      });
-    }
     if (this.ctx.container?.running) return null;
     const { done } = await runOpWithJournal(
       this.base(await this.workspaceId()),
@@ -504,9 +498,10 @@ export class WorkspaceSession extends DurableObject<Env> implements WorkspaceSes
     return this.rt.queue.run(() => receiveRebuild(ctx, tar, o.instance));
   }
 
-  async authorize(password: string): Promise<boolean> {
+  async authorize(password: string, browserSessionId?: string): Promise<boolean> {
     const rec = await loadOrb(this.kv);
-    return !rec?.deletedAt && (await passwordMatches(rec?.passwordSha, password));
+    if (rec?.deletedAt || !(await passwordMatches(rec?.passwordSha, password))) return false;
+    return browserSessionId === undefined || ownsSession(this.kv, browserSessionId);
   }
 
   /**
@@ -520,11 +515,7 @@ export class WorkspaceSession extends DurableObject<Env> implements WorkspaceSes
   ): Promise<{ ok: true; session: BrowserSession } | { ok: false; error: string; status: number }> {
     const rec = await loadOrb(this.kv);
     if (rec?.deletedAt || !(await passwordMatches(rec?.passwordSha, password))) {
-      return {
-        ok: false,
-        error: "Failed: wrong workspace password — fix: cf-opencode connect, then retry",
-        status: 401,
-      };
+      return { ok: false, error: "Authentication required", status: 401 };
     }
     // p<port>.preview.internal in this session reaches this workspace's dev server on that port.
     const ports = previewPorts ?? [];
@@ -549,6 +540,7 @@ export class WorkspaceSession extends DurableObject<Env> implements WorkspaceSes
       ports.length && factory ? previewOutbound(factory, await this.workspaceId(), ports) : undefined;
     const opened = await openBrowserSession(this.env.BROWSER, keepAliveMs, outbound);
     if ("error" in opened) return { ok: false, error: opened.error, status: opened.status };
+    await rememberSession(this.kv, opened.sessionId);
     return { ok: true, session: opened };
   }
 
@@ -599,12 +591,15 @@ export class WorkspaceSession extends DurableObject<Env> implements WorkspaceSes
           stdout: "pipe",
         });
       } else {
-        const [cmd, opts] = sh(SSH_PREP_SH, key ? { AUTHORIZED_KEY: key } : {});
-        const prep = await wrapContainer(container).exec(cmd, { ...opts, user: "0:0", timeoutMs: 30_000 });
-        if (prep.exitCode !== 0) {
+        const port = wrapContainer(container);
+        const [cmd, opts] = sh(SSH_PREP_SH);
+        const prep = await port.exec(cmd, { ...opts, user: "0:0", timeoutMs: 30_000 });
+        const keys =
+          prep.exitCode === 0 && key ? await installSshKeys(port, this.kv, key, Date.now()) : undefined;
+        if (prep.exitCode !== 0 || keys) {
           return jsonError(
             500,
-            `sshd setup failed: ${redactLine(prep.stderr.trim() || prep.stdout.trim()).slice(0, 200)}`,
+            `sshd setup failed: ${redactLine(keys ?? (prep.stderr.trim() || prep.stdout.trim())).slice(0, 200)}`,
             "rebuild the image with cf-opencode init",
           );
         }

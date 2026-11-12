@@ -180,18 +180,56 @@ export function sshKey(): { path: string; publicKey: string } {
 /** The CLI itself, as a command ssh can run for ProxyCommand. */
 function selfCommand(): string {
   const bin = join(dirname(fileURLToPath(import.meta.url)), "..", "bin", "cf-opencode.js");
-  return `"${process.execPath}" "${bin}"`;
+  return `${shellQuote(process.execPath)} ${shellQuote(bin)}`;
+}
+
+/**
+ * Single quotes for the shell ssh runs ProxyCommand with (the user's login shell). A quote inside becomes
+ * '\'' , which POSIX shells and fish both read as one quote.
+ */
+export function shellQuote(s: string): string {
+  return `'${s.replaceAll("'", "'\\''")}'`;
+}
+
+const ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
+const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+/**
+ * The Worker URL as it goes into a ProxyCommand: an https origin (http only for a local dev Worker) and
+ * nothing else. A path, query, credentials or any other character is refused, so a hostile --url cannot add
+ * shell syntax or an ssh % token to the command ssh runs.
+ */
+export function proxyUrl(url: string): string {
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    throw new CliError(`--url ${JSON.stringify(url)} is not a URL`, "pass the Worker URL, https://…");
+  }
+  const local = u.protocol === "http:" && LOCAL_HOSTS.has(u.hostname);
+  const bare = !u.username && !u.password && !u.search && !u.hash && u.pathname === "/";
+  if ((u.protocol !== "https:" && !local) || !bare || !/^https?:\/\/[A-Za-z0-9.:[\]-]+$/.test(u.origin)) {
+    throw new CliError(
+      `--url ${JSON.stringify(url)} is not an https Worker URL`,
+      "pass https://<worker host>",
+    );
+  }
+  return u.origin;
 }
 
 /** ssh options for workspace `id`, as `Key value` pairs. One source for `ssh` and `ssh-config`. */
 export function sshOptions(id: string, keyPath: string, url?: string): [string, string][] {
-  const urlFlag = url ? ` --url "${url}"` : "";
+  if (!ID_RE.test(id))
+    throw new CliError(`bad workspace id ${JSON.stringify(id)}`, "use letters, digits, _ and -");
+  const urlFlag = url ? ` --url ${shellQuote(proxyUrl(url))}` : "";
+  // ssh expands %h, %p and the like in ProxyCommand; %% is a literal %.
+  const proxy = `${selfCommand()} ssh-proxy ${id}${urlFlag}`.replaceAll("%", "%%");
   return [
     ["HostName", `cf-opencode-${id}`],
     ["User", "user"],
     ["IdentityFile", keyPath],
     ["IdentitiesOnly", "yes"],
-    ["ProxyCommand", `${selfCommand()} ssh-proxy ${id}${urlFlag}`],
+    ["ProxyCommand", proxy],
     // The transport is TLS to your own Worker plus the workspace password. The host key is
     // made on first use and kept on the workspace disk, so it changes only after a re-image.
     ["HostKeyAlias", `cf-opencode-${id}`],

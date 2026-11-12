@@ -26,7 +26,26 @@ The CLI derives the password from the control token and the workspace ID with HM
 
 The CLI writes it to `~/.cf-opencode/workspaces/<workspace>.password`, mode 600. OpenCode reads it from `OPENCODE_SERVER_PASSWORD`. The username is always `opencode`. The password is not in any URL. The CLI never prints it.
 
-The workspace's Durable Object checks the password itself, in constant time, before it wakes anything. A wrong password gets a 401 and wakes nothing.
+The Worker checks the password first, in constant time. Because the password is derived, this check needs no state. No password or a wrong one gets the same 401, reaches no Durable Object, and does not say whether the workspace exists. Then the workspace's Durable Object checks the password again before it wakes anything. A wrong password wakes nothing.
+
+There is no lockout. The password is 256 bits, so nobody can guess it, and a lockout on a workspace name would let anyone lock you out.
+
+`/shell`, `/ssh` and `/browse` refuse a request that a web page on another site sends. A browser session is served only to the workspace that opened it.
+
+## The agent account
+
+The agent runs as `user`, which has passwordless `sudo`. A prompt-injected agent is root in its container. It can change anything on the disk, and its changes are in the next snapshot. The agent also has the workspace password, in `OPENCODE_SERVER_PASSWORD`.
+
+This is on purpose, so the agent can install what a project needs. A rule such as "sudo for `apt-get` only" would not be a boundary: package scripts run as root.
+
+These things protect you:
+
+- No key or token enters the workspace. See the next section.
+- The GitHub token reaches only the repositories you give it.
+- `lockdown` turns general internet off.
+- A workspace is disposable. `cf-opencode delete` drops its disk, and the next `connect` clones again.
+
+Review what the agent pushes, and do not put secrets on the workspace disk.
 
 ## Secrets never enter the container
 
@@ -56,6 +75,8 @@ A workspace has general internet access, so it can clone repositories and instal
 Set `lockdown` to `true` in `~/.cf-opencode/config.json`, then run `cf-opencode upgrade`, to turn general internet off. Only provider hosts whose secret is set stay reachable. `lockdown` is `false` by default. See [Configuration](/reference/configuration/).
 
 Interception of provider hosts is on either way. You cannot configure it.
+
+With lockdown on, `cf-opencode-fetch` is refused: it loads any URL through the Worker's Browser Run binding, which is general internet. Models and `cf-opencode-search` still work. A search query leaves the account for the search provider, so a workspace can still put data in a query.
 
 ## Logs
 

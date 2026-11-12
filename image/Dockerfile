@@ -8,12 +8,19 @@
 # tini is PID 1. It keeps the container up and reaps `opencode serve`, which the Worker
 # starts with setsid so the server outlives the exec that launched it.
 #
-# OpenCode comes from the official installer (https://opencode.ai/v2/install), pinned with
-# OPENCODE_VERSION. npm's @opencode/cli postinstall selects a native binary and is blocked
-# by npm 12 unless scripts are allowed; the installer avoids that.
+# OpenCode is the release asset the official installer (https://opencode.ai/v2/install) downloads
+# for linux x64: the npm tarball @opencode/cli-linux-x64. It is fetched directly and checked
+# against OPENCODE_SHA256, so neither an unpinned script nor a changed asset reaches the image.
+# npm's @opencode/cli postinstall selects a native binary and is blocked by npm 12 unless scripts
+# are allowed; taking the platform tarball avoids that.
 FROM debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc
 
+# Bump both together. The hash is sha256 of
+#   https://registry.npmjs.org/@opencode/cli-linux-x64/-/cli-linux-x64-<version>.tgz
+# Check it against the registry's own record before you commit a new one:
+#   npm view @opencode/cli-linux-x64@<version> dist.integrity   (sha512 of the same file)
 ARG OPENCODE_VERSION=2.2.7
+ARG OPENCODE_SHA256=d65935464f93f07913633f977cb99723af64eeff6ae7a822722ce89bedabdd45
 
 # libnss-myhostname resolves the container's own hostname. /etc/hosts is read-only and lacks it,
 # and sudo warns on every call when the name does not resolve.
@@ -40,13 +47,15 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/* \
  && rm -f /etc/ssh/ssh_host_*
 
-# The installer drops the binary in /root/.opencode/bin and only adds it to /root/.bashrc.
-# /root is mode 700, so a symlink would not run for `user`: copy the binary out of it.
+# The hash is checked before tar reads the file; a mismatch fails the build.
 # `opencode` on PATH is opencode.sh (copied below), which adds the model config and runs this binary.
-# The installer reads VERSION, not OPENCODE_VERSION; the check fails the build if the pin slips.
-RUN curl -fsSL https://opencode.ai/v2/install | VERSION=${OPENCODE_VERSION} bash \
- && install -D -m 755 /root/.opencode/bin/opencode /usr/local/lib/cf-opencode/opencode \
- && rm -rf /root/.opencode \
+# The version check fails the build if the pin and the binary disagree.
+RUN curl -fsSL -o /tmp/opencode.tgz \
+      "https://registry.npmjs.org/@opencode/cli-linux-x64/-/cli-linux-x64-${OPENCODE_VERSION}.tgz" \
+ && echo "${OPENCODE_SHA256}  /tmp/opencode.tgz" | sha256sum -c - \
+ && tar -xzf /tmp/opencode.tgz -C /tmp package/bin/opencode \
+ && install -D -m 755 /tmp/package/bin/opencode /usr/local/lib/cf-opencode/opencode \
+ && rm -rf /tmp/opencode.tgz /tmp/package \
  && /usr/local/lib/cf-opencode/opencode --version | grep -qx "opencode v${OPENCODE_VERSION}"
 
 # `user` runs everything in the workspace: opencode serve, the shell, the SSH login.

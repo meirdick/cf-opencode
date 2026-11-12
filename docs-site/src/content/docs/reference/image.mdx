@@ -11,7 +11,7 @@ The workspace image is small on purpose. It is Debian bookworm-slim with a few t
 
 | Item | Notes |
 | --- | --- |
-| OpenCode 2.2.7 | Installed from the official installer. `opencode` on the PATH adds the model config, then runs the real binary. |
+| OpenCode 2.2.7 | The linux x64 release asset that the official installer downloads, checked against a pinned SHA-256. A different file fails the build. `opencode` on the PATH adds the model config, then runs the real binary. |
 | `git` | |
 | `gh` | The GitHub CLI. It reads `GH_TOKEN`, which holds a placeholder. |
 | `python3` | With the `websocket` module, for the Chrome DevTools Protocol of a browser session. |

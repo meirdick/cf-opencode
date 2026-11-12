@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { handleApi } from "../src/api";
+import { workspacePassword } from "../src/auth";
 import type { Env } from "../src/env";
 import { type BrowserBinding, KEEP_ALIVE_MS, openBrowserSession } from "../src/orb/browse";
 
@@ -50,7 +51,10 @@ describe("openBrowserSession", () => {
 });
 
 describe("/browse routes", () => {
-  const auth = { authorization: `Basic ${btoa("opencode:pw-0123456789abcdef")}` };
+  const TOKEN = "control-secret";
+  const auth = async (id = "demo") => ({
+    authorization: `Basic ${btoa(`opencode:${await workspacePassword(TOKEN, id)}`)}`,
+  });
   function env(authorized: boolean) {
     const calls: string[] = [];
     const stub = {
@@ -63,12 +67,15 @@ describe("/browse routes", () => {
         session: { sessionId: "sess-1", liveUrl: "https://live.browser.run/x" },
       }),
     };
-    return { env: { WORKSPACE: { getByName: () => stub } } as unknown as Env, calls };
+    return {
+      env: { CONTROL_TOKEN: TOKEN, WORKSPACE: { getByName: () => stub } } as unknown as Env,
+      calls,
+    };
   }
 
   it("hands out a websocket on this Worker, the only CDP endpoint the container gets", async () => {
     const res = await handleApi(
-      new Request("https://w.example/browse/demo", { method: "POST", headers: auth, body: "{}" }),
+      new Request("https://w.example/browse/demo", { method: "POST", headers: await auth(), body: "{}" }),
       env(true).env,
     );
     const body = (await res.json()) as { websocketUrl: string; sessionId: string };
@@ -76,10 +83,24 @@ describe("/browse routes", () => {
     expect(JSON.stringify(body)).not.toContain("api.cloudflare.com");
   });
 
-  it("refuses the relay for a wrong password before it opens anything", async () => {
+  it("refuses the relay for a wrong password before it reaches the Durable Object", async () => {
+    const { env: e, calls } = env(true);
+    const res = await handleApi(
+      new Request("https://w.example/browse/demo/sess-1", {
+        headers: { ...(await auth("other")), upgrade: "websocket" },
+      }),
+      e,
+    );
+    expect(res.status).toBe(401);
+    expect(calls).toEqual([]);
+  });
+
+  it("refuses the relay when the Durable Object refuses, before it opens anything", async () => {
     const { env: e, calls } = env(false);
     const res = await handleApi(
-      new Request("https://w.example/browse/demo/sess-1", { headers: { ...auth, upgrade: "websocket" } }),
+      new Request("https://w.example/browse/demo/sess-1", {
+        headers: { ...(await auth()), upgrade: "websocket" },
+      }),
       e,
     );
     expect(res.status).toBe(401);

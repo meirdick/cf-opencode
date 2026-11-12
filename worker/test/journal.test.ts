@@ -99,6 +99,37 @@ describe("op journal", () => {
     expect(await hashInputs({ ...spawn, ampUrl: "https://x" })).toBe(h); // AMP_URL is not an input of identity
   });
 
+  // Regression: the API sends `password`, never `token`, so two connects with different passwords hashed the
+  // same, and the second attached to the first's op and got its password: the second client was locked out.
+  it("a spawn with another password or other inputs does not attach to the in-flight one", async () => {
+    const base: OpRequest = { op: "spawn", password: "p".repeat(43), snapshotId: "snap-1", directory: "/a" };
+    const h = await hashInputs(base);
+    expect(await hashInputs({ ...base })).toBe(h);
+    for (const change of [
+      { password: "q".repeat(43) },
+      { directory: "/b" },
+      { repoUrl: "https://example.com/r.git" },
+      { branch: "dev" },
+      { gitName: "A" },
+      { gitEmail: "a@example.com" },
+      { workerUrl: "https://other.example" },
+    ]) {
+      expect(await hashInputs({ ...base, ...change })).not.toBe(h);
+    }
+    const kv = new MemoryKV();
+    const a = await openOp(kv, "orb1", base, T);
+    const b = await openOp(kv, "orb1", { ...base, password: "q".repeat(43) }, T);
+    expect(b.attached).toBe(false);
+    expect(b.record.opId).not.toBe(a.record.opId);
+  });
+
+  it("the stored hash does not contain the password", async () => {
+    const kv = new MemoryKV();
+    const pw = "secret-password-0123456789abcdef";
+    await openOp(kv, "orb1", { op: "spawn", password: pw }, T);
+    expect(JSON.stringify([...kv.map.values()])).not.toContain(pw);
+  });
+
   it("pruneOps drops old finished ops, keeps in-flight ones", async () => {
     const kv = new MemoryKV();
     const a = await openOp(kv, "orb1", { op: "pause" }, T);

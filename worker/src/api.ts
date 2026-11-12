@@ -2,7 +2,7 @@
 // Control routes (/v1/...) require a bearer CONTROL_TOKEN.
 // The OpenCode ingress (/oc/<id>/...) requires the per-workspace basic password, then proxies.
 // Responses never carry stack traces. Errors are one line: "Failed: <cause> — fix: <action>".
-import { basicPassword, timingSafeEqualStr } from "./auth";
+import { timingSafeEqualStr } from "./auth";
 import { parseConfig } from "./core/config";
 import { PRUNE_DEFAULT_AGE_MS } from "./core/registry-core";
 import {
@@ -13,6 +13,7 @@ import {
   type WorkspaceStatus,
 } from "./core/types";
 import { type Env, REGISTRY_DO_NAME, workspaceDoName } from "./env";
+import { isWorkspacePassword, unauthorized, workspaceGate } from "./gate";
 import { connectCdp, relay, SESSION_ID_RE } from "./orb/browse";
 import type { SessionList } from "./orb/sessions";
 import type { StartResult, TaskInput, TaskList } from "./orb/tasks";
@@ -47,8 +48,8 @@ export interface WorkspaceSessionApi {
     keepAliveMs?: number,
     previewPorts?: number[],
   ): Promise<{ ok: true; session: unknown } | { ok: false; error: string; status: number }>;
-  /** True when the password is this workspace's. Wakes nothing. */
-  authorize(password: string): Promise<boolean>;
+  /** True when the password is this workspace's, and the browser session (if given) is one it opened. Wakes nothing. */
+  authorize(password: string, browserSessionId?: string): Promise<boolean>;
   /** Websocket terminals: /shell (tmux on a PTY) and /ssh (sshd -i). Checks the password itself. */
   fetch(req: Request): Promise<Response>;
 }
@@ -156,7 +157,7 @@ async function route(req: Request, env: Env): Promise<Response> {
     if (id === null || !WORKSPACE_ID_RE.test(id))
       return fail(400, "bad workspace id", "use letters, digits, _ and -");
     const session = sessionOf(env, id);
-    if (method === "POST") return submit(req, session, id);
+    if (method === "POST") return submit(req, env, session, id);
     return methodNotAllowed(method, url.pathname);
   }
 
@@ -264,18 +265,9 @@ async function proxyIngress(req: Request, env: Env): Promise<Response> {
   const parts = url.pathname.split("/").filter((p) => p !== "");
   const id = parts[1] ? decodeSegment(parts[1]) : null;
   if (!id || !WORKSPACE_ID_RE.test(id)) return new Response("bad workspace id\n", { status: 400 });
-  const password = basicPassword(req.headers.get("authorization"));
-  if (!password) {
-    // JSON, not text. OpenCode 2's client probes /api/info and treats a non-JSON
-    // 401 as "not a compatible server" instead of "needs a password".
-    return new Response(JSON.stringify({ _tag: "UnauthorizedError", message: "Authentication required" }), {
-      status: 401,
-      headers: {
-        "content-type": "application/json",
-        "www-authenticate": `Basic realm="cf-opencode ${id}"`,
-      },
-    });
-  }
+  const gate = await workspaceGate(req, env, id);
+  if (gate instanceof Response) return gate;
+  const { password } = gate;
   const rest = parts.slice(2).join("/");
   // getTcpPort().fetch opens a raw TCP connection: https is refused, and the public host
   // makes the container answer its app shell for every path. Cloudflare's own examples
@@ -302,13 +294,9 @@ async function browseIngress(req: Request, env: Env): Promise<Response> {
   const id = decodeSegment(parts[1] ?? "");
   if (!id || !WORKSPACE_ID_RE.test(id) || parts.length > 3)
     return fail(400, "bad workspace id", "use letters, digits, _ and -");
-  const password = basicPassword(req.headers.get("authorization"));
-  if (!password) {
-    return new Response(JSON.stringify({ error: "Authentication required" }), {
-      status: 401,
-      headers: { "content-type": "application/json", "www-authenticate": `Basic realm="cf-opencode ${id}"` },
-    });
-  }
+  const gate = await workspaceGate(req, env, id, { sameOriginOnly: true });
+  if (gate instanceof Response) return gate;
+  const { password } = gate;
   const session = sessionOf(env, id);
   if (parts.length === 3) {
     const sessionId = parts[2] as string;
@@ -317,8 +305,7 @@ async function browseIngress(req: Request, env: Env): Promise<Response> {
     if (req.headers.get("upgrade")?.toLowerCase() !== "websocket") {
       return fail(426, "the browser session URL is a websocket", "connect a CDP client to it");
     }
-    if (!(await session.authorize(password)))
-      return fail(401, "wrong workspace password", `cf-opencode connect ${id}`);
+    if (!(await session.authorize(password, sessionId))) return unauthorized();
     const upstream = await connectCdp(env.BROWSER, sessionId);
     if ("error" in upstream) return json(upstream.status, { error: upstream.error });
     const pair = new WebSocketPair();
@@ -335,7 +322,8 @@ async function browseIngress(req: Request, env: Env): Promise<Response> {
     ? body.previewPorts.filter((p) => typeof p === "number")
     : [];
   const result = await session.browse(password, keep, ports.length ? ports : undefined);
-  if (!result.ok) return json(result.status, { error: result.error });
+  if (!result.ok)
+    return result.status === 401 ? unauthorized() : json(result.status, { error: result.error });
   const opened = result.session as { sessionId: string; liveUrl?: string };
   // The relay below is the only CDP endpoint the container gets.
   const websocketUrl = `${url.origin.replace(/^http/, "ws")}/browse/${encodeURIComponent(id)}/${opened.sessionId}`;
@@ -355,13 +343,9 @@ async function terminalIngress(
 ): Promise<Response> {
   const id = decodeSegment(seg);
   if (!id || !WORKSPACE_ID_RE.test(id)) return fail(400, "bad workspace id", "use letters, digits, _ and -");
-  const password = basicPassword(req.headers.get("authorization"));
-  if (!password) {
-    return new Response(JSON.stringify({ _tag: "UnauthorizedError", message: "Authentication required" }), {
-      status: 401,
-      headers: { "content-type": "application/json", "www-authenticate": `Basic realm="cf-opencode ${id}"` },
-    });
-  }
+  const gate = await workspaceGate(req, env, id, { sameOriginOnly: true });
+  if (gate instanceof Response) return gate;
+  const { password } = gate;
   const url = new URL(req.url);
   const target = new URL(`https://workspace/${kind}${url.search}`);
   const headers = new Headers(req.headers);
@@ -370,10 +354,20 @@ async function terminalIngress(
   return sessionOf(env, id).fetch(new Request(target, { method: req.method, headers }));
 }
 
-async function submit(req: Request, session: WorkspaceSessionApi, workspaceId: string): Promise<Response> {
+async function submit(
+  req: Request,
+  env: Env,
+  session: WorkspaceSessionApi,
+  workspaceId: string,
+): Promise<Response> {
   const body = await readJson(req);
   const parsed = parseOpRequest(body);
   if (!parsed.ok) return fail(400, parsed.error, parsed.fix);
+  // The workspace routes accept only the derived password (gate.ts). A spawn with another would start a
+  // workspace that no client can reach.
+  const pw = parsed.req.password;
+  if (pw && !(await isWorkspacePassword(env.CONTROL_TOKEN, workspaceId, pw)))
+    return fail(400, "the password is not the one derived from the control token", "upgrade cf-opencode");
   parsed.req.workerUrl = new URL(req.url).origin;
   const { opId, attached } = await session.submitOp(parsed.req);
   return json(202, { opId, attached, workspaceId, username: OPENCODE_USERNAME });
