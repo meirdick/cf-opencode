@@ -326,7 +326,13 @@ describe("notify URL push", () => {
     expect(await notifyKey("control")).toBe(key);
     // The same vector is in cli/test/task-result.test.ts: `cf-opencode notify-key` prints this key.
     expect(key).toBe("a2a940c5d7f3460159b47cfff72480f41a289ec4f4f367d0cb00c0a9dbe14e93");
+    // The time is signed with the body, so a copy cannot be sent again later.
+    const ts = sent.headers["x-cf-opencode-timestamp"];
+    expect(ts).toMatch(/^\d{10}$/);
     expect(sent.headers["x-cf-opencode-signature"]).toBe(
+      `sha256=${createHmac("sha256", key).update(`${ts}.${sent.body}`).digest("hex")}`,
+    );
+    expect(sent.headers["x-cf-opencode-signature"]).not.toBe(
       `sha256=${createHmac("sha256", key).update(sent.body).digest("hex")}`,
     );
     expect(JSON.parse(sent.body)).toMatchObject({
@@ -586,5 +592,40 @@ describe.skipIf(!hasTools || process.platform === "win32")("TASK_GIT_SH against 
       pullRequest: "https://github.com/acme/app/pull/7",
       commits: [{ subject: "Fix the login form" }],
     });
+  });
+});
+
+describe("note budget", () => {
+  it("allows 20 notes in an hour, then refuses until old ones leave the window", async () => {
+    const { noteBudget, NOTE_LIMIT, NOTE_WINDOW_MS, handleNote } = await import("../src/orb/task-notify");
+    let sent: number[] = [];
+    const t0 = 1_800_000_000_000;
+    for (let i = 0; i < NOTE_LIMIT; i++) {
+      const r = noteBudget(sent, t0 + i * 1000);
+      expect(r.allowed).toBe(true);
+      sent = r.sent;
+    }
+    expect(noteBudget(sent, t0 + 60_000).allowed).toBe(false);
+    expect(noteBudget(sent, t0 + 60_000).sent).toHaveLength(NOTE_LIMIT);
+    expect(noteBudget(sent, t0 + NOTE_WINDOW_MS + 500).allowed).toBe(true);
+
+    // The handler asks before it sends, and says why it refused.
+    let posted = 0;
+    const res = await handleNote(
+      new Request("http://ai.cf-opencode.internal/notify", { method: "POST", body: '{"text":"hi"}' }),
+      {
+        workspaceId: "ws-test",
+        controlToken: "control",
+        notifyUrl: "https://hooks.example.com/x",
+        allow: async () => false,
+        fetchFn: async () => {
+          posted++;
+          return new Response("ok");
+        },
+      },
+    );
+    expect(res.status).toBe(429);
+    expect(JSON.stringify(await res.json())).toMatch(/20 notes in the last hour/);
+    expect(posted).toBe(0);
   });
 });

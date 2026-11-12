@@ -1,7 +1,8 @@
 // The tools of `cf-opencode mcp`: hand off a task, read one, wait for one, list them.
 // They do what `run` and `tasks` do, and return the task record as structured data. mcp.ts speaks the protocol.
 import { execFileSync } from "node:child_process";
-import { resolve } from "node:path";
+import { realpathSync } from "node:fs";
+import { isAbsolute, relative, resolve } from "node:path";
 import { ControlClient, type RemoteTask } from "./api.js";
 import { readControlToken, readInstall, readWorkspace } from "./config.js";
 import { type ConnectInput, type ConnectResult, connect, httpsRemote, workspaceIdFrom } from "./connect.js";
@@ -163,7 +164,7 @@ export const TOOL_DEFS: ToolDef[] = [
         directory: {
           type: "string",
           description:
-            "The local git checkout the task is about. Default: the directory the MCP client started this server in.",
+            "The local git checkout the task is about: the directory the MCP client started this server in (the default), or a folder under it. Any other path is refused.",
         },
         workspace: {
           type: "string",
@@ -457,7 +458,7 @@ export function localBackend(d: LocalDeps): TaskBackend {
   return {
     async start(a) {
       const { url, token } = install();
-      const dir = resolve(d.cwd, a.directory ?? ".");
+      const dir = insideStart(d.cwd, a.directory);
       const p = preflight(dir);
       if (!p.checkout && !a.workspace)
         throw new CliError(`${dir} is not a git checkout`, "pass directory (a git checkout) or workspace");
@@ -530,4 +531,27 @@ export function localBackend(d: LocalDeps): TaskBackend {
       return listTasks(client(url, token), workspace ? [workspace] : ids());
     },
   };
+}
+
+/**
+ * The checkout a tool call names, which must be the folder this server started in or a folder under it.
+ * The caller is a model, possibly one that read hostile text: it must not point the CLI (which runs git
+ * there, and can make a workspace from that checkout's remote) at another project on the machine.
+ */
+export function insideStart(cwd: string, directory?: string): string {
+  const dir = resolve(cwd, directory ?? ".");
+  const real = (p: string) => {
+    try {
+      return realpathSync(p);
+    } catch {
+      return p;
+    }
+  };
+  const rel = relative(real(cwd), real(dir));
+  if (rel.startsWith("..") || isAbsolute(rel))
+    throw new CliError(
+      `${dir} is outside the folder this MCP server started in`,
+      "start the MCP server in that project, or leave directory out",
+    );
+  return dir;
 }

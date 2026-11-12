@@ -28,12 +28,23 @@ export class ProviderEgress extends WorkerEntrypoint<Env, EgressProps> {
 
 /** The platform calls this for every request the container sends to AI_HOST. */
 export class AiEgress extends WorkerEntrypoint<Env, { gateway: string; workspaceId?: string }> {
+  private async noteAllowed(workspaceId: string): Promise<boolean> {
+    const stub = this.env.WORKSPACE.getByName(workspaceDoName(workspaceId)) as unknown as {
+      allowNote(): Promise<boolean>;
+    };
+    return stub.allowNote();
+  }
+
   override fetch(req: Request): Promise<Response> {
     if (req.method === "POST" && new URL(req.url).pathname === NOTE_PATH)
       return handleNote(req, {
         workspaceId: this.ctx.props.workspaceId,
         controlToken: this.env.CONTROL_TOKEN,
         ...(this.env.NOTIFY_URL ? { notifyUrl: this.env.NOTIFY_URL } : {}),
+        // The count lives in the workspace's Durable Object, so the agent cannot reset it.
+        ...(this.ctx.props.workspaceId
+          ? { allow: () => this.noteAllowed(this.ctx.props.workspaceId as string) }
+          : {}),
       });
     let searchProvider: string | undefined;
     // A config that does not parse counts as lockdown: refuse pages rather than guess the install allows them.

@@ -53,7 +53,7 @@ A preview shows a dev server that the agent runs. Treat its pages as code you di
 
 `cf-opencode notify-url` stores the URL as the Worker secret `NOTIFY_URL`, because a webhook URL often holds its own secret. `/v1/status` and `doctor` say only whether it is set. It must be `https`, with no user or password, to a public host name. The Worker does not follow a redirect from it.
 
-Each `POST` carries `x-cf-opencode-signature: sha256=<HMAC of the body>`, with the key from `cf-opencode notify-key`. The signature covers the body only. A receiver should drop a delivery it already has (same `id`, `state` and `updated`) and a note whose `at` is old, because a copy of a signed body stays valid.
+Each `POST` carries `x-cf-opencode-timestamp` (Unix seconds) and `x-cf-opencode-signature: sha256=<HMAC of "<timestamp>.<body>">`, with the key from `cf-opencode notify-key`. The time is signed with the body. A receiver must refuse a timestamp more than 5 minutes old, so a copy of a delivery cannot be sent again later. A workspace can send at most 20 notes in one hour; the count is kept outside the workspace.
 
 The agent can send any text to the URL with `cf-opencode-notify`, with no limit on how often. Treat a note as text from the agent, not from you.
 

@@ -242,8 +242,8 @@ The URL must be `https`, with no user or password in it, to a public host name. 
 
 When a task leaves `running`, the Worker sends a `POST` to that URL. The body is the [result record](#output-for-agents). The Worker sends again when the task changes later, for example from `waiting` to `done`.
 
-- Headers: `content-type: application/json`, `x-cf-opencode-event: task`, and `x-cf-opencode-signature: sha256=<hex>`.
-- The signature is the HMAC-SHA256 of the raw body. The key is the text that `cf-opencode notify-key` prints. Keep the key secret, and check the signature before you use the body.
+- Headers: `content-type: application/json`, `x-cf-opencode-event: task`, `x-cf-opencode-timestamp: <Unix seconds>` and `x-cf-opencode-signature: sha256=<hex>`.
+- The signature is the HMAC-SHA256 of the text `<timestamp>.<raw body>`. Refuse a delivery whose timestamp is more than 5 minutes old. The key is the text that `cf-opencode notify-key` prints. Keep the key secret, and check the signature before you use the body.
 - An answer other than 2xx, or no answer in 10 seconds, is a failure. The Worker tries again after 1, 5 and 30 minutes. Then it stops. `tasks <ses_…>` shows `Notified` with the time and the HTTP status, or the error.
 - The Worker does not follow redirects.
 - The signature covers the body only. A copy of a signed body stays valid, so drop a delivery you already have: the same `id`, `state` and `updated`.

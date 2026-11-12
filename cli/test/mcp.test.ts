@@ -559,3 +559,24 @@ describe("cf-opencode mcp --help", () => {
     );
   });
 });
+
+describe("MCP directory", () => {
+  it("accepts the start folder and folders under it, and refuses any other path, links included", async () => {
+    const { insideStart } = await import("../src/mcp-tools.js");
+    const { mkdirSync, mkdtempSync, symlinkSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const root = mkdtempSync(join(tmpdir(), "cfoc-mcp-dir-"));
+    const start = join(root, "project");
+    mkdirSync(join(start, "packages", "app"), { recursive: true });
+    mkdirSync(join(root, "other"));
+    expect(insideStart(start)).toBe(start);
+    expect(insideStart(start, "packages/app")).toBe(join(start, "packages", "app"));
+    expect(() => insideStart(start, "../other")).toThrow(/outside the folder.*fix:/);
+    expect(() => insideStart(start, join(root, "other"))).toThrow(/outside the folder/);
+    expect(() => insideStart(start, "/")).toThrow(/outside the folder/);
+    // A link under the start folder that points out of it does not get around the rule.
+    symlinkSync(join(root, "other"), join(start, "escape"));
+    expect(() => insideStart(start, "escape")).toThrow(/outside the folder/);
+  });
+});

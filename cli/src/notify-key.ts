@@ -36,7 +36,10 @@ export function checkNotifyUrl(v: unknown): string | undefined {
   return undefined;
 }
 
-/** What a receiver checks: x-cf-opencode-signature equals this for the raw body. */
-export function signature(key: string, body: string): string {
-  return `sha256=${createHmac("sha256", key).update(body).digest("hex")}`;
+/**
+ * What a receiver checks: x-cf-opencode-signature equals this for the raw body and the value of
+ * x-cf-opencode-timestamp (Unix seconds). It should also refuse a timestamp more than 5 minutes old.
+ */
+export function signature(key: string, body: string, timestamp: number | string): string {
+  return `sha256=${createHmac("sha256", key).update(`${timestamp}.${body}`).digest("hex")}`;
 }

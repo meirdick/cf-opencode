@@ -44,9 +44,24 @@ export function notifyKey(controlToken: string): Promise<string> {
   return hmac(controlToken, NOTIFY_KEY_LABEL);
 }
 
-/** The x-cf-opencode-signature value for a body. */
-export async function signature(key: string, body: string): Promise<string> {
-  return `sha256=${await hmac(key, body)}`;
+/**
+ * The x-cf-opencode-signature value: HMAC over "<timestamp>.<body>", where timestamp is the
+ * x-cf-opencode-timestamp header (Unix seconds). The time is signed with the body, so a receiver can
+ * refuse an old delivery and a copy cannot be sent again later.
+ */
+export async function signature(key: string, body: string, timestamp: number): Promise<string> {
+  return `sha256=${await hmac(key, `${timestamp}.${body}`)}`;
+}
+
+/** Notes one workspace may send in an hour. A workspace is root for its agent; the user's webhook is not. */
+export const NOTE_LIMIT = 20;
+export const NOTE_WINDOW_MS = 60 * 60_000;
+
+/** The send times still inside the window, plus this one when it is allowed. */
+export function noteBudget(sent: number[], now: number): { allowed: boolean; sent: number[] } {
+  const recent = sent.filter((t) => now - t < NOTE_WINDOW_MS);
+  if (recent.length >= NOTE_LIMIT) return { allowed: false, sent: recent };
+  return { allowed: true, sent: [...recent, now] };
 }
 
 /** The pending delivery after a failed try, or undefined when that was the last try. */
@@ -62,7 +77,9 @@ export async function post(
   event: "task" | "note",
   body: string,
   fetchFn: FetchFn = (u, i) => fetch(u, i),
+  now: number = Date.now(),
 ): Promise<{ ok: boolean; status: number; error?: string }> {
+  const timestamp = Math.floor(now / 1000);
   try {
     const res = await fetchFn(url, {
       method: "POST",
@@ -71,7 +88,8 @@ export async function post(
         "content-type": "application/json",
         "user-agent": "cf-opencode",
         "x-cf-opencode-event": event,
-        "x-cf-opencode-signature": await signature(key, body),
+        "x-cf-opencode-timestamp": String(timestamp),
+        "x-cf-opencode-signature": await signature(key, body, timestamp),
       },
       body,
       signal: AbortSignal.timeout(NOTIFY_TIMEOUT_MS),
@@ -168,6 +186,8 @@ export async function handleNote(
     notifyUrl?: string;
     fetchFn?: FetchFn;
     now?: () => number;
+    /** Asks the workspace's Durable Object for room in the hourly budget. Absent: no limit (tests). */
+    allow?: () => Promise<boolean>;
   },
 ): Promise<Response> {
   const url = o.notifyUrl ?? "";
@@ -186,9 +206,16 @@ export async function handleNote(
   if (!text) return noteError(400, "the note is empty", 'cf-opencode-notify "<text>"');
   if (text.length > MAX_NOTE_CHARS)
     return noteError(400, `the note is over ${MAX_NOTE_CHARS} characters`, "shorten it");
-  const at = iso((o.now ?? Date.now)());
+  if (o.allow && !(await o.allow()))
+    return noteError(
+      429,
+      `this workspace sent ${NOTE_LIMIT} notes in the last hour`,
+      "wait, and send fewer notes",
+    );
+  const nowMs = (o.now ?? Date.now)();
+  const at = iso(nowMs);
   const body = JSON.stringify({ type: "note", workspace: o.workspaceId, text, at });
-  const r = await post(url, await notifyKey(o.controlToken), "note", body, o.fetchFn);
+  const r = await post(url, await notifyKey(o.controlToken), "note", body, o.fetchFn, nowMs);
   if (!r.ok) return noteError(502, r.error ?? "the note was not sent", "check the receiver, then try again");
   return Response.json({ ok: true, status: r.status, at });
 }

@@ -70,7 +70,7 @@ import { readSessions, type SessionList } from "./sessions";
 import { runSpawn, SCRIPT_ENV, sh, WORKSPACE_USER } from "./spawn";
 import { installSshKeys } from "./ssh-keys";
 import { type CancelResult, cancelTask } from "./task-cancel";
-import { taskTick } from "./task-notify";
+import { noteBudget, taskTick } from "./task-notify";
 import { taskResult } from "./task-result";
 import { wakeAndStart } from "./task-wake";
 import {
@@ -263,6 +263,9 @@ export async function waitForOp(
 const LOG_RING = 200;
 const OP_RETENTION_MS = 24 * 3600_000;
 
+/** Send times of the notes of the last hour (task-notify.ts noteBudget). */
+const NOTES_SENT_KEY = "notes:sent";
+
 export class WorkspaceSession extends DurableObject<Env> implements WorkspaceSessionApi {
   private readonly kv: KV;
   private config: ProviderConfig = structuredClone(DEFAULT_CONFIG);
@@ -397,6 +400,13 @@ export class WorkspaceSession extends DurableObject<Env> implements WorkspaceSes
   }
 
   /** OpenCode sessions: live from a running workspace, else the list kept at the last pause. Wakes nothing. */
+  /** True when the workspace may send one more note this hour; counts it. Called by AiEgress for /notify. */
+  async allowNote(): Promise<boolean> {
+    const r = noteBudget((await this.kv.get<number[]>(NOTES_SENT_KEY)) ?? [], Date.now());
+    await this.kv.put(NOTES_SENT_KEY, r.sent);
+    return r.allowed;
+  }
+
   async sessions(): Promise<SessionList> {
     return readSessions(this.base(await this.workspaceId()));
   }

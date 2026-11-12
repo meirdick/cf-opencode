@@ -122,7 +122,7 @@ Set where the Worker sends a task's result and the workspace's notes. The comman
 cf-opencode notify-key
 ```
 
-Print the key that signs the `POST` requests to the notify URL. The receiver checks `x-cf-opencode-signature: sha256=<hex HMAC-SHA256 of the body>` with this key. The key comes from the control token. Keep it secret. See [Get a message when a task ends](/guides/hand-off-a-task/#get-a-message-when-a-task-ends).
+Print the key that signs the `POST` requests to the notify URL. The receiver checks `x-cf-opencode-signature: sha256=<hex HMAC-SHA256 of "<x-cf-opencode-timestamp>.<body>">` with this key, and refuses a timestamp more than 5 minutes old. The key comes from the control token. Keep it secret. See [Get a message when a task ends](/guides/hand-off-a-task/#get-a-message-when-a-task-ends).
 
 ### doctor
 

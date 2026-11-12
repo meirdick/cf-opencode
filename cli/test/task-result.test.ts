@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -169,6 +170,8 @@ describe("notify key", () => {
   it("matches the Worker's key and signature", () => {
     expect(NOTIFY_KEY_LABEL).toBe("cf-opencode/notify-key/v1");
     expect(notifyKey("control")).toBe("a2a940c5d7f3460159b47cfff72480f41a289ec4f4f367d0cb00c0a9dbe14e93");
-    expect(signature("k", "{}")).toMatch(/^sha256=[0-9a-f]{64}$/);
+    expect(signature("k", "{}", 1794500000)).toBe(
+      `sha256=${createHmac("sha256", "k").update("1794500000.{}").digest("hex")}`,
+    );
   });
 });
