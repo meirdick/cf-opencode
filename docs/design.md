@@ -295,7 +295,10 @@ client: the Durable Object execs a script in the container that calls
 the derived password. The prompt call admits the input and returns, so the
 session runs in `opencode serve` and outlives the command. The preflight runs
 before any wake, because the workspace clones from the remote and never gets
-local files.
+local files. A dirty tree fails the preflight; `--allow-dirty` starts anyway
+and says what the workspace will not see. Carrying uncommitted work into the
+workspace is deferred, not rejected: a git-native WIP push (`run --wip`) and an
+opt-in tar upload (`--wip --upload`), recorded in the delegation plan, step 8.
 
 The Durable Object keeps the task list (`tasks`), as it keeps `sessions`, and
 saves the states before each pause, so `tasks` wakes nothing. The state is a

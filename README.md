@@ -61,7 +61,7 @@ prints the next command:
 … deploying Worker cf-opencode and building the workspace image (the first build takes a few minutes)
 ✓ Deployed https://cf-opencode.example.workers.dev in 190s (log: ~/.cf-opencode/deploy.log)
 ✓ Control token stored in ~/.cf-opencode/control-token and on the Worker
-✓ Worker healthy (API 0.2.1)
+✓ Worker healthy (API 0.2.2)
 ✓ GITHUB_TOKEN stored on cf-opencode (GitHub user you)
 
 Ready: https://cf-opencode.example.workers.dev

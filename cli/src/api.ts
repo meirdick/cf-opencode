@@ -83,11 +83,18 @@ export interface PublicPreview {
   createdAt: string;
 }
 
+/** The answer, or the lack of one, did not come from the Worker's code. Worth another try. */
+export class NotTheWorker extends CliError {}
+
+/** Waits before the second, third and fourth try. */
+const RETRY_WAITS_MS = [1_000, 2_000, 4_000];
+
 export class ControlClient {
   constructor(
     private readonly url: string,
     private readonly token: string,
     private readonly fetchFn: typeof fetch = (input, init) => fetch(input, init),
+    private readonly sleepFn: (ms: number) => Promise<void> = (ms) => new Promise((r) => setTimeout(r, ms)),
   ) {}
 
   async health(): Promise<{ ok: boolean; version: string }> {
@@ -183,7 +190,26 @@ export class ControlClient {
     return this.send("GET", path);
   }
 
+  /**
+   * One request, tried again when the answer did not come from the Worker's own code. Just after a deploy,
+   * and for a new Worker name, Cloudflare can answer with its own page or drop the connection for some
+   * seconds. Only requests that are safe to repeat are tried again: a read, and an op submit, which
+   * attaches to the op in flight.
+   */
   private async send<T>(method: string, path: string, body?: unknown): Promise<T> {
+    const repeatable = method === "GET" || /\/ops$/.test(path.split("?")[0] ?? "");
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await this.once<T>(method, path, body);
+      } catch (e) {
+        const wait = RETRY_WAITS_MS[attempt];
+        if (!repeatable || !(e instanceof NotTheWorker) || wait === undefined) throw e;
+        await this.sleepFn(wait);
+      }
+    }
+  }
+
+  private async once<T>(method: string, path: string, body?: unknown): Promise<T> {
     let res: Response;
     try {
       res = await this.fetchFn(`${this.url}${path}`, {
@@ -195,7 +221,7 @@ export class ControlClient {
         ...(body ? { body: JSON.stringify(body) } : {}),
       });
     } catch (e) {
-      throw new CliError(
+      throw new NotTheWorker(
         `cannot reach ${this.url} (${e instanceof Error ? e.message : String(e)})`,
         "check the URL with cf-opencode doctor",
       );
@@ -215,9 +241,15 @@ export class ControlClient {
         "copy ~/.cf-opencode/control-token from the machine that ran cf-opencode init, or run cf-opencode init --adopt",
       );
     if (!res.ok) {
-      const err = parsed && typeof parsed === "object" && "error" in parsed ? String(parsed.error) : text;
-      // A Worker error is a whole "Failed: … — fix: …" line already; CliError keeps it as it is.
-      throw new CliError(err, "see the line above");
+      if (parsed && typeof parsed === "object" && "error" in parsed)
+        // A Worker error is a whole "Failed: … — fix: …" line already; CliError keeps it as it is.
+        throw new CliError(String(parsed.error), "see the line above");
+      // Not the Worker's JSON: a page from Cloudflare itself. Never print the page.
+      const code = /error code:?\s*(\d{3,4})/i.exec(text)?.[1];
+      throw new NotTheWorker(
+        `${this.url} answered HTTP ${res.status}${code ? ` (Cloudflare error ${code})` : ""} with a page, not the Worker's answer`,
+        "wait a few seconds and run the command again; a Worker that was just deployed can take a minute to answer everywhere",
+      );
     }
     return parsed as T;
   }

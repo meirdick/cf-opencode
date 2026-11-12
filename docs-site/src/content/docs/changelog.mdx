@@ -7,6 +7,10 @@ sidebar:
 
 The full history is in [CHANGELOG.md](https://github.com/meirdick/cf-opencode/blob/main/CHANGELOG.md) in the repository.
 
+## 0.2.2 (2026-11-12)
+
+- Just after a deploy, Cloudflare can answer for some seconds with its own page. The CLI now tries the request again. If it stops, it prints one line with the HTTP status. Before, `connect` could stop with `Failed: <!DOCTYPE html>`.
+
 ## 0.2.1 (2026-11-12)
 
 - A workspace that was running when you set the notify URL now sends task results to it. Before, it sent them only after its next restart.

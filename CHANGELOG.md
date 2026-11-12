@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.2 (2026-11-12)
+
+- Just after a deploy, Cloudflare can answer for some seconds with its own page. The CLI now tries a read or
+  an op submit again (after 1, 2 and 4 seconds), and when it gives up it prints one line with the HTTP status.
+  Before, `connect` could stop with `Failed: <!DOCTYPE html>` while the workspace started anyway.
+
 ## 0.2.1 (2026-11-12)
 
 - A workspace that was running when `cf-opencode notify-url` set the notify URL now sends task results to it.
