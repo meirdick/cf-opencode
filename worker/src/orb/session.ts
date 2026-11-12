@@ -32,7 +32,7 @@ import { REGISTRY_DO_NAME, workspaceDoName } from "../env";
 import { unauthorized } from "../gate";
 import { AI_HOST } from "./ai";
 import { idleTick, LAST_USE_KEY, runAlarm } from "./alarm";
-import { type BrowserSession, openBrowserSession } from "./browse";
+import { type BrowserSession, openBrowserSession, ownsSession, rememberSession } from "./browse";
 import type { OrbContext } from "./context";
 import { runDelete } from "./delete";
 import { ExclusiveQueue } from "./exclusive";
@@ -475,9 +475,10 @@ export class WorkspaceSession extends DurableObject<Env> implements WorkspaceSes
     return this.rt.queue.run(() => receiveRebuild(ctx, tar, o.instance));
   }
 
-  async authorize(password: string): Promise<boolean> {
+  async authorize(password: string, browserSessionId?: string): Promise<boolean> {
     const rec = await loadOrb(this.kv);
-    return !rec?.deletedAt && (await passwordMatches(rec?.passwordSha, password));
+    if (rec?.deletedAt || !(await passwordMatches(rec?.passwordSha, password))) return false;
+    return browserSessionId === undefined || ownsSession(this.kv, browserSessionId);
   }
 
   /**
@@ -494,6 +495,7 @@ export class WorkspaceSession extends DurableObject<Env> implements WorkspaceSes
     }
     const opened = await openBrowserSession(this.env.BROWSER, keepAliveMs);
     if ("error" in opened) return { ok: false, error: opened.error, status: opened.status };
+    await rememberSession(this.kv, opened.sessionId);
     return { ok: true, session: opened };
   }
 

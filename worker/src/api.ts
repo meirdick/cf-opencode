@@ -40,8 +40,8 @@ export interface WorkspaceSessionApi {
     password: string,
     keepAliveMs?: number,
   ): Promise<{ ok: true; session: unknown } | { ok: false; error: string; status: number }>;
-  /** True when the password is this workspace's. Wakes nothing. */
-  authorize(password: string): Promise<boolean>;
+  /** True when the password is this workspace's, and the browser session (if given) is one it opened. Wakes nothing. */
+  authorize(password: string, browserSessionId?: string): Promise<boolean>;
   /** Websocket terminals: /shell (tmux on a PTY) and /ssh (sshd -i). Checks the password itself. */
   fetch(req: Request): Promise<Response>;
 }
@@ -285,7 +285,7 @@ async function browseIngress(req: Request, env: Env): Promise<Response> {
     if (req.headers.get("upgrade")?.toLowerCase() !== "websocket") {
       return fail(426, "the browser session URL is a websocket", "connect a CDP client to it");
     }
-    if (!(await session.authorize(password))) return unauthorized();
+    if (!(await session.authorize(password, sessionId))) return unauthorized();
     const upstream = await connectCdp(env.BROWSER, sessionId);
     if ("error" in upstream) return json(upstream.status, { error: upstream.error });
     const pair = new WebSocketPair();

@@ -112,6 +112,32 @@ describe("workspace password check", () => {
     expect(JSON.stringify(browse)).not.toContain("demo");
   });
 
+  // Regression: Browser Run sessions belong to the account, and the relay took any session id, so one
+  // workspace's password opened another workspace's browser.
+  it("the browser relay serves only the sessions this workspace opened", async () => {
+    const { session } = await pausedSession();
+    let n = 0;
+    (session as unknown as { env: Record<string, unknown> }).env.BROWSER = {
+      acquire: async () => ({ sessionId: `sess-${++n}` }),
+      getLiveView: async () => null,
+      connectSession: async () => ({ webSocket: {} }),
+    };
+    const opened = await session.browse(RIGHT);
+    expect(opened).toMatchObject({ ok: true, session: { sessionId: "sess-1" } });
+    expect(await session.authorize(RIGHT, "sess-1")).toBe(true);
+    expect(await session.authorize(RIGHT, "sess-of-another-workspace")).toBe(false);
+    expect(await session.authorize(WRONG, "sess-1")).toBe(false);
+    expect(await session.authorize(RIGHT)).toBe(true);
+  });
+
+  it("keeps the newest browser sessions, up to the cap", async () => {
+    const { session, kv } = await pausedSession();
+    const { MAX_BROWSE_SESSIONS, rememberSession } = await import("../src/orb/browse");
+    for (let i = 0; i <= MAX_BROWSE_SESSIONS; i++) await rememberSession(kv, `s-${i}`);
+    expect(await session.authorize(RIGHT, "s-0")).toBe(false);
+    expect(await session.authorize(RIGHT, `s-${MAX_BROWSE_SESSIONS}`)).toBe(true);
+  });
+
   it("a deleted workspace says so only to the holder of its password", async () => {
     const { session, kv } = await pausedSession();
     const rec = (await kv.get<Record<string, unknown>>("orb")) as Record<string, unknown>;

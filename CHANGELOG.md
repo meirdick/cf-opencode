@@ -19,6 +19,8 @@
 - `/shell`, `/ssh` and `/browse` refuse a request whose `Origin` is another site, so a web page cannot use
   Basic credentials a browser cached for the Worker. Clients that send no `Origin` (the CLI, ssh, curl) and
   the Worker's own origin still work.
+- The browser relay `/browse/<workspace>/<session>` serves only sessions that workspace opened. Before, any
+  workspace's password reached any browser session on the account.
 
 - Two `connect`s in flight with different inputs no longer share one op. The op journal hashed a field the
   API never sends, so the second caller could attach to the first one's spawn and get its password.
