@@ -44,6 +44,7 @@ The CLI stops before the deploy when the file is not one JSON object. A value ou
 | `aiGateway` | `"default"` | A gateway name: lowercase letters, digits, `_` and `-`, up to 64 characters | The AI Gateway for model requests. |
 | `searchProvider` | `"exa"` | The Web Search API provider for `cf-opencode-search`: `exa`, `linkup` or `ceramic`. |
 | `model` | `"cloudflare-workers-ai/@cf/zai-org/glm-5.3"` | `provider/model`, or `""` | The default OpenCode model. An empty value lets OpenCode choose. |
+| `a2a` | `false` | `true` or `false` | `true` serves the A2A Agent Card and the JSON-RPC endpoint `/a2a`. See [Hand off tasks over A2A](/guides/a2a/). |
 | `images` | `{}` | An object of image references | Extra image references mapped to image keys. For advanced use. |
 
 The file `worker/wrangler.jsonc` ships with these values: the default `instance`, `maxRunning` 10, `maxAwakeHours` 12, `warmMinutes` 10, `inactivityTimeoutMinutes` 15, `alarmSeconds` 60, `serverPort` 4096, `idlePauseMinutes` 20 and `projectSnapshotRefresh` `"off"`.

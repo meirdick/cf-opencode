@@ -248,6 +248,33 @@ an open permission or form is `waiting`, an active session is `running`, then
 the session outcome decides `done` or `failed`. `--wait` polls one short GET; it
 never holds a request open while an agent works.
 
+## MCP and A2A
+
+Both are thin layers over the same task API; neither adds state.
+
+`cf-opencode mcp` has no SDK. The JSON-RPC core (`McpServer.handle` in
+`cli/src/mcp.ts`) takes one message and returns one answer, so tests feed it
+objects; `serveStdio` only frames lines. MCP 2026-07-28 dropped the
+`initialize` handshake: each request carries its version in `_meta`. Clients
+from before still send `initialize`, so the server is "dual-era": a request with
+`_meta` is served as 2026-07-28, and `initialize` picks 2025-11-25 or 2025-06-18
+for the process. A tool failure is a result with `isError` and the usual
+`Failed:` line, so the model can act on the fix. `wait_task` stops at 280 s,
+under the 5-minute tool timeout most clients have; the task goes on.
+
+The A2A endpoint (`worker/src/a2a.ts`) is off unless `a2a` is set, because it is
+one more way to run code in a workspace. The card is public, as the spec asks,
+and says nothing about the user. `/a2a` sits behind the same bearer check as
+`/v1`, before the body is read. An A2A task id is `<workspace>:<session>`, so
+`GetTask` and `CancelTask` need no index; `contextId` is the workspace. The
+Worker has no checkout, so it cannot make a workspace: `SendMessage` targets one
+that was connected before, and wakes it with the derived password and the
+stored directory, as a wake through `/oc` does (`task-wake.ts`). `CancelTask`
+execs a script that calls OpenCode's `POST /api/session/{id}/interrupt`
+(`task-cancel.ts`). Streaming and push notifications are declared off in the
+card and answer the spec's errors. A blocking `SendMessage` polls the saved
+state, like `tasks --wait`, for at most 60 minutes.
+
 ## The agent knows the machine
 
 The serve script writes `~/.config/opencode/AGENTS.md` on each wake: `sudo

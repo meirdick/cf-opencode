@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- `cf-opencode mcp`: an MCP server over stdio with the tools `handoff_task`, `get_task`, `wait_task` and
+  `list_tasks`. A local agent (Claude Code, OpenCode, any MCP client) hands off a task and gets the task record as
+  structured content. It speaks MCP 2026-07-28 and answers `initialize` for 2025-11-25 and 2025-06-18 clients.
+- A2A endpoint on the Worker, off by default (setting `a2a`). The Agent Card is at
+  `/.well-known/agent-card.json`; the JSON-RPC endpoint `/a2a` takes the control token as a bearer token. It
+  speaks A2A 1.0: `SendMessage` starts a task in the workspace that `message.metadata.workspace` names, and wakes
+  it when it is paused; `GetTask`, `CancelTask` and `ListTasks` read and stop tasks. Streaming and push
+  notifications are not supported.
 - `cf-opencode-search` in the workspace: web search through the account's AI binding and AI Gateway, with no
   key. Setting `searchProvider` (default `exa`).
 - `cf-opencode-fetch` in the workspace: a page as Markdown, links, HTML, a screenshot or a PDF, through the

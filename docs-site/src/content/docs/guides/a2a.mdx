@@ -1,0 +1,140 @@
+---
+title: Hand off tasks over A2A
+description: Turn on the A2A endpoint of the Worker, so another agent can start a task in a workspace and read its result with the Agent2Agent protocol.
+sidebar:
+  order: 10
+---
+
+The Worker can serve the Agent2Agent (A2A) protocol, version 1.0. Another agent, on any machine, can then start a coding task in a workspace and read its result. It uses the JSON-RPC binding of A2A.
+
+The endpoint is off by default. It is one more way to run code in your workspaces. Turn it on only when an agent needs it.
+
+## Turn it on
+
+1. Add `"a2a": true` to `~/.cf-opencode/config.json`:
+
+   ```json
+   { "a2a": true }
+   ```
+
+2. Run `cf-opencode upgrade`.
+
+To turn it off, remove the key, or set it to `false`, and run `cf-opencode upgrade` again. When it is off, the A2A paths answer like any unknown path.
+
+## What the Worker serves
+
+| Path | What it is | Auth |
+| --- | --- | --- |
+| `/.well-known/agent-card.json` | The Agent Card | None. The spec makes the card public. |
+| `/a2a` | The JSON-RPC endpoint | The control token, as a bearer token |
+
+The card says what the agent does, where the endpoint is, and that it needs a bearer token. It does not name a workspace, a repository or you. The endpoint URL comes from the request, for example `https://cf-opencode.example.workers.dev/a2a`.
+
+## Authentication
+
+Send the control token in the `Authorization` header:
+
+```text
+Authorization: Bearer <control token>
+```
+
+The token is in `~/.cf-opencode/control-token`. A request without it, or with a wrong one, gets HTTP 401. Give the token only to an agent that you trust with all your workspaces.
+
+Send `A2A-Version: 1.0` in each request. A request without it is an A2A 0.3 request, and the Worker refuses it with `VersionNotSupportedError` (`-32009`).
+
+## Start a task
+
+Use `SendMessage`. Put the workspace ID in `message.metadata.workspace`:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "SendMessage",
+  "params": {
+    "message": {
+      "messageId": "8f0c2d6e-1b7a-4c55-9f0e-2a0d5c3e7b11",
+      "role": "ROLE_USER",
+      "parts": [{ "text": "Add a health check route at /health with a test. Run npm test." }],
+      "metadata": { "workspace": "my-app", "title": "Health check" }
+    },
+    "configuration": { "returnImmediately": true }
+  }
+}
+```
+
+| Metadata key | Required | Meaning |
+| --- | --- | --- |
+| `workspace` | Yes | The workspace ID. A message without it gets `-32602`, invalid params. |
+| `title` | No | The session title. One line, up to 200 characters. |
+| `model` | No | `provider/model`. Default: the model of the workspace. |
+| `branch` | No | The branch to start from, as it is on `origin`. |
+
+The rules:
+
+- Send the task in text parts. Other parts get `ContentTypeNotSupportedError` (`-32005`).
+- The workspace must exist. Connect it once with `cf-opencode connect` from its git checkout. The Worker cannot make a workspace, because it does not know the repository.
+- A paused workspace wakes. The wake can take a minute.
+- The workspace clones from the Git remote. It does not see changes that are not committed or pushed.
+- The Worker adds the same closing instruction as `cf-opencode run`: commit, push the branch, open a pull request, and end with a `Result:` line.
+
+Without `returnImmediately`, `SendMessage` waits until the task is not working, as the spec requires. It waits 60 minutes at most, then returns the task as it is. Coding tasks often take longer. Send `"returnImmediately": true` and poll with `GetTask`.
+
+The result is a task:
+
+```json
+{
+  "task": {
+    "id": "my-app:ses_4f2a…",
+    "contextId": "my-app",
+    "status": { "state": "TASK_STATE_WORKING", "timestamp": "2026-11-12T10:00:00.000Z" },
+    "metadata": { "workspace": "my-app", "task": { "id": "ses_4f2a…", "state": "running" } }
+  }
+}
+```
+
+The task ID is `<workspace>:<session>`. The `contextId` is the workspace ID. `metadata.task` is the cf-opencode task record, with all its fields.
+
+## Follow a task
+
+| Method | What it does |
+| --- | --- |
+| `GetTask` | Returns the task. `params`: `{ "id": "<task id>" }`. Wakes nothing. |
+| `CancelTask` | Interrupts the OpenCode session. Works only while the workspace runs. |
+| `ListTasks` | Lists the tasks of one workspace. Set `contextId` to the workspace ID. |
+
+`ListTasks` needs `contextId`, because the Worker keeps no list of all workspaces. It supports `status`, `pageSize` (1 to 100), `pageToken`, `statusTimestampAfter` and `includeArtifacts`.
+
+## States
+
+| cf-opencode state | A2A state | Why |
+| --- | --- | --- |
+| `running` | `TASK_STATE_WORKING` | The agent works. |
+| `waiting` | `TASK_STATE_INPUT_REQUIRED` | The agent asks a question or a permission. |
+| `done` | `TASK_STATE_COMPLETED` | The agent finished. |
+| `failed` | `TASK_STATE_FAILED` | The turn stopped with an error, or did not start. |
+| `stopped` | `TASK_STATE_CANCELED` | The session was stopped before it finished. |
+| Any other value | `TASK_STATE_UNSPECIFIED` | The spec defines it as "unknown or indeterminate". It claims neither success nor failure. |
+
+## Results
+
+- A completed task has an artifact `result`. It holds the last result text of the agent, which ends with the `Result:` line.
+- When the task record has a branch, commits, a pull request or changed files, an artifact `changes` holds them as one data part.
+- A waiting, failed or canceled task has a status message that says why.
+
+## Not supported
+
+These answer with the error that the spec gives:
+
+| Method | Error |
+| --- | --- |
+| `SendStreamingMessage`, `SubscribeToTask` | `UnsupportedOperationError` (`-32004`). The card says `streaming: false`. |
+| The four push notification config methods | `PushNotificationNotSupportedError` (`-32003`). The card says `pushNotifications: false`. |
+| `GetExtendedAgentCard` | `UnsupportedOperationError` (`-32004`). |
+| A message with `taskId` | `UnsupportedOperationError` (`-32004`). Answer a waiting task in OpenCode: `cf-opencode connect <workspace> --session <ses_…>`. |
+
+## Limits
+
+- The request body is 160 KiB or less. A larger one gets HTTP 413.
+- One control token gives access to all workspaces. There are no scopes.
+- After `CancelTask`, `GetTask` shows the outcome that OpenCode records for the interrupted session.

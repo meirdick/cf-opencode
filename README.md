@@ -166,6 +166,29 @@ returns when the task stops running, with exit code 0 done, 1 failed, 2
 waiting, 3 timed out (`--timeout`, default 60 minutes). Like `sessions`, it
 wakes nothing: a paused workspace answers with the states saved at its pause.
 
+### Hand off from an agent: MCP and A2A
+
+`cf-opencode mcp` is an MCP server over stdio. A local agent gets the tools
+`handoff_task`, `get_task`, `wait_task` and `list_tasks`, and reads the task
+record as structured data instead of shell output:
+
+```sh
+claude mcp add cf-opencode -- cf-opencode mcp
+```
+
+In OpenCode, add it to `opencode.json`:
+
+```json
+{ "mcp": { "servers": { "cf-opencode": { "type": "local", "command": ["cf-opencode", "mcp"] } } } }
+```
+
+The Worker can also serve the Agent2Agent protocol (A2A 1.0), so an agent on
+another machine starts and follows tasks. It is off by default; set `"a2a":
+true` in `~/.cf-opencode/config.json` and run `cf-opencode upgrade`. The Agent
+Card is at `/.well-known/agent-card.json`; the JSON-RPC endpoint `/a2a` takes
+the control token as a bearer token. A message names its workspace in
+`metadata.workspace`, and the workspace must have been connected once.
+
 Other commands:
 
 | Command | What it does |
@@ -176,6 +199,7 @@ Other commands:
 | `cf-opencode sessions [id]` | OpenCode sessions across your workspaces, newest first. Wakes nothing |
 | `cf-opencode run "<task>" [id]` | Hand a task to OpenCode in the workspace and return. It runs with the laptop closed |
 | `cf-opencode tasks [id \| ses_…]` | Handed-off tasks and their state, or one task. `--wait` waits for one. Wakes nothing |
+| `cf-opencode mcp` | Serve `run` and `tasks` to an agent as MCP tools over stdio |
 | `cf-opencode list` | Workspaces this machine connected to, with state and snapshot expiry |
 | `cf-opencode connect --no-attach` | Same, but print the server URL instead |
 | `cf-opencode status [id]` | Workspace state, or the install |
