@@ -2,9 +2,11 @@
 // After a delete, the next connect boots the image and clones again: nothing of the old disk comes back.
 // Cloudflare has no snapshot delete API, so the data stays until its 30-day TTL; nothing points at it.
 import type { OpRequest } from "../core/types";
+import { BROWSE_SESSIONS_KEY } from "./browse";
 import type { OrbContext } from "./context";
 import { iso, loadOrb, newOrbRecord, saveOrb } from "./journal";
 import { SESSIONS_KEY } from "./sessions";
+import { SSH_KEYS_KEY } from "./ssh-keys";
 
 export async function runDelete(ctx: OrbContext, req?: Pick<OpRequest, "snapshotId">): Promise<{ ok: true }> {
   const { container, clock, kv, registry, orbId } = ctx;
@@ -29,6 +31,9 @@ export async function runDelete(ctx: OrbContext, req?: Pick<OpRequest, "snapshot
   }
   await saveOrb(kv, rec, now());
   await kv.delete(SESSIONS_KEY);
+  // A new workspace under this id starts with no SSH keys and no browser sessions of the old one.
+  await kv.delete(SSH_KEYS_KEY);
+  await kv.delete(BROWSE_SESSIONS_KEY);
   // The project snapshot is this workspace's disk under the checkout's name. Drop it only when this
   // workspace made it. The CLI names it snap-<workspace>.
   const snapshotId = req?.snapshotId ?? `snap-${orbId}`;

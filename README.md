@@ -227,8 +227,11 @@ disconnects. A pane that prints keeps the workspace awake, so an agent working
 in herdr is not paused under it; once every pane is quiet for
 `idlePauseMinutes`, the workspace pauses. Connecting wakes it.
 
-The CLI makes one key, `~/.cf-opencode/ssh/id_ed25519`, and installs its public
-half in the workspace on each connect. The host key is made on the workspace's
+The CLI makes one key per machine, `~/.cf-opencode/ssh/id_ed25519`, and sends
+its public half on each SSH connect. The workspace's `~/.ssh/authorized_keys`
+has a cf-opencode block with the keys that connected in the last 30 days, so two
+laptops both work and a machine that stopped connecting drops out. Lines you add
+outside the block stay. The host key is made on the workspace's
 first SSH connect and kept on its disk; a workspace that boots fresh from the
 image gets a new one, so remove the old line from
 `~/.cf-opencode/ssh/known_hosts` then.

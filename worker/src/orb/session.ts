@@ -57,6 +57,7 @@ import { type RebuildTarget, receiveRebuild, runRebuild } from "./rebuild";
 import { LOGTAIL_SH, SSH_PREP_SH } from "./scripts";
 import { readSessions, type SessionList } from "./sessions";
 import { runSpawn, SCRIPT_ENV, sh, WORKSPACE_USER } from "./spawn";
+import { installSshKeys } from "./ssh-keys";
 import { bridge, isPublicKey, type StdioProcess, shellParams } from "./terminal";
 
 export interface OpRunners {
@@ -545,12 +546,15 @@ export class WorkspaceSession extends DurableObject<Env> implements WorkspaceSes
           stdout: "pipe",
         });
       } else {
-        const [cmd, opts] = sh(SSH_PREP_SH, key ? { AUTHORIZED_KEY: key } : {});
-        const prep = await wrapContainer(container).exec(cmd, { ...opts, user: "0:0", timeoutMs: 30_000 });
-        if (prep.exitCode !== 0) {
+        const port = wrapContainer(container);
+        const [cmd, opts] = sh(SSH_PREP_SH);
+        const prep = await port.exec(cmd, { ...opts, user: "0:0", timeoutMs: 30_000 });
+        const keys =
+          prep.exitCode === 0 && key ? await installSshKeys(port, this.kv, key, Date.now()) : undefined;
+        if (prep.exitCode !== 0 || keys) {
           return jsonError(
             500,
-            `sshd setup failed: ${redactLine(prep.stderr.trim() || prep.stdout.trim()).slice(0, 200)}`,
+            `sshd setup failed: ${redactLine(keys ?? (prep.stderr.trim() || prep.stdout.trim())).slice(0, 200)}`,
             "rebuild the image with cf-opencode init",
           );
         }

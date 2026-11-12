@@ -274,8 +274,9 @@ if [ -f "$LOG" ]; then redact "$(tail -n "$N" "$LOG")"; else echo "(no serve log
 `;
 
 /**
- * Prepare sshd for one `sshd -i` connection. Runs as root. Env: AUTHORIZED_KEY (one public key line).
- * Host keys are made once and live on the disk, so a restored workspace keeps its host key.
+ * Prepare sshd for one `sshd -i` connection. Runs as root. Host keys are made once and live on the disk, so
+ * a restored workspace keeps its host key. It does not touch /home/user: the user owns that, and a root write
+ * there follows any symlink the user put in place. ssh-keys.ts writes authorized_keys as the user.
  * Prints "ready".
  */
 export const SSH_PREP_SH = `
@@ -283,14 +284,6 @@ set -eu
 mkdir -p /run/sshd
 chmod 755 /run/sshd
 ls /etc/ssh/ssh_host_*_key >/dev/null 2>&1 || ssh-keygen -A >/dev/null
-K=/home/user/.ssh/authorized_keys
-install -d -m 700 -o 1000 -g 1000 /home/user/.ssh
-touch "$K"
-if [ -n "\${AUTHORIZED_KEY:-}" ] && ! grep -qxF "$AUTHORIZED_KEY" "$K"; then
-  printf '%s\\n' "$AUTHORIZED_KEY" >> "$K"
-fi
-chown 1000:1000 "$K"
-chmod 600 "$K"
 echo ready
 `;
 

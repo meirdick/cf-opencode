@@ -21,6 +21,9 @@
   the Worker's own origin still work.
 - The browser relay `/browse/<workspace>/<session>` serves only sessions that workspace opened. Before, any
   workspace's password reached any browser session on the account.
+- `authorized_keys` in a workspace is no longer append-only. A cf-opencode block holds the CLI keys that
+  connected in the last 30 days; each SSH connect rewrites it, as the workspace user, not root. Keys an
+  earlier release appended (comment `cf-opencode`) are removed; lines you wrote stay.
 
 - Two `connect`s in flight with different inputs no longer share one op. The op journal hashed a field the
   API never sends, so the second caller could attach to the first one's spawn and get its password.
