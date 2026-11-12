@@ -88,6 +88,29 @@ Let workspaces use GitHub. The command reads the token from stdin, or asks for i
 | `--remove` | Delete the token from the Worker. |
 | `--token-file <path>` | A file with a Cloudflare API token. The default is the `wrangler login` or `CLOUDFLARE_API_TOKEN`. |
 
+### skill
+
+```text
+cf-opencode skill [--install --claude | --install --opencode | --install --dir <path>] [--force]
+```
+
+Print the path and the text of the handoff skill. The skill tells a local agent when and how to hand off a task. See [Hand off a task](/guides/hand-off-a-task/#the-handoff-skill-for-agents).
+
+| Flag | Meaning |
+| --- | --- |
+| `--install --claude` | Copy the skill to `~/.claude/skills/cf-opencode-handoff/`. |
+| `--install --opencode` | Copy the skill to `~/.config/opencode/skills/cf-opencode-handoff/`. |
+| `--install --dir <path>` | Copy the skill to `<path>/cf-opencode-handoff/`. |
+| `--force` | Replace a `SKILL.md` there that differs. Without it, the command fails and changes nothing. |
+
+### notify-key
+
+```text
+cf-opencode notify-key
+```
+
+Print the key that signs the `POST` requests to `notifyUrl`. The receiver checks `x-cf-opencode-signature: sha256=<hex HMAC-SHA256 of the body>` with this key. The key comes from the control token. Keep it secret. See [Get a message when a task ends](/guides/hand-off-a-task/#get-a-message-when-a-task-ends).
+
 ### doctor
 
 ```text
@@ -148,10 +171,12 @@ Give a task to OpenCode in the workspace of the current checkout, and return. Th
 | `--title <text>` | The session title. The default comes from the task. |
 | `--model <provider/model>` | The model of the session. The default is the model of the workspace. |
 | `--allow-dirty` | Start anyway. Print what the workspace will not see. |
-| `--wait` | Wait until the task is `done`, `failed` or `waiting`. |
-| `--timeout <minutes>` | How long `--wait` waits. The default is 60. |
+| `--schema <file.json>` | The last message must end with a `json` block that matches this JSON Schema. The result then has `structured`. Only `type`, `properties`, `required`, `items`, `enum` and `additionalProperties: false` are allowed. |
+| `--wait` | Wait until the task is not `running`, then print the result. |
+| `--follow` | As `--wait`, and show the agent's tool calls and messages while it works. |
+| `--timeout <minutes>` | How long `--wait` and `--follow` wait. The default is 60. |
 
-With `--json`, stdout is `{"ok":true,"workspace":"…","session":"ses_…","title":"…","state":"running"}`. With `--wait`, the exit code is 0 for `done`, 1 for `failed`, 2 for `waiting` and 3 for a timeout.
+With `--json`, stdout is `{"ok":true,"workspace":"…","session":"ses_…","title":"…","state":"running"}`. With `--wait --json`, stdout is the result record. With `--follow --json`, stdout is one JSON object for each event, one per line, then the result record. With `--wait` or `--follow`, the exit code is 0 for `done`, 1 for `failed`, 2 for `waiting`, 3 for a timeout and 4 for `stopped`. See [Hand off a task](/guides/hand-off-a-task/#output-for-agents).
 
 ### tasks
 
@@ -159,13 +184,19 @@ With `--json`, stdout is `{"ok":true,"workspace":"…","session":"ses_…","titl
 cf-opencode tasks [workspace | session]
 ```
 
-List the tasks that `run` started, newest first. The columns are `WORKSPACE`, `SESSION`, `STATE`, `AGE` and `TITLE`. With a `ses_…` ID, show one task and its last message. The command wakes nothing.
+List the tasks that `run` started. Tasks that ended and that you did not read come first, marked `*`. Then the newest come first. The columns are `WORKSPACE`, `SESSION`, `STATE`, `AGE` and `TITLE`. With a `ses_…` ID, show one task: its state, summary, branch, commits and pull request. This marks the task read. The command wakes nothing.
+
+The states are `running`, `done`, `failed`, `waiting` and `stopped`. `stopped` means that the workspace paused while the task ran.
 
 | Flag | Meaning |
 | --- | --- |
 | `--workspace <id>` | The workspace of the task. The default is the workspace that has the task. |
+| `--unseen` | List only the tasks that ended and that you did not read. |
 | `--wait` | With a session ID: wait until the task is not `running`. The exit codes are the same as for `run --wait`. |
-| `--timeout <minutes>` | How long `--wait` waits. The default is 60. |
+| `--follow` | With a session ID: as `--wait`, and show the agent's progress live. |
+| `--timeout <minutes>` | How long `--wait` and `--follow` wait. The default is 60. |
+
+With a session ID and `--json`, stdout is the result record.
 
 ### list
 

@@ -248,6 +248,53 @@ an open permission or form is `waiting`, an active session is `running`, then
 the session outcome decides `done` or `failed`. `--wait` polls one short GET; it
 never holds a request open while an agent works.
 
+`stopped` is the fifth state, and only a stop sets it: a cold pause, the end of
+a warm period, or a lost container, with the task still `running`. The pause
+reads the tasks and their git facts one last time before it stops opencode, so
+the saved copy says `stopped`, not `running`. After the wake, OpenCode reports
+the session as interrupted; that keeps `stopped`, since it is the same stop.
+Continuing the session makes it `running` again.
+
+### The result record
+
+`task-result.ts` builds one record from the saved task, so a paused workspace
+answers it and every client (the CLI, `notifyUrl`, an MCP or A2A layer) gets
+the same object. `branch`, `commits`, `changedFiles` and `pullRequest` are
+facts: `TASK_GIT_SH` reads them with git (and `gh pr view`) in the checkout,
+never from the agent's text. `run` records `HEAD` when it starts the session;
+the task's commits are `base..HEAD` with a commit time at or after the start, so
+commits a branch checkout brings from origin are not counted. Git runs while a
+task runs (on a read of that one task) and once more, with `gh`, when it ends.
+A task that ends with no commit is `done`: many tasks are research.
+
+`run --schema` keeps the schema with the task in the Durable Object, so
+validation does not depend on the machine that started it. The subset
+(`core/json-subset.ts`) is small on purpose and refuses every other keyword,
+so a check is never silently skipped. The CLI keeps a copy of the keyword check
+only to fail before the wake.
+
+### Push
+
+`--follow` reads OpenCode's own event stream (`GET /api/event`) through the
+`/oc` proxy. The proxy wakes a paused workspace, so the stream opens only while
+the task API says the task runs in a live workspace, and the end is always
+confirmed with the task API, not inferred from an event.
+
+`notifyUrl` is driven by the Durable Object alarm, not by a watcher in the
+workspace. The alarm runs with the laptop closed and outlives the container; a
+watcher would die with each pause and need its own start, restart and auth.
+Any read that sees a task change to an end state (the alarm's refresh, a
+client's read, the pause's last read) queues a delivery on the task in the same
+storage write. The alarm sends what is due, retries after 1, 5 and 30 minutes,
+and stays armed while a delivery waits, also for a paused workspace. A newer
+change replaces a waiting delivery, so a receiver never gets an old state
+after a new one. The body is signed with a key derived from the control token,
+like the workspace password, so it is never stored.
+
+The inbox is one flag: a task that ends is `unseen` until a read of that one
+task with `seen=1` (`tasks <ses_…>`, or the last read of `--wait` and
+`--follow`). Lists and polls do not clear it.
+
 ## The agent knows the machine
 
 The serve script writes `~/.config/opencode/AGENTS.md` on each wake: `sudo
