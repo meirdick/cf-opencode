@@ -27,8 +27,12 @@ export class ProviderEgress extends WorkerEntrypoint<Env, EgressProps> {
 export class AiEgress extends WorkerEntrypoint<Env, { gateway: string }> {
   override fetch(req: Request): Promise<Response> {
     let searchProvider: string | undefined;
+    // A config that does not parse counts as lockdown: refuse pages rather than guess the install allows them.
+    let lockdown = true;
     try {
-      searchProvider = parseConfig(this.env.CF_OPENCODE_CONFIG).searchProvider;
+      const cfg = parseConfig(this.env.CF_OPENCODE_CONFIG);
+      searchProvider = cfg.searchProvider;
+      lockdown = cfg.lockdown;
     } catch {
       // A bad config already fails every control request with its own message. Search uses Cloudflare's default.
     }
@@ -38,6 +42,7 @@ export class AiEgress extends WorkerEntrypoint<Env, { gateway: string }> {
       this.ctx.props.gateway,
       searchProvider,
       this.env.BROWSER as unknown as PageRunner | undefined,
+      { lockdown },
     );
   }
 }

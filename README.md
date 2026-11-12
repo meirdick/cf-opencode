@@ -303,7 +303,10 @@ The container has general internet, so a workspace can clone and install.
 Provider hosts are still intercepted, so that internet does not let a key leak.
 
 `lockdown: true` in the config is the old behaviour: no general internet, only
-the provider hosts whose secret is set. It is off unless you set it.
+the provider hosts whose secret is set. It is off unless you set it. With it on,
+`cf-opencode-fetch` is refused, because Browser Run would load any URL for the
+workspace. Models and `cf-opencode-search` still work, and a search query
+leaves the account for the search provider.
 
 The Worker URL is on the internet. Two secrets protect it: the control token
 for `/v1`, and a per-workspace password for `/oc/<id>`, `/shell/<id>`,

@@ -57,6 +57,8 @@ Set `lockdown` to `true` in `~/.cf-opencode/config.json`, then run `cf-opencode 
 
 Interception of provider hosts is on either way. You cannot configure it.
 
+With lockdown on, `cf-opencode-fetch` is refused: it loads any URL through the Worker's Browser Run binding, which is general internet. Models and `cf-opencode-search` still work. A search query leaves the account for the search provider, so a workspace can still put data in a query.
+
 ## Logs
 
 The container redacts `opencode serve` logs before they leave it. `cf-opencode logs` shows the redacted log.

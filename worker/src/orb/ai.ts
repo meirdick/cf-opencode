@@ -76,9 +76,16 @@ export async function handleAi(
   gateway: string,
   searchProvider?: string,
   browser?: PageRunner,
+  opts: { lockdown?: boolean } = {},
 ): Promise<Response> {
   const path = new URL(req.url).pathname;
-  if (req.method === "POST" && path === PAGE_PATH) return handlePage(req, browser);
+  if (req.method === "POST" && path === PAGE_PATH) {
+    // AI_HOST is intercepted even with lockdown on. /page loads any URL, which is the general internet that
+    // lockdown turns off, and a way to send data to any site in the URL.
+    if (opts.lockdown)
+      return aiError(403, "lockdown is on, so the workspace cannot read web pages; set lockdown to false");
+    return handlePage(req, browser);
+  }
   if (!ai) return aiError(503, "the Worker has no AI binding; redeploy with cf-opencode init");
   if (req.method === "POST" && path === SEARCH_PATH) return handleSearch(req, ai, gateway, searchProvider);
   if (req.method !== "POST" || !PATHS.has(path)) return aiError(404, `no AI route ${req.method} ${path}`);

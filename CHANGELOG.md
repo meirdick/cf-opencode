@@ -28,6 +28,8 @@
   every part of the ssh `ProxyCommand`. Before, a `--url` with a `"` ran shell on this machine.
 - The image no longer pipes the OpenCode installer script to bash. It downloads the linux x64 release asset
   the installer uses and checks it against a pinned SHA-256 (`OPENCODE_SHA256`); a mismatch fails the build.
+- With `lockdown: true`, `cf-opencode-fetch` is refused. It loaded any URL through Browser Run, which got
+  around lockdown's "no general internet".
 
 - Two `connect`s in flight with different inputs no longer share one op. The op journal hashed a field the
   API never sends, so the second caller could attach to the first one's spawn and get its password.
