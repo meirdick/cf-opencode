@@ -111,6 +111,12 @@ export class ControlClient {
       if (res.ok)
         throw new CliError(`${this.url}${path} did not answer JSON`, "check the URL with cf-opencode doctor");
     }
+    // The Worker says only "Unauthorized" to a wrong token. The fix is known here.
+    if (res.status === 401)
+      throw new CliError(
+        "the Worker refused the control token on this machine",
+        "copy ~/.cf-opencode/control-token from the machine that ran cf-opencode init, or run cf-opencode init --adopt",
+      );
     if (!res.ok) {
       const err = parsed && typeof parsed === "object" && "error" in parsed ? String(parsed.error) : text;
       // A Worker error is a whole "Failed: … — fix: …" line already; CliError keeps it as it is.

@@ -17,7 +17,7 @@ import { isWorkspacePassword, unauthorized, workspaceGate } from "./gate";
 import { connectCdp, relay, SESSION_ID_RE } from "./orb/browse";
 import type { SessionList } from "./orb/sessions";
 
-export const API_VERSION = "0.1.0";
+export const API_VERSION = "0.1.1";
 
 /** Workspace ids: start with a letter or digit, then letters, digits, _ or -. */
 export const WORKSPACE_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
@@ -97,12 +97,13 @@ async function checkAuth(req: Request, env: Env): Promise<Response | null> {
   const want = env.CONTROL_TOKEN;
   if (!want) return notFound(req);
   const m = /^Bearer\s+(\S+)\s*$/i.exec(req.headers.get("authorization") ?? "");
+  // The same bare answer for every path and every wrong token. It names no product, no secret and no
+  // route, so a visitor to the Worker URL learns nothing about what runs here. The CLI adds the fix line.
   if (!m?.[1] || !(await timingSafeEqualStr(m[1], want))) {
-    return fail(
-      401,
-      "missing or wrong bearer token",
-      "set CF_OPENCODE_CONTROL_TOKEN to the CONTROL_TOKEN secret",
-    );
+    return new Response('{"error":"Unauthorized"}', {
+      status: 401,
+      headers: { "content-type": "application/json", "www-authenticate": "Bearer" },
+    });
   }
   return null;
 }

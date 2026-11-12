@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.1 (2026-11-12)
 
 - `cf-opencode-search` in the workspace: web search through the account's AI binding and AI Gateway, with no
   key. Setting `searchProvider` (default `exa`).
@@ -10,6 +10,8 @@
 
 ### Security
 
+- A visitor to the Worker URL without the control token gets one bare `401 Unauthorized` for every path. The
+  answer no longer names the product, the secret or the route.
 - The Worker checks the workspace password itself before it calls a workspace's Durable Object. A request
   to `/oc`, `/browse`, `/shell` or `/ssh` with no password or a wrong one is a 401 that costs one Worker
   request; before, it created a Durable Object for any id it named. Passwords are derived from the control
