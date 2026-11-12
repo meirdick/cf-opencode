@@ -80,6 +80,14 @@ async function harness(
       h.forwarded.push({ port, req });
       const url = new URL(req.url);
       if (url.pathname === "/go") return new Response(null, { status: 302, headers: { location: "/login" } });
+      if (url.pathname === "/sw.js")
+        return new Response("self.onfetch = () => {}", {
+          headers: {
+            "content-type": "text/javascript",
+            "service-worker-allowed": "/",
+            "clear-site-data": '"cookies"',
+          },
+        });
       return new Response(`hello from ${port}${url.pathname}`, { headers: { "content-type": "text/plain" } });
     },
     touch: () => {
@@ -293,6 +301,26 @@ describe("private preview", () => {
     );
     expect(res.status).toBe(502);
     expect(await res.text()).toContain("0.0.0.0");
+  });
+
+  it("drops response headers that would act on the whole Worker origin", async () => {
+    const h = await harness();
+    const res = await handlePreview(
+      h.deps,
+      previewReq({ path: "/sw.js" }, { headers: { cookie: await cookieFor("demo", 3000) } }),
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("text/javascript");
+    expect(res.headers.get("service-worker-allowed")).toBeNull();
+    expect(res.headers.get("clear-site-data")).toBeNull();
+    const k = await previewKey(CONTROL);
+    const made = await addShare(h.kv, 3000, new Date(T0).toISOString(), 4096, k, "demo");
+    if (!made.ok) throw new Error(made.error);
+    const pub = await handlePreview(
+      h.deps,
+      previewReq({ kind: "public", port: undefined, token: made.share.token, path: "/sw.js" }),
+    );
+    expect(pub.headers.get("service-worker-allowed")).toBeNull();
   });
 
   it("a redirect from the dev server stays under the prefix", async () => {

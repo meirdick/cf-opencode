@@ -301,6 +301,13 @@ function forwardHeaders(req: Request, port: number, t: PreviewTarget, prefix: st
   return headers;
 }
 
+/**
+ * Response headers that act on the whole Worker origin, not on the preview's path. A dev server is the agent's (or
+ * a repository's) code. Service-Worker-Allowed: / would let a service worker from a preview control every page of
+ * the origin: other previews, sign-in links, /oc. Clear-Site-Data would sign the browser out of every preview.
+ */
+const ORIGIN_WIDE = ["service-worker-allowed", "clear-site-data"];
+
 async function forward(
   deps: PreviewDeps,
   port: number,
@@ -329,9 +336,11 @@ async function forward(
   if (!prefix || res.webSocket) return res;
   const location = res.headers.get("location");
   const moved = location === null ? null : prefixLocation(location, port, prefix);
-  if (moved === null) return res;
+  const origin = ORIGIN_WIDE.some((h) => res.headers.has(h));
+  if (moved === null && !origin) return res;
   const out = new Response(res.body, res);
-  out.headers.set("location", moved);
+  if (moved !== null) out.headers.set("location", moved);
+  for (const h of ORIGIN_WIDE) out.headers.delete(h);
   return out;
 }
 
