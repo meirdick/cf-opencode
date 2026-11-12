@@ -10,6 +10,11 @@
 
 ### Security
 
+- The Worker checks the workspace password itself before it calls a workspace's Durable Object. A request
+  to `/oc`, `/browse`, `/shell` or `/ssh` with no password or a wrong one is a 401 that costs one Worker
+  request; before, it created a Durable Object for any id it named. Passwords are derived from the control
+  token, so the check needs no state. The control API refuses a spawn with any other password.
+
 - Two `connect`s in flight with different inputs no longer share one op. The op journal hashed a field the
   API never sends, so the second caller could attach to the first one's spawn and get its password.
 
