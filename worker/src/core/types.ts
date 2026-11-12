@@ -44,7 +44,7 @@ export interface OpRecord {
   /** Same value as workspaceId. Copied modules read orbId. */
   orbId: string;
   op: WorkspaceOp;
-  inputsHash: string; // sha256(op, snapshotId, image, passwordSha) → identical in-flight inputs share an op
+  inputsHash: string; // journal.hashInputs: sha256 of the op inputs, password by its sha → identical in-flight inputs share an op
   phase: OpPhase;
   startedAt: string; // ISO
   finishedAt?: string;

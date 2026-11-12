@@ -26,10 +26,28 @@ export async function tokenSha(token: string): Promise<string> {
   return (await sha256Hex(token)).slice(0, 16);
 }
 
-/** sha256(op, snapshotId, image, tokenSha). Identical in-flight inputs share one op. */
+/**
+ * sha256 of every input that changes what an op does. Identical in-flight inputs share one op; a spawn with
+ * another password or directory must not, or its caller gets the other caller's result. The API sends
+ * `password`; `token` is the name copied modules use. Only the password's sha goes into the hash.
+ */
 export async function hashInputs(req: OpRequest): Promise<string> {
-  const ts = req.token ? await tokenSha(req.token) : "";
-  return sha256Hex(JSON.stringify([req.op, req.snapshotId ?? "", req.image ?? "", ts]));
+  const secret = req.password ?? req.token;
+  const ts = secret ? await tokenSha(secret) : "";
+  return sha256Hex(
+    JSON.stringify([
+      req.op,
+      req.snapshotId ?? "",
+      req.image ?? "",
+      ts,
+      req.directory ?? "",
+      req.repoUrl ?? "",
+      req.branch ?? "",
+      req.gitName ?? "",
+      req.gitEmail ?? "",
+      req.workerUrl ?? "",
+    ]),
+  );
 }
 
 /** Redact sk- keys, Bearer values, JWTs and long opaque runs. Same rules as the scripts. */

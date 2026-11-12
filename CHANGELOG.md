@@ -8,6 +8,11 @@
   Browser Run binding.
 - The image has the Python `websocket` module, for the browser session's Chrome DevTools Protocol.
 
+### Security
+
+- Two `connect`s in flight with different inputs no longer share one op. The op journal hashed a field the
+  API never sends, so the second caller could attach to the first one's spawn and get its password.
+
 ## 0.1.0 (2026-11-12)
 
 First release. One package, `cf-opencode`: the CLI. It carries the Worker source and the workspace image,
