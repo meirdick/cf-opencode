@@ -4,12 +4,13 @@
 
 - `cf-opencode mcp`: an MCP server over stdio with the tools `handoff_task`, `get_task`, `wait_task` and
   `list_tasks`. A local agent (Claude Code, OpenCode, any MCP client) hands off a task and gets the task record as
-  structured content. It speaks MCP 2026-07-28 and answers `initialize` for 2025-11-25 and 2025-06-18 clients.
+  structured content: `get_task` and `wait_task` return the result record in `result`. It speaks MCP 2026-07-28 and answers `initialize` for 2025-11-25 and 2025-06-18 clients.
 - A2A endpoint on the Worker, off by default (setting `a2a`). The Agent Card is at
   `/.well-known/agent-card.json`; the JSON-RPC endpoint `/a2a` takes the control token as a bearer token. It
   speaks A2A 1.0: `SendMessage` starts a task in the workspace that `message.metadata.workspace` names, and wakes
-  it when it is paused; `GetTask`, `CancelTask` and `ListTasks` read and stop tasks. Streaming and push
-  notifications are not supported.
+  it when it is paused; `GetTask`, `CancelTask` and `ListTasks` read and stop tasks. A blocking `SendMessage`
+  waits 5 minutes at most. `GetTask` builds the task from the result record. Streaming and push notifications
+  are not supported.
 - `cf-opencode-search` in the workspace: web search through the account's AI binding and AI Gateway, with no
   key. Setting `searchProvider` (default `exa`).
 - `cf-opencode-fetch` in the workspace: a page as Markdown, links, HTML, a screenshot or a PDF, through the
@@ -33,11 +34,11 @@
 - A fifth task state, `stopped`: the workspace paused while the task ran. Its facts are read before the pause.
   Exit code 4 with `--wait` and `--follow`.
 - `tasks` marks a task that ended with `*` until one `tasks <ses_…>` reads it; `tasks --unseen` lists only those.
-- Setting `notifyUrl` (https, empty by default): when a task leaves `running`, the Worker's alarm POSTs its
-  result record there, signed with `x-cf-opencode-signature: sha256=<HMAC>`; the key is `cf-opencode
-  notify-key`. Retries after 1, 5 and 30 minutes, also while the workspace is paused. `tasks <ses_…>` shows
-  the outcome.
-- `cf-opencode-notify "<text>"` in the workspace posts a note to `notifyUrl` through the Worker.
+- `cf-opencode notify-url`: when a task leaves `running`, the Worker's alarm POSTs its result record to this
+  URL, signed with `x-cf-opencode-signature: sha256=<HMAC>`; the key is `cf-opencode notify-key`. Retries after
+  1, 5 and 30 minutes, also while the workspace is paused. `tasks <ses_…>` shows the outcome. The URL is the
+  Worker secret `NOTIFY_URL`, read from stdin or a hidden prompt, never an argument; `--remove` deletes it.
+- `cf-opencode-notify "<text>"` in the workspace posts a note to the notify URL through the Worker.
 - `cf-opencode init` installs the handoff skill for Claude Code and OpenCode when their config folder exists
   on the machine. It asks first on a terminal; `--no-skill` skips it. A file that differs is left alone.
 - `cf-opencode skill` prints the handoff skill for agents; `--install --claude`, `--opencode` or `--dir` copies
@@ -86,6 +87,32 @@
 - With `lockdown: true`, `cf-opencode-fetch` is refused. It loaded any URL through Browser Run, which got
   around lockdown's "no general internet".
 
+- Previews: the Worker checks the workspace password, the preview cookie, the sign-in ticket and the public
+  token itself before it calls a Durable Object. Before, an anonymous request to `/preview/<id>/…`,
+  `/preview/<id>/link` or `/public/<id>/…` created a Durable Object for any id it named. A public token now
+  carries its own HMAC over the workspace.
+- A dev server's `Service-Worker-Allowed` and `Clear-Site-Data` no longer reach the browser. With the first, a
+  service worker from one preview could control every page of the Worker's origin.
+- `/shell`, `/ssh` and `/browse` also refuse a browser request from the Worker's own origin (any request with
+  `Sec-Fetch-Site`). A preview page is on that origin.
+- The notify URL is a Worker secret (`cf-opencode notify-url`), not the `notifyUrl` setting: a webhook URL
+  often holds its own secret, and the setting was readable in the dashboard and in `status --json`. `status`
+  and `doctor` say only whether it is set. It must be https to a public host name, not an IP address,
+  `localhost` or an internal name. A `notifyUrl` key left in `~/.cf-opencode/config.json` fails with the fix.
+- A blocking A2A `SendMessage` holds a Worker request for 5 minutes at most, not 60.
+- Egress that adds a secret (a provider key, the GitHub token) no longer follows a redirect with the secret
+  on it. The redirect goes back to the container.
+- The CLI prints terminal control characters in text from a workspace (task titles and summaries, branch
+  names, commit subjects, file names, `--follow` events, session titles, logs, errors) as `?`. An escape
+  sequence there could write the clipboard or rewrite the terminal. The `--follow` stream buffers are bounded.
+- Tab completion offers only plain words. A file named `$(cmd).json` in `~/.cf-opencode/workspaces` put shell
+  on the bash command line.
+- `preview --web` opens only a link on the Worker's preview path with plain characters; on Windows the opener
+  is `cmd /c start`.
+- The `run --schema` check uses own keys only (a required `constructor` passed before), and a json block
+  nested deep enough to throw is a `structuredError` instead of stopping every task read of the workspace.
+  The Worker cuts the failure reason, the summary and each changed file name, since the agent can answer for
+  the scripts that read them.
 - Two `connect`s in flight with different inputs no longer share one op. The op journal hashed a field the
   API never sends, so the second caller could attach to the first one's spawn and get its password.
 

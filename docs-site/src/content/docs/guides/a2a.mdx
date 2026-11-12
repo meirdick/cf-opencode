@@ -78,7 +78,7 @@ The rules:
 - The workspace clones from the Git remote. It does not see changes that are not committed or pushed.
 - The Worker adds the same closing instruction as `cf-opencode run`: commit, push the branch, open a pull request, and end with a `Result:` line.
 
-Without `returnImmediately`, `SendMessage` waits until the task is not working, as the spec requires. It waits 60 minutes at most, then returns the task as it is. Coding tasks often take longer. Send `"returnImmediately": true` and poll with `GetTask`.
+Without `returnImmediately`, `SendMessage` waits until the task is not working, as the spec requires. It waits 5 minutes at most, then returns the task as it is, often still working: one request is not held open for a coding task's hours. Send `"returnImmediately": true` and poll with `GetTask`.
 
 The result is a task:
 

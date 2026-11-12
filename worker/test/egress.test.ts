@@ -72,6 +72,10 @@ describe("rewriteEgress", () => {
       gh,
     ) as Request;
     expect(api.headers.get("authorization")).toBe("Bearer ghp_real");
+    // A redirect goes back to the container, which follows it itself: the Worker never sends a secret on to
+    // the host a redirect names (api.github.com sends release downloads to another host).
+    expect(git.redirect).toBe("manual");
+    expect(api.redirect).toBe("manual");
     expect(providerEnv(gh)).toEqual({ GH_TOKEN: PLACEHOLDER });
     expect(activeRoutes(gh).map((r) => r.host)).toEqual(["github.com", "api.github.com"]);
   });

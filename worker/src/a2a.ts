@@ -11,6 +11,7 @@
 import type { WorkspaceSessionApi } from "./api";
 import { parseConfig } from "./core/config";
 import type { Env } from "./env";
+import type { TaskResult } from "./orb/task-result";
 import { parseTaskInput, type TaskRecord } from "./orb/tasks";
 
 export const AGENT_CARD_PATH = "/.well-known/agent-card.json";
@@ -19,8 +20,12 @@ export const A2A_RPC_PATH = "/a2a";
 export const A2A_VERSION = "1.0";
 /** The task text is capped at 32 000 characters; UTF-8 may need four bytes for one. Same as /v1 tasks. */
 export const MAX_A2A_BODY = 160 * 1024;
-/** §3.2.2: a blocking SendMessage waits for the task to leave working. It gives up after this. */
-export const BLOCKING_WAIT_MS = 60 * 60_000;
+/**
+ * §3.2.2: a blocking SendMessage waits for the task to leave working. It gives up after this and returns the task
+ * as it is (often still working): one Worker request is not held open for a coding task's hours. Clients poll
+ * GetTask, or send returnImmediately.
+ */
+export const BLOCKING_WAIT_MS = 5 * 60_000;
 export const POLL_MS = 10_000;
 
 const WORKSPACE_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
@@ -28,7 +33,9 @@ const TASK_ID_RE = /^([A-Za-z0-9][A-Za-z0-9_-]{0,127}):(ses[A-Za-z0-9_-]{1,100})
 const BRANCH_RE = /^[A-Za-z0-9._/-]{1,128}$/;
 const TEXT_TYPES = new Set(["text/plain", "text/markdown"]);
 
-type A2aSession = Pick<WorkspaceSessionApi, "startTaskAwake" | "tasks" | "cancelTask">;
+/** `task` gives the result record (task-result.ts); a session without it is read from the list. */
+type A2aSession = Pick<WorkspaceSessionApi, "startTaskAwake" | "tasks" | "cancelTask"> &
+  Partial<Pick<WorkspaceSessionApi, "task">>;
 
 export interface A2aDeps {
   sessionOf: (workspaceId: string) => A2aSession;
@@ -295,7 +302,12 @@ async function sendMessage(id: RpcId, params: Record<string, unknown>, deps: A2a
     return rpcError(id, code, started.error);
   }
   let rec: TaskRecord = started.task;
-  if (config?.returnImmediately !== true) rec = await waitWhileRunning(session, rec, deps);
+  if (config?.returnImmediately !== true) {
+    rec = await waitWhileRunning(session, rec, deps);
+    // The wait ended: answer with the result record (git facts, structured) when the Worker has one.
+    const one = rec.state !== "running" ? await readOne(session, rec.id) : undefined;
+    if (one) return result(id, { task: toA2aTask(workspace, one) });
+  }
   return result(id, { task: toA2aTask(workspace, rec) });
 }
 
@@ -304,9 +316,20 @@ async function getTask(id: RpcId, params: Record<string, unknown>, deps: A2aDeps
   if (!ref) return invalid(id, "id", "a task id is <workspace>:<ses_…>, as SendMessage returned it");
   const history = checkHistoryLength(params.historyLength);
   if (history) return invalid(id, "historyLength", history);
-  const rec = await findTask(deps, ref.workspace, ref.session);
+  const session = deps.sessionOf(ref.workspace);
+  const rec = (await readOne(session, ref.session)) ?? (await findTask(deps, ref.workspace, ref.session));
   if (!rec) return taskNotFound(id);
   return result(id, toA2aTask(ref.workspace, rec));
+}
+
+/**
+ * One task as its result record, when the Durable Object answers with one; else its saved record. The result
+ * record is the same object `tasks <ses_…> --json` and the notify URL get. undefined: no such task.
+ */
+async function readOne(session: A2aSession, sessionId: string): Promise<TaskResult | TaskRecord | undefined> {
+  if (!session.task) return undefined;
+  const one = await session.task(sessionId);
+  return one ? (one.result ?? one.task) : undefined;
 }
 
 async function cancel(id: RpcId, params: Record<string, unknown>, deps: A2aDeps) {
@@ -408,7 +431,7 @@ export function a2aState(state: string): string {
 }
 
 /** Fields a newer task record may carry. Read with care; pass the record through as it is. */
-type AnyRecord = TaskRecord & Record<string, unknown>;
+type AnyRecord = Record<string, unknown> & { id: string; state: string };
 
 const str = (v: unknown): string | undefined => (typeof v === "string" && v.trim() ? v : undefined);
 
@@ -427,16 +450,18 @@ export interface A2aTask {
  */
 export function toA2aTask(
   workspace: string,
-  record: TaskRecord,
+  record: TaskRecord | TaskResult,
   override?: { state: string; note: string },
 ): A2aTask {
-  const r = record as AnyRecord;
+  const r = record as unknown as AnyRecord;
   const taskId = `${workspace}:${r.id}`;
   const state = override?.state ?? a2aState(String(r.state));
   const note = override?.note;
   const summary = str(r.summary) ?? str(r.last);
   const error = str(r.error) ?? str(r.reason);
-  const time = typeof r.updated === "number" ? r.updated : r.started;
+  // A task record has epoch ms; a result record has ISO times.
+  const ms = (v: unknown) => (typeof v === "number" ? v : typeof v === "string" ? Date.parse(v) : Number.NaN);
+  const time = Number.isFinite(ms(r.updated)) ? ms(r.updated) : ms(r.started);
   let say: string | undefined;
   if (note) say = note;
   else if (state === "TASK_STATE_INPUT_REQUIRED")

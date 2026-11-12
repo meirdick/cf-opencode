@@ -72,19 +72,22 @@ export function parseConfig(raw: string | undefined): ProviderConfig {
       "Failed: a2a must be true or false — fix: set it in ~/.cf-opencode/config.json, then cf-opencode upgrade",
     );
   }
-  const notifyProblem = checkNotifyUrl(cfg.notifyUrl);
-  if (notifyProblem) {
+  // One way only: the URL is the Worker secret NOTIFY_URL. A key left in the settings file must not be ignored.
+  if (o.notifyUrl !== undefined) {
     throw new Error(
-      `Failed: notifyUrl ${notifyProblem} — fix: set it in ~/.cf-opencode/config.json, then cf-opencode upgrade`,
+      "Failed: notifyUrl is no longer a setting; the URL is a Worker secret now — fix: remove notifyUrl from ~/.cf-opencode/config.json, then run cf-opencode notify-url",
     );
   }
   return cfg;
 }
 
-/** Why notifyUrl is not usable, or undefined. https only; no user or password in it, since URLs get logged. */
+/**
+ * Why a notify URL is not usable, or undefined. https only; no user or password in it, since URLs get logged; and
+ * a public host name, not an IP address, localhost or an internal name. The CLI (notify-url.ts) keeps a copy.
+ */
 export function checkNotifyUrl(v: unknown): string | undefined {
-  if (v === "") return undefined;
-  if (typeof v !== "string" || v.length > 2000) return "must be an https URL up to 2000 characters, or empty";
+  if (typeof v !== "string" || v.length === 0 || v.length > 2000)
+    return "must be an https URL up to 2000 characters";
   let u: URL;
   try {
     u = new URL(v);
@@ -93,6 +96,14 @@ export function checkNotifyUrl(v: unknown): string | undefined {
   }
   if (u.protocol !== "https:") return "must start with https://";
   if (u.username || u.password) return "must not hold a user or password; the POST is signed instead";
+  const host = u.hostname.toLowerCase();
+  if (
+    !host.includes(".") ||
+    /^[0-9.]+$/.test(host) ||
+    host.startsWith("[") ||
+    /\.(localhost|local|internal|home\.arpa)$/.test(host)
+  )
+    return "must name a public host, not an IP address, localhost or an internal name";
   return undefined;
 }
 
@@ -120,7 +131,6 @@ function pick(o: Record<string, unknown>): Partial<ProviderConfig> {
   if (o.model !== undefined) out.model = o.model as string;
   if (o.searchProvider !== undefined) out.searchProvider = o.searchProvider as string;
   if (o.a2a !== undefined) out.a2a = o.a2a as boolean;
-  if (o.notifyUrl !== undefined) out.notifyUrl = o.notifyUrl as string;
   return out;
 }
 

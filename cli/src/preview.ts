@@ -58,6 +58,11 @@ export async function previewLink(
     if (res.status === 404) throw new CliError("this Worker has no preview route", "run cf-opencode upgrade");
     throw new CliError(`preview returned ${res.status}`, `cf-opencode logs ${t.id}`);
   }
+  // The link goes to a browser opener, which is `cmd /c start` on Windows: & | < > ^ % would run there. Take only
+  // a link on this Worker's preview path, in the characters a ticket link has.
+  const prefix = `${t.url.replace(/\/$/, "")}/preview/${encodeURIComponent(t.id)}/`;
+  if (!body.link.startsWith(prefix) || !/^https?:\/\/[A-Za-z0-9._~:/?=-]+$/.test(body.link))
+    throw new CliError("the Worker sent a sign-in link this CLI does not open", "cf-opencode upgrade");
   if (!body.awake)
     throw new CliError(
       `${t.id} is paused, and a dev server does not survive a pause`,

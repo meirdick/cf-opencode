@@ -13,6 +13,7 @@ import {
   expiresSoon,
   gitToken,
   listWorkspaces,
+  notifyUrl,
   renderChecks,
   renderList,
   uninstall,
@@ -35,7 +36,7 @@ import {
 } from "./skills-sync.js";
 import { notifyKeyCommand, runCommand, skillCommand, tasksCommand } from "./task-commands.js";
 import { forgetHostKey, shell, ssh, sshConfigBlock, sshKey, sshProxy, target } from "./terminal.js";
-import { fmtAge, makeUi, readSecret } from "./ui.js";
+import { fmtAge, makeUi, readSecret, terminalSafe } from "./ui.js";
 import { runProcess } from "./wrangler.js";
 
 const VERSION = "0.1.0";
@@ -224,9 +225,37 @@ const COMMANDS: Record<string, Command> = {
   "notify-key": {
     group: "Set up",
     usage: "notify-key",
-    summary: "Print the key that signs the POSTs to notifyUrl, for the receiver. A secret.",
+    summary: "Print the key that signs the POSTs to the notify URL, for the receiver. A secret.",
     flags: {},
     run: (args) => notifyKeyCommand(args, requireInstall(args)),
+  },
+  "notify-url": {
+    group: "Set up",
+    usage: "notify-url [--remove]",
+    summary: "Set where the Worker POSTs task results and notes. The URL is a Worker secret.",
+    details: [
+      "Reads the URL from stdin, or asks for it on a terminal without echo. Never an argument:",
+      "a webhook URL often holds its own secret.",
+      '  printf %s "$WEBHOOK_URL" | cf-opencode notify-url',
+      "https only, no user or password in it, a public host name. Running workspaces use it at once.",
+      "--remove             delete it from the Worker",
+      "--token-file <path>  Cloudflare API token file (default: wrangler login or CLOUDFLARE_API_TOKEN)",
+    ],
+    flags: { remove: { type: "boolean" }, "token-file": { type: "string" } },
+    run: async (args) => {
+      const ui = makeUi(flagBool(args, "json"));
+      const remove = flagBool(args, "remove");
+      const tokenFile = flagString(args, "token-file");
+      await notifyUrl({
+        remove,
+        run: runProcess,
+        ui,
+        ...(remove ? {} : { url: await readSecret("Notify URL (input hidden): ") }),
+        ...(tokenFile ? { apiToken: readFileSync(tokenFile, "utf8").trim() } : {}),
+      });
+      ui.result({ ok: true, removed: remove });
+      return 0;
+    },
   },
   rebuild: {
     group: "Workspaces",
@@ -628,7 +657,8 @@ export async function main(argv: string[]): Promise<number> {
   } catch (e) {
     if (flagBool(args, "json"))
       process.stdout.write(`${JSON.stringify({ ok: false, error: toFailedLine(e) })}\n`);
-    else process.stderr.write(`${toFailedLine(e)}\n`);
+    // An error can quote the workspace (a clone error, OpenCode's answer).
+    else process.stderr.write(`${terminalSafe(toFailedLine(e))}\n`);
     return 1;
   }
 }
@@ -656,7 +686,7 @@ async function connectCommand(args: ParsedArgs): Promise<number> {
     attach: !flagBool(args, "no-attach"),
     continueLast: flagBool(args, "continue"),
     ...(flagString(args, "session") ? { session: flagString(args, "session") } : {}),
-    onLine: (line) => process.stderr.write(`${line}\n`),
+    onLine: (line) => process.stderr.write(`${terminalSafe(line)}\n`),
     // Off unless asked: a skill can hold local paths, and a copy stays on the workspace disk. --skills copies
     // now. The saved default list is copied only to a workspace that starts from the bare image; a later
     // connect finds them on the disk.
@@ -745,7 +775,9 @@ async function logsCommand(args: ParsedArgs): Promise<number> {
   const { url, token } = requireInstall(args);
   const lines = Number(flagString(args, "lines") ?? "100");
   const { log } = await new ControlClient(url, token).logs(id, lines);
-  process.stdout.write(log.endsWith("\n") ? log : `${log}\n`);
+  // The log tail is the workspace's own output.
+  const safe = terminalSafe(log);
+  process.stdout.write(safe.endsWith("\n") ? safe : `${safe}\n`);
   return 0;
 }
 
@@ -758,7 +790,7 @@ async function opCommand(args: ParsedArgs, op: "pause" | "delete" | "rebuild"): 
   const body: Record<string, unknown> = { op };
   if ((op === "pause" || op === "delete") && local?.snapshotId) body.snapshotId = local.snapshotId;
   const { opId } = await client.submit(id, body);
-  const result = await client.wait(opId, (line) => process.stderr.write(`${line}\n`));
+  const result = await client.wait(opId, (line) => process.stderr.write(`${terminalSafe(line)}\n`));
   if (result.phase === "failed") throw new CliError(result.error ?? `${op} failed`, `cf-opencode logs ${id}`);
   if (op === "delete") {
     // A deleted workspace leaves cf-opencode list; its password is derived, so nothing is lost.

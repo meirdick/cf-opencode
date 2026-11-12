@@ -125,6 +125,23 @@ export async function verifyTicket(
   return { nonce, expiresAt: exp * 1000 };
 }
 
+/**
+ * A public share token: "<nonce><mac>", 22 + 32 base64url characters. The MAC covers the workspace and the nonce,
+ * so the Worker refuses a forged token, or one for another workspace, before it calls a Durable Object. The
+ * Durable Object still decides whether the share exists now and which port it opens: --stop removes it there.
+ */
+export async function signShareToken(key: CryptoKey, workspaceId: string): Promise<string> {
+  const nonce = randomToken(16);
+  return `${nonce}${(await mac(key, "share", workspaceId, nonce)).slice(0, 32)}`;
+}
+
+export async function verifyShareToken(key: CryptoKey, token: string, workspaceId: string): Promise<boolean> {
+  const m = /^([A-Za-z0-9_-]{22})([A-Za-z0-9_-]{32})$/.exec(token);
+  if (!m) return false;
+  const want = (await mac(key, "share", workspaceId, m[1] as string)).slice(0, 32);
+  return timingSafeEqualStr(m[2] as string, want);
+}
+
 /** Every value of the preview cookie in a Cookie header. A browser can send several, one for each path. */
 export function previewCookies(header: string | null): string[] {
   if (!header) return [];

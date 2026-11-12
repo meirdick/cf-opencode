@@ -131,8 +131,11 @@ minutes idle. A workspace with no local password tells the user to connect first
 ## Preview a dev server
 
 A preview exposes a port of a machine that holds the user's code, so it is
-private by default and every check is in the workspace's Durable Object
-(`worker/src/orb/preview.ts`); the Worker only routes (`preview-ingress.ts`).
+private by default. Every credential is checked twice: in the Worker without
+state (`previewGate` in `preview-ingress.ts`), so an anonymous or forged request
+creates no Durable Object, as `gate.ts` does for `/oc`; then in the workspace's
+Durable Object (`worker/src/orb/preview.ts`), which keeps the state: the stored
+password hash, spent tickets, and which public shares exist now.
 
 - Credentials. `/preview/<id>/<port>/` takes the workspace password (Basic),
   the same check as `/oc`, in constant time. A browser cannot send it, so the
@@ -148,6 +151,8 @@ private by default and every check is in the workspace's Durable Object
   same origin, built from the prefix, never from input: no open redirect.
 - The dev server never sees the password, the cookie or our routing header.
   The Worker drops every client `x-cf-opencode-*` header before it sets its own.
+  The browser never gets the dev server's `Service-Worker-Allowed` or
+  `Clear-Site-Data`: both act on the whole origin, not on the preview's path.
 - Ports: 1024-65535, not OpenCode's port, not 22.
 - No wake. A dev server does not survive a pause, so waking would only start
   OpenCode. A paused workspace answers a page that says to connect. A request
@@ -160,8 +165,10 @@ private by default and every check is in the workspace's Durable Object
   domain with wildcard DNS; it is the next step if users have one.
 - Public is explicit. `/public/<id>/<token>/` exists only after `preview
   --public`, which needs the control token: the agent has the workspace
-  password, and must not be able to publish a port. The token is 32 random
-  bytes in the Durable Object, compared in constant time. Cloudflare's own
+  password, and must not be able to publish a port. The token is a 16-byte
+  nonce and an HMAC over the workspace and the nonce (192 bits), so the Worker
+  refuses a forged one alone; the Durable Object keeps the tokens that exist
+  and compares in constant time, so `--stop` ends one. Cloudflare's own
   preview URLs need a custom domain, so this is our mechanism, shaped like the
   token links in the Sandbox previews docs.
 - The agent's browser. Browser Run's `acquire({ outboundByHost })` sends a
@@ -210,9 +217,11 @@ anyone lock the owner out, and it would need a state write per failure, the cost
 this check removes. Volume is Cloudflare's DDoS protection's job.
 
 `/shell`, `/ssh` and `/browse` refuse a request with an `Origin` other than the
-Worker's own: a browser can attach cached Basic credentials to a cross-site
-websocket. `/oc` does not, because OpenCode's web and desktop clients may call it
-from another origin.
+Worker's own, and any request with `Sec-Fetch-Site`, which every current browser
+sends and a page cannot remove: a browser can attach cached Basic credentials to
+a websocket, and a preview page is on the Worker's own origin. `Origin` alone
+cannot tell: Python's websocket client sends the Worker's origin. `/oc` checks
+neither, because OpenCode's web and desktop clients may call it from a browser.
 
 ## The agent is root in its container
 
@@ -305,7 +314,7 @@ Continuing the session makes it `running` again.
 ### The result record
 
 `task-result.ts` builds one record from the saved task, so a paused workspace
-answers it and every client (the CLI, `notifyUrl`, an MCP or A2A layer) gets
+answers it and every client (the CLI, the notify URL, an MCP or A2A layer) gets
 the same object. `branch`, `commits`, `changedFiles` and `pullRequest` are
 facts: `TASK_GIT_SH` reads them with git (and `gh pr view`) in the checkout,
 never from the agent's text. `run` records `HEAD` when it starts the session;
@@ -328,7 +337,7 @@ only to fail before the wake.
 the task API says the task runs in a live workspace, and the end is always
 confirmed with the task API, not inferred from an event.
 
-`notifyUrl` is driven by the Durable Object alarm, not by a watcher in the
+The notify URL is driven by the Durable Object alarm, not by a watcher in the
 workspace. The alarm runs with the laptop closed and outlives the container; a
 watcher would die with each pause and need its own start, restart and auth.
 Any read that sees a task change to an end state (the alarm's refresh, a
@@ -338,6 +347,12 @@ and stays armed while a delivery waits, also for a paused workspace. A newer
 change replaces a waiting delivery, so a receiver never gets an old state
 after a new one. The body is signed with a key derived from the control token,
 like the workspace password, so it is never stored.
+
+The URL itself is the Worker secret `NOTIFY_URL` (`cf-opencode notify-url`), not a
+setting: a webhook URL often holds its own secret, and the settings are a plain
+variable that the dashboard and `/v1/status` show. The Worker reads it at each
+send, so a change needs no redeploy, and checks it again there: https, no user
+or password, a public host name.
 
 The inbox is one flag: a task that ends is `unseen` until a read of that one
 task with `seen=1` (`tasks <ses_…>`, or the last read of `--wait` and
@@ -368,7 +383,10 @@ stored directory, as a wake through `/oc` does (`task-wake.ts`). `CancelTask`
 execs a script that calls OpenCode's `POST /api/session/{id}/interrupt`
 (`task-cancel.ts`). Streaming and push notifications are declared off in the
 card and answer the spec's errors. A blocking `SendMessage` polls the saved
-state, like `tasks --wait`, for at most 60 minutes.
+state, like `tasks --wait`, for at most 5 minutes, then returns the task as it is:
+one Worker request is not held open for a coding task. `GetTask` and the end of a
+blocking wait build the A2A task from the result record when the Durable Object
+has one.
 
 ## The agent knows the machine
 

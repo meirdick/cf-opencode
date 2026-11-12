@@ -1,5 +1,6 @@
-// Worker routes for previews. These only parse and route; the workspace's Durable Object checks every credential
-// (orb/preview.ts). The request reaches it through the Durable Object's fetch(), not RPC, because a dev server's
+// Worker routes for previews. The Worker checks every credential it can check without state (previewGate), so an
+// anonymous or forged request creates no Durable Object; the workspace's Durable Object checks every credential
+// again and keeps the state (orb/preview.ts). The request reaches it through the Durable Object's fetch(), not RPC, because a dev server's
 // hot reload is a websocket, and a websocket does not pass through an RPC return value.
 //
 //   /preview/<id>/<port>/<path>   private preview: workspace password, preview cookie, or one-time link
@@ -13,9 +14,20 @@
 // not a request with no Referer (a websocket for hot reload, a page with Referrer-Policy: no-referrer). A dev
 // server told its base path (Vite: --base /preview/<id>/<port>/) needs no fallback.
 import { WORKSPACE_ID_RE } from "./api";
+import { basicPassword } from "./auth";
 import { type Env, workspaceDoName } from "./env";
-import { type PreviewShare, type PreviewTarget, TARGET_HEADER } from "./orb/preview";
-import { checkPort, dropInternalHeaders } from "./preview-auth";
+import { isWorkspacePassword, unauthorized } from "./gate";
+import { type PreviewShare, type PreviewTarget, page, TARGET_HEADER } from "./orb/preview";
+import {
+  checkPort,
+  dropInternalHeaders,
+  previewCookies,
+  previewKey,
+  TICKET_PARAM,
+  verifyCookie,
+  verifyShareToken,
+  verifyTicket,
+} from "./preview-auth";
 
 export interface PreviewSessionApi {
   fetch(req: Request): Promise<Response>;
@@ -69,6 +81,9 @@ export async function previewIngress(req: Request, env: Env): Promise<Response> 
   if (rest === undefined)
     return new Response(null, { status: 308, headers: { location: `${base}/${url.search}` } });
 
+  const refused = await previewGate(req, env, target, url);
+  if (refused) return refused;
+
   const headers = new Headers(req.headers);
   dropInternalHeaders(headers);
   const full: PreviewTarget = { ...target, path: rest, search: url.search, origin: url.origin };
@@ -80,6 +95,54 @@ export async function previewIngress(req: Request, env: Env): Promise<Response> 
     redirect: "manual",
   });
   return sessionOf(env, target.workspaceId).fetch(forwarded);
+}
+
+/**
+ * The stateless checks, before any Durable Object, as gate.ts does for /oc: a request that cannot be right costs
+ * one Worker invocation and creates no Durable Object. Every credential is an HMAC under a key derived from the
+ * control token, or the derived password, so the Worker can check it alone. The Durable Object checks again and
+ * keeps what needs state: the stored password hash, spent tickets, and which public shares exist now.
+ */
+async function previewGate(
+  req: Request,
+  env: Env,
+  t: Omit<PreviewTarget, "path" | "search" | "origin">,
+  url: URL,
+): Promise<Response | null> {
+  const id = t.workspaceId;
+  if (t.kind === "link") {
+    if (req.method !== "POST") return fail(405, `${req.method} is not allowed here`, "send POST");
+    const password = basicPassword(req.headers.get("authorization"));
+    return (await isWorkspacePassword(env.CONTROL_TOKEN, id, password)) ? null : unauthorized();
+  }
+  const key = await previewKey(env.CONTROL_TOKEN);
+  if (!key)
+    return page(503, "Previews are off", "the Worker has no control token", "run cf-opencode upgrade");
+  const now = Date.now();
+  if (t.kind === "public") {
+    if (await verifyShareToken(key, t.token ?? "", id)) return null;
+    return page(404, "Not found", "no preview at this address", "ask for a new link");
+  }
+  const port = t.port as number;
+  const signIn = `cf-opencode preview ${id} ${port}`;
+  const ticket = url.searchParams.get(TICKET_PARAM);
+  if (ticket !== null) {
+    if (await verifyTicket(key, ticket, id, port, now)) return null;
+    return page(
+      401,
+      "Sign-in link used or expired",
+      "the sign-in link was used or is older than 2 minutes",
+      signIn,
+    );
+  }
+  const password = basicPassword(req.headers.get("authorization"));
+  if (password !== undefined) {
+    if (await isWorkspacePassword(env.CONTROL_TOKEN, id, password)) return null;
+    return page(401, "Wrong password", "the workspace refused the password", `cf-opencode connect ${id}`);
+  }
+  for (const value of previewCookies(req.headers.get("cookie")))
+    if (await verifyCookie(key, value, id, port, now)) return null;
+  return page(401, "Sign in to this preview", "this browser is not signed in to the preview", signIn);
 }
 
 /**

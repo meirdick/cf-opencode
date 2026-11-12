@@ -26,10 +26,12 @@ import {
   WaitTimeout,
   waitTask,
 } from "./tasks.js";
+import { terminalSafe } from "./ui.js";
 
 type Install = { url: string; token: string };
 
-const err = (line: string) => process.stderr.write(`${line}\n`);
+// Progress and notes can quote the workspace; results are made safe where they are rendered.
+const err = (line: string) => process.stderr.write(`${terminalSafe(line)}\n`);
 const out = (line: string) => process.stdout.write(`${line}\n`);
 
 function timeoutMs(args: ParsedArgs): number {
@@ -209,7 +211,7 @@ export async function notifyKeyCommand(args: ParsedArgs, install: Install): Prom
   else {
     out(key);
     err(
-      "Secret: give it only to the receiver of notifyUrl. It checks x-cf-opencode-signature: sha256=<hex HMAC-SHA256 of the body>.",
+      "Secret: give it only to the receiver of the notify URL. It checks x-cf-opencode-signature: sha256=<hex HMAC-SHA256 of the body>.",
     );
   }
   return 0;

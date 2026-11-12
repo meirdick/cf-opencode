@@ -33,7 +33,7 @@ export class AiEgress extends WorkerEntrypoint<Env, { gateway: string; workspace
       return handleNote(req, {
         workspaceId: this.ctx.props.workspaceId,
         controlToken: this.env.CONTROL_TOKEN,
-        rawConfig: this.env.CF_OPENCODE_CONFIG,
+        ...(this.env.NOTIFY_URL ? { notifyUrl: this.env.NOTIFY_URL } : {}),
       });
     let searchProvider: string | undefined;
     // A config that does not parse counts as lockdown: refuse pages rather than guess the install allows them.

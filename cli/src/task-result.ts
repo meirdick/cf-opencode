@@ -1,7 +1,7 @@
 // The result record of a task, as `tasks <session> --json` and `run --wait --json` print it, and its human
 // form. The Worker builds the record (worker/src/orb/task-result.ts); this only reads and shows it.
 import type { RemoteTask, RemoteTaskOne, TaskResult } from "./api.js";
-import { fmtAge } from "./ui.js";
+import { fmtAge, terminalSafe } from "./ui.js";
 
 const iso = (ms: number) => new Date(ms).toISOString();
 
@@ -24,8 +24,12 @@ export function resultOf(workspace: string, one: Pick<RemoteTaskOne, "task" | "r
 const MAX_SUMMARY_LINES = 30;
 const MAX_FILES_SHOWN = 8;
 
-/** State, summary, then branch, commits and pull request when present. */
+/** State, summary, then branch, commits and pull request when present. Safe for a terminal. */
 export function renderResult(r: TaskResult, o: { live?: boolean; at?: string; now?: number } = {}): string {
+  return terminalSafe(resultLines(r, o).join("\n"));
+}
+
+function resultLines(r: TaskResult, o: { live?: boolean; at?: string; now?: number }): string[] {
   const now = o.now ?? Date.now();
   const lines = [
     `Task       ${r.id}`,
@@ -66,5 +70,5 @@ export function renderResult(r: TaskResult, o: { live?: boolean; at?: string; no
   } else if (r.state === "stopped")
     lines.push("The workspace paused under the task. Continue it in OpenCode:");
   lines.push(`Open: cf-opencode connect ${r.workspace} --session ${r.id}`);
-  return lines.join("\n");
+  return lines;
 }

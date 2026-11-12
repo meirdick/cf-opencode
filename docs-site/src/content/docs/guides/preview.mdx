@@ -102,7 +102,7 @@ There is no public URL until you run `--public`. These commands need the control
 - A preview does not wake a paused workspace. A dev server stops when the workspace pauses. Run `cf-opencode connect`, then start the dev server again.
 - A request through a preview counts as use. An open preview that loads pages keeps the workspace awake.
 - The preview is under the path `/preview/<workspace>/<port>/`. A page that loads an absolute path, such as `/assets/app.js`, asks for a path outside the preview. The Worker sends most of these requests back to the preview. Hot reload can fail to connect. Reload the page by hand, or set the base path of the dev server. For Vite, add `--base /preview/<workspace>/<port>/`.
-- All previews use the same origin as the Worker. A page in one preview can read another preview that the same browser is signed in to. Do not open code that you do not trust in that browser.
+- All previews use the same origin as the Worker. A page in one preview can read another preview that the same browser is signed in to. It can also call `/oc` if the browser has a workspace password cached, which happens only when you type one into a browser prompt. It cannot open `/shell`, `/ssh` or `/browse`. Do not open code that you do not trust in that browser profile. See [Security and trust](/concepts/security/#previews).
 
 ## Errors
 

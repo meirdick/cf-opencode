@@ -111,6 +111,19 @@ describe("cross-site requests", () => {
     expect(getByName).not.toHaveBeenCalled();
   });
 
+  it("a page on the Worker's own origin (a preview) cannot open a terminal or a browser either", async () => {
+    const { env, getByName } = envWithStub();
+    const pw = await workspacePassword(TOKEN, "demo");
+    for (const site of ["same-origin", "same-site", "cross-site", "none"]) {
+      for (const [path, init] of browserRoutes) {
+        const headers = { ...(init.headers as object), origin: "https://w.example", "sec-fetch-site": site };
+        const res = await handleApi(req(path, { ...init, headers }, basic(pw)), env);
+        expect(res.status, `${site} ${path}`).toBe(403);
+      }
+    }
+    expect(getByName).not.toHaveBeenCalled();
+  });
+
   it("no Origin (the CLI, ssh, curl) and the Worker's own origin pass", async () => {
     const { env, getByName } = envWithStub();
     const pw = await workspacePassword(TOKEN, "demo");

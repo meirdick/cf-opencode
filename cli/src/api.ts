@@ -110,7 +110,7 @@ export class ControlClient {
   async installStatus(): Promise<{
     version: string;
     config: unknown;
-    bindings?: { ai: boolean; browser: boolean; github?: boolean };
+    bindings?: { ai: boolean; browser: boolean; github?: boolean; notify?: boolean };
   }> {
     return this.get("/v1/status");
   }

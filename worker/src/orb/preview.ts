@@ -19,8 +19,8 @@ import {
   dropInternalHeaders,
   previewCookies,
   previewPrefix,
-  randomToken,
   signCookie,
+  signShareToken,
   signTicket,
   TICKET_PARAM,
   verifyCookie,
@@ -301,6 +301,13 @@ function forwardHeaders(req: Request, port: number, t: PreviewTarget, prefix: st
   return headers;
 }
 
+/**
+ * Response headers that act on the whole Worker origin, not on the preview's path. A dev server is the agent's (or
+ * a repository's) code. Service-Worker-Allowed: / would let a service worker from a preview control every page of
+ * the origin: other previews, sign-in links, /oc. Clear-Site-Data would sign the browser out of every preview.
+ */
+const ORIGIN_WIDE = ["service-worker-allowed", "clear-site-data"];
+
 async function forward(
   deps: PreviewDeps,
   port: number,
@@ -329,9 +336,11 @@ async function forward(
   if (!prefix || res.webSocket) return res;
   const location = res.headers.get("location");
   const moved = location === null ? null : prefixLocation(location, port, prefix);
-  if (moved === null) return res;
+  const origin = ORIGIN_WIDE.some((h) => res.headers.has(h));
+  if (moved === null && !origin) return res;
   const out = new Response(res.body, res);
-  out.headers.set("location", moved);
+  if (moved !== null) out.headers.set("location", moved);
+  for (const h of ORIGIN_WIDE) out.headers.delete(h);
   return out;
 }
 
@@ -364,10 +373,18 @@ export async function addShare(
   port: number,
   nowIso: string,
   serverPort: number,
+  key: CryptoKey | undefined,
+  workspaceId: string,
 ): Promise<{ ok: true; share: PreviewShare } | { ok: false; error: string; status: number }> {
   const checked = checkPort(port, serverPort);
   if ("error" in checked)
     return { ok: false, status: 400, error: `Failed: ${checked.error} — fix: pick the dev server's port` };
+  if (!key)
+    return {
+      ok: false,
+      status: 503,
+      error: "Failed: the Worker has no control token — fix: run cf-opencode upgrade",
+    };
   const shares = await listShares(kv);
   const existing = shares.find((s) => s.port === port);
   if (existing) return { ok: true, share: existing };
@@ -377,7 +394,8 @@ export async function addShare(
       status: 409,
       error: `Failed: ${MAX_SHARES} public previews already exist — fix: remove one with cf-opencode preview <workspace> <port> --stop`,
     };
-  const share = { port, token: randomToken(32), createdAt: nowIso };
+  // The token carries its own MAC (signShareToken), so the Worker refuses a forged one before this object runs.
+  const share = { port, token: await signShareToken(key, workspaceId), createdAt: nowIso };
   await kv.put(SHARES_KEY, [...shares, share]);
   return { ok: true, share };
 }

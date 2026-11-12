@@ -5,7 +5,7 @@ import { join } from "node:path";
 import type { ControlClient, RemoteSession } from "./api.js";
 import { readWorkspace, stateDir } from "./config.js";
 import { toFailedLine } from "./errors.js";
-import { fmtAge, table } from "./ui.js";
+import { fmtAge, table, terminalSafe } from "./ui.js";
 
 export interface SessionRow extends RemoteSession {
   workspace: string;
@@ -17,12 +17,17 @@ export interface SessionsResult {
   workspaces: { id: string; live: boolean; at?: string; error?: string }[];
 }
 
+const WORKSPACE_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
+
 export function localWorkspaceIds(): string[] {
   try {
-    return readdirSync(join(stateDir(), "workspaces"))
-      .filter((f) => f.endsWith(".json"))
-      .map((f) => f.slice(0, -5))
-      .filter((id) => Boolean(readWorkspace(id)));
+    return (
+      readdirSync(join(stateDir(), "workspaces"))
+        .filter((f) => f.endsWith(".json"))
+        .map((f) => f.slice(0, -5))
+        // A file name is not trusted: only a workspace id goes on to a URL, a completion or a terminal.
+        .filter((id) => WORKSPACE_ID_RE.test(id) && Boolean(readWorkspace(id)))
+    );
   } catch {
     return [];
   }
@@ -78,5 +83,5 @@ export function renderSessions(r: SessionsResult, now = Date.now()): string {
   if (none.length > 0)
     lines.push(`No list saved yet (it is saved on each pause): ${none.map((w) => w.id).join(", ")}`);
   for (const w of r.workspaces.filter((x) => x.error)) lines.push(`! ${w.id}: ${w.error}`);
-  return lines.join("\n");
+  return terminalSafe(lines.join("\n"));
 }

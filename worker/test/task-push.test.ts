@@ -1,4 +1,4 @@
-// The result record, the git facts, the stopped state, the unseen mark and the notifyUrl push.
+// The result record, the git facts, the stopped state, the unseen mark and the notify URL push.
 import { execFile, spawnSync } from "node:child_process";
 import { createHmac } from "node:crypto";
 import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
@@ -38,9 +38,12 @@ const spawnReq = { op: "spawn" as const, password: "tok-123456" };
 type Saved = { tasks: TaskRecord[]; at?: string };
 
 /** OpenCode and git in the fake container. `status` and `git` may change between calls. */
-function workspace(config: Record<string, unknown> = {}) {
+function workspace(o: Record<string, unknown> & { notifyUrl?: string } = {}) {
+  const { notifyUrl, ...config } = o;
   const h = makeOrbCtx({ config });
   h.ctx.env.CONTROL_TOKEN = "control";
+  // The notify URL is the Worker secret NOTIFY_URL, not a setting.
+  if (notifyUrl) h.ctx.env.NOTIFY_URL = notifyUrl;
   const io = {
     status: { active: [] as string[], sessions: {} as Record<string, unknown> },
     git: { tasks: {} } as Record<string, unknown>,
@@ -141,6 +144,26 @@ describe("result record", () => {
     } satisfies TaskResult);
   });
 
+  it("bounds every field the workspace writes: the agent is root and can answer for the scripts", () => {
+    const big = "z".repeat(200_000);
+    const base: TaskRecord = { id: "ses_1", title: "t", started: 0, state: "running", base: SHA("a") };
+    const [failed] = applyStatus(
+      [base],
+      { active: [], sessions: { ses_1: { found: true, outcome: "failed", reason: big, last: big } } },
+      1,
+    );
+    const [withFacts] = applyFacts(
+      [failed as TaskRecord],
+      {
+        branch: big,
+        pullRequest: `https://${big}`,
+        tasks: { ses_1: { commits: [], changedFiles: Array.from({ length: 500 }, () => big) } },
+      },
+      new Set(["ses_1"]),
+    );
+    expect(JSON.stringify(withFacts).length).toBeLessThan(60_000);
+  });
+
   it("a task with no commit is done with an empty list; waiting carries the question; failed the error", () => {
     const base: TaskRecord = { id: "ses_1", title: "t", started: 0, state: "running", base: SHA("a") };
     const [done] = applyFacts(
@@ -221,7 +244,7 @@ describe("task lifecycle in the Durable Object", () => {
     expect(JSON.parse(io.gitEnvs[0]?.TASKS ?? "[]")).toEqual([
       { id: "ses_1", base: SHA("a"), since: Math.floor(list.tasks[0]!.started / 1000) },
     ]);
-    // No notifyUrl: nothing is queued.
+    // No notify URL: nothing is queued.
     expect(list.tasks[0]?.notify).toBeUndefined();
 
     // Listing does not clear it; a read without seen does not either; a read with seen does.
@@ -284,7 +307,7 @@ describe("task lifecycle in the Durable Object", () => {
   });
 });
 
-describe("notifyUrl push", () => {
+describe("notify URL push", () => {
   it("POSTs the result record once, signed with the key from the control token", async () => {
     const { h, io } = workspace({ notifyUrl: RECEIVER });
     await started(h);
@@ -343,7 +366,7 @@ describe("notifyUrl push", () => {
     expect(waits).toEqual([60_000, 300_000, 1_800_000, null]);
     const [t] = await saved(h);
     expect(t?.notify).toBeUndefined();
-    expect(t?.notifyError).toBe("notifyUrl did not answer (connection reset); gave up after 4 tries");
+    expect(t?.notifyError).toBe("the notify URL did not answer (connection reset); gave up after 4 tries");
     h.clock.advance(3600_000);
     await deliverDue(h.ctx, r.fetchFn);
     expect(r.got).toHaveLength(4);
@@ -401,13 +424,13 @@ describe("notifyUrl push", () => {
 });
 
 describe("cf-opencode-notify through the Worker", () => {
-  const note = (body: unknown, config = JSON.stringify({ notifyUrl: RECEIVER }), fetchFn?: FetchFn) =>
+  const note = (body: unknown, notifyUrl: string | null = RECEIVER, fetchFn?: FetchFn) =>
     handleNote(
       new Request("http://ai.cf-opencode.internal/notify", { method: "POST", body: JSON.stringify(body) }),
       {
         workspaceId: "app",
         controlToken: "control",
-        rawConfig: config,
+        ...(notifyUrl ? { notifyUrl } : {}),
         ...(fetchFn ? { fetchFn } : {}),
         now: () => 0,
       },
@@ -426,30 +449,56 @@ describe("cf-opencode-notify through the Worker", () => {
     expect(r.got[0]?.headers["x-cf-opencode-event"]).toBe("note");
   });
 
-  it("fails with one line when notifyUrl is empty, the text is empty, or the receiver refuses", async () => {
-    const empty = await note({ text: "x" }, "{}");
+  it("fails with one line when no URL is set, the text is empty, or the receiver refuses", async () => {
+    const empty = await note({ text: "x" }, null);
     expect(empty.status).toBe(400);
     expect(((await empty.json()) as { error: string }).error).toMatch(
-      /^Failed: notifyUrl is not set — fix: /,
+      /^Failed: no notify URL is set — fix: the user runs cf-opencode notify-url/,
     );
+    const internal = await note({ text: "x" }, "https://169.254.169.254/latest", receiver([200]).fetchFn);
+    expect(internal.status).toBe(400);
     expect((await note({ text: " " })).status).toBe(400);
     const refused = await note({ text: "x" }, undefined, receiver([404]).fetchFn);
     expect(((await refused.json()) as { error: string }).error).toMatch(
-      /^Failed: notifyUrl answered HTTP 404 — fix:/,
+      /^Failed: the notify URL answered HTTP 404 — fix:/,
     );
   });
 });
 
-describe("notifyUrl setting", () => {
-  it("is empty by default, https only, with no user or password", () => {
-    expect(parseConfig(undefined).notifyUrl).toBe("");
-    expect(parseConfig(JSON.stringify({ notifyUrl: RECEIVER })).notifyUrl).toBe(RECEIVER);
+describe("notify URL", () => {
+  it("is a Worker secret, not a setting: a notifyUrl key left in the settings fails with the fix", () => {
+    expect(parseConfig(undefined)).not.toHaveProperty("notifyUrl");
+    expect(() => parseConfig(JSON.stringify({ notifyUrl: RECEIVER }))).toThrow(
+      /^Failed: notifyUrl is no longer a setting.* — fix: .*cf-opencode notify-url$/,
+    );
+  });
+
+  it("is https, with no user or password, to a public host name", () => {
+    expect(checkNotifyUrl(RECEIVER)).toBeUndefined();
     expect(checkNotifyUrl("http://x.example.com")).toMatch(/https/);
     expect(checkNotifyUrl("https://u:p@x.example.com")).toMatch(/user or password/);
     expect(checkNotifyUrl("nope")).toMatch(/not a URL/);
-    expect(() => parseConfig(JSON.stringify({ notifyUrl: "http://x" }))).toThrow(
-      /^Failed: notifyUrl must start with https/,
-    );
+    expect(checkNotifyUrl("")).toMatch(/https URL/);
+    for (const bad of [
+      "https://169.254.169.254/latest/meta-data",
+      "https://10.0.0.1/x",
+      "https://[::1]/x",
+      "https://localhost/x",
+      "https://metadata.google.internal/x",
+      "https://printer.local/x",
+      "https://intranet/x",
+    ])
+      expect(checkNotifyUrl(bad), bad).toMatch(/public host/);
+  });
+
+  it("an unusable secret is checked at send time: nothing is sent, and the task says why", async () => {
+    const { h, io } = workspace({ notifyUrl: "https://10.0.0.1/hook" });
+    await started(h);
+    io.status = { active: [], sessions: { ses_1: { found: true, outcome: "succeeded", last: "ok" } } };
+    const r = receiver([200]);
+    await taskTick(h.ctx, r.fetchFn);
+    expect(r.got).toHaveLength(0);
+    expect((await saved(h))[0]?.notifyError).toMatch(/public host.*dropped/);
   });
 });
 

@@ -200,6 +200,50 @@ describe("MCP tools", () => {
     expect(text).toContain(JSON.stringify(r.result.structuredContent));
   });
 
+  it("get_task and wait_task answer with the result record, built from the task when the Worker sends none", async () => {
+    const result = {
+      id: "ses_1",
+      workspace: "app",
+      state: "done" as const,
+      title: "Fix login",
+      summary: "Result: fixed",
+      branch: "fix-login",
+      commits: [{ sha: "b".repeat(40), subject: "Fix login" }],
+      structured: { ok: true },
+      started: "2026-11-12T11:00:00.000Z",
+      updated: "2026-11-12T11:05:00.000Z",
+    };
+    const done = rec({ state: "done", last: "old text" });
+    const s = server(
+      fakeBackend({
+        get: async () => ({ workspace: "app", task: done, result, live: true }),
+        wait: async () => ({ workspace: "app", task: done, result, live: true, timedOut: false }),
+      }),
+    );
+    await legacy(s);
+    for (const name of ["get_task", "wait_task"]) {
+      const r = (await s.handle(req("tools/call", { name, arguments: { session: "ses_1" } }))) as any;
+      expect(r.result.structuredContent.result).toEqual(result);
+      expect(r.result.structuredContent.task).toMatchObject({ id: "ses_1", last: "old text" });
+      expect(r.result.content[0].text).toContain("Branch     fix-login");
+      expect(r.result.content[0].text).toContain("Result: fixed");
+    }
+    // A Worker before 0.2 sends no result: the record is built from the task.
+    const old = server(fakeBackend({ get: async () => ({ workspace: "app", task: done, live: true }) }));
+    await legacy(old);
+    const r = (await old.handle(
+      req("tools/call", { name: "get_task", arguments: { session: "ses_1" } }),
+    )) as any;
+    expect(r.result.structuredContent.result).toMatchObject({
+      id: "ses_1",
+      workspace: "app",
+      state: "done",
+      summary: "old text",
+    });
+    const def = TOOL_DEFS.find((d) => d.name === "get_task")!;
+    expect((def.outputSchema.required as string[]).includes("result")).toBe(true);
+  });
+
   it("passes handoff arguments on and returns the session", async () => {
     const b = fakeBackend();
     const s = server(b);

@@ -1,5 +1,5 @@
 // The result record of a handed-off task: one stable object for `tasks <session> --json`, `run --wait
-// --json`, the notifyUrl POST, and any other client of the task API. Built from the saved task only, so a
+// --json`, the notify URL POST, and any other client of the task API. Built from the saved task only, so a
 // paused workspace answers it too.
 import type { Commit, TaskRecord, TaskState } from "./tasks";
 
@@ -23,7 +23,7 @@ export interface TaskResult {
   /** The json block that matched the schema of `run --schema`. */
   structured?: unknown;
   structuredError?: string;
-  /** The last delivery to notifyUrl. */
+  /** The last delivery to the notify URL. */
   notified?: { at: string; status: number };
   notifyError?: string;
   /** ISO times. */

@@ -721,7 +721,15 @@ export class WorkspaceSession extends DurableObject<Env> implements WorkspaceSes
   async sharePreview(
     port: number,
   ): Promise<{ ok: true; share: PreviewShare } | { ok: false; error: string; status: number }> {
-    const r = await addShare(this.kv, port, iso(Date.now()), this.config.serverPort);
+    this.previewKeyCache ??= previewKey(this.env.CONTROL_TOKEN);
+    const r = await addShare(
+      this.kv,
+      port,
+      iso(Date.now()),
+      this.config.serverPort,
+      await this.previewKeyCache,
+      await this.workspaceId(),
+    );
     if (r.ok) this.note(`public preview on port ${port} on`);
     return r;
   }

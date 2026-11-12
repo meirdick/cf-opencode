@@ -63,7 +63,7 @@ cf-opencode browse my-repo
 
 The command opens a session and prints a websocket URL on your Worker. If the session has a live view, it prints `live: <url>` on stderr.
 
-Connect a CDP client to the websocket URL. Use Basic authentication with the user `opencode` and the workspace password. The URL works only with the password of the workspace that opened the session. A client that sends an `Origin` header must send the Worker's own origin; a web page on another site is refused.
+Connect a CDP client to the websocket URL. Use Basic authentication with the user `opencode` and the workspace password. The URL works only with the password of the workspace that opened the session. A client that sends an `Origin` header must send the Worker's own origin. A web page is refused, on another site or on the Worker's own origin.
 
 `browse` needs the local password file. Run `cf-opencode connect my-repo` first.
 

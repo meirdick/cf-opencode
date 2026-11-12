@@ -150,11 +150,12 @@ async function route(req: Request, env: Env): Promise<Response> {
     if (method !== "GET") return methodNotAllowed(method, url.pathname);
     const reg = env.REGISTRY.getByName(REGISTRY_DO_NAME) as unknown as SnapshotIndexAdmin;
     const cfg = configOrNull(env);
-    // github: whether the token secret is set, never its value.
+    // github and notify: whether the secret is set, never its value.
     const bindings = {
       ai: Boolean(env.AI),
       browser: Boolean(env.BROWSER),
       github: Boolean(env.GITHUB_TOKEN),
+      notify: Boolean(env.NOTIFY_URL),
     };
     return json(200, {
       name: "cf-opencode",

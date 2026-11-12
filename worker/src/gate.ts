@@ -46,8 +46,18 @@ export function crossOrigin(req: Request): boolean {
 }
 
 /**
+ * True when a browser made this request. Every current browser sends Sec-Fetch-Site, and a page cannot remove
+ * it. CLI, ssh, curl and CDP clients do not send it. Python's websocket client sends Origin set to the Worker's
+ * own origin, so Origin alone cannot tell a CDP client from a page.
+ */
+export function fromBrowser(req: Request): boolean {
+  return req.headers.has("sec-fetch-site");
+}
+
+/**
  * The Basic password of a request for workspace `id`, or the response to refuse it with. `sameOriginOnly`
- * also refuses a request from another site's page: /shell, /ssh and /browse have no browser client.
+ * also refuses a request from a browser page, on another site or on this origin: /shell, /ssh and /browse
+ * have no browser client, and a preview page is served on this origin.
  */
 export async function workspaceGate(
   req: Request,
@@ -55,9 +65,9 @@ export async function workspaceGate(
   id: string,
   opts: { sameOriginOnly?: boolean } = {},
 ): Promise<{ password: string } | Response> {
-  if (opts.sameOriginOnly && crossOrigin(req)) {
+  if (opts.sameOriginOnly && (crossOrigin(req) || fromBrowser(req))) {
     return Response.json(
-      { error: "Failed: a page on another site cannot open this — fix: use the cf-opencode CLI" },
+      { error: "Failed: a web page cannot open this — fix: use the cf-opencode CLI" },
       { status: 403 },
     );
   }

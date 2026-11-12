@@ -1,4 +1,4 @@
-// Push for handed-off tasks: when a task leaves running, the Worker POSTs its result record to notifyUrl.
+// Push for handed-off tasks: when a task leaves running, the Worker POSTs its result record to the notify URL.
 //
 // The Durable Object alarm drives it, not a client and not a process in the workspace: the alarm runs while
 // the laptop is closed, and it outlives the container. A change of state queues a delivery on the task
@@ -7,7 +7,10 @@
 //
 // Every POST carries x-cf-opencode-signature: sha256=<hex HMAC-SHA256 of the body>. The key is
 // notifyKey(CONTROL_TOKEN), which `cf-opencode notify-key` prints for the receiver.
-import { parseConfig } from "../core/config";
+//
+// The URL is the Worker secret NOTIFY_URL (`cf-opencode notify-url`), read at each send, so a change reaches
+// running workspaces without a redeploy. It is checked again here (checkNotifyUrl): https, a public host name.
+import { checkNotifyUrl } from "../core/config";
 import type { OrbContext } from "./context";
 import { iso } from "./journal";
 import { taskResult } from "./task-result";
@@ -75,12 +78,12 @@ export async function post(
     });
     await res.body?.cancel().catch(() => undefined);
     if (res.status >= 200 && res.status < 300) return { ok: true, status: res.status };
-    return { ok: false, status: res.status, error: `notifyUrl answered HTTP ${res.status}` };
+    return { ok: false, status: res.status, error: `the notify URL answered HTTP ${res.status}` };
   } catch (e) {
     return {
       ok: false,
       status: 0,
-      error: `notifyUrl did not answer (${e instanceof Error ? e.message : String(e)})`,
+      error: `the notify URL did not answer (${e instanceof Error ? e.message : String(e)})`,
     };
   }
 }
@@ -93,13 +96,15 @@ export async function deliverDue(ctx: Ctx, fetchFn?: FetchFn): Promise<number | 
   const saved = await ctx.kv.get<Saved>(TASKS_KEY);
   const now = ctx.clock.now();
   const due = saved?.tasks.filter((t) => t.notify && t.notify.next <= now) ?? [];
-  const url = ctx.config.notifyUrl;
+  const raw = ctx.env.NOTIFY_URL;
+  const url = raw && !checkNotifyUrl(raw) ? raw : "";
   const token = ctx.env.CONTROL_TOKEN;
   const outcomes = new Map<string, { sent: PendingNotify; patch: Partial<TaskRecord> }>();
   for (const t of due) {
     const p = t.notify as PendingNotify;
     if (!url || !token) {
-      outcomes.set(t.id, { sent: p, patch: { notifyError: "notifyUrl is empty; the delivery was dropped" } });
+      const why = raw ? `the notify URL ${checkNotifyUrl(raw)}` : "no notify URL is set";
+      outcomes.set(t.id, { sent: p, patch: { notifyError: `${why}; the delivery was dropped` } });
       continue;
     }
     const body = JSON.stringify(taskResult(ctx.workspaceId, t));
@@ -159,23 +164,16 @@ export async function handleNote(
   o: {
     workspaceId?: string;
     controlToken?: string;
-    rawConfig?: string;
+    /** The NOTIFY_URL secret. */
+    notifyUrl?: string;
     fetchFn?: FetchFn;
     now?: () => number;
   },
 ): Promise<Response> {
-  let url = "";
-  try {
-    url = parseConfig(o.rawConfig).notifyUrl;
-  } catch {
-    // A bad config fails every control request with its own message; here it reads as no notifyUrl.
-  }
-  if (!url)
-    return noteError(
-      400,
-      "notifyUrl is not set",
-      "set notifyUrl in ~/.cf-opencode/config.json, then cf-opencode upgrade",
-    );
+  const url = o.notifyUrl ?? "";
+  if (!url) return noteError(400, "no notify URL is set", "the user runs cf-opencode notify-url");
+  const bad = checkNotifyUrl(url);
+  if (bad) return noteError(400, `the notify URL ${bad}`, "the user runs cf-opencode notify-url");
   if (!o.workspaceId || !o.controlToken)
     return noteError(503, "this workspace cannot send notes yet", "reconnect with cf-opencode connect");
   let text = "";

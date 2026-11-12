@@ -526,6 +526,12 @@ export function readSettings(path = settingsPath()): Record<string, unknown> {
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
     throw new CliError(`${path} must hold one JSON object`, 'for example { "idlePauseMinutes": 30 }');
+  // The notify URL is a Worker secret now, not a setting. Fail before the deploy, not after it.
+  if ("notifyUrl" in parsed)
+    throw new CliError(
+      `notifyUrl in ${path} is no longer a setting; the URL is a Worker secret now`,
+      "remove notifyUrl from the file, then run cf-opencode notify-url",
+    );
   return parsed as Record<string, unknown>;
 }
 

@@ -175,11 +175,16 @@ shows the agent's tool calls and messages live. `--json` prints the result
 record. Like `sessions`, it wakes nothing: a paused workspace answers with the
 states saved at its pause.
 
-With `notifyUrl` set in `~/.cf-opencode/config.json`, the Worker POSTs the
-result record, signed (`cf-opencode notify-key`), when a task leaves
-`running`, and retries after 1, 5 and 30 minutes. The Worker sends it, so it
-works with the laptop closed; the receiver must be on (a chat webhook, a push
-service). In the workspace, `cf-opencode-notify "<text>"` sends a note there.
+With a notify URL set, the Worker POSTs the result record, signed
+(`cf-opencode notify-key`), when a task leaves `running`, and retries after 1,
+5 and 30 minutes. The Worker sends it, so it works with the laptop closed; the
+receiver must be on (a chat webhook, a push service). In the workspace,
+`cf-opencode-notify "<text>"` sends a note there. The URL is a Worker secret,
+because a webhook URL often holds its own secret; it is never an argument:
+
+```sh
+printf %s "$WEBHOOK_URL" | cf-opencode notify-url   # or run it alone and paste; --remove deletes it
+```
 
 `cf-opencode skill --install --claude` (or `--opencode`) installs a skill that
 tells a local agent when and how to hand off a task.
@@ -205,7 +210,14 @@ another machine starts and follows tasks. It is off by default; set `"a2a":
 true` in `~/.cf-opencode/config.json` and run `cf-opencode upgrade`. The Agent
 Card is at `/.well-known/agent-card.json`; the JSON-RPC endpoint `/a2a` takes
 the control token as a bearer token. A message names its workspace in
-`metadata.workspace`, and the workspace must have been connected once.
+`metadata.workspace`, and the workspace must have been connected once. A
+blocking `SendMessage` waits 5 minutes at most, then returns the task as it is;
+send `returnImmediately` and poll `GetTask`.
+
+The MCP server acts with your control token for the agent that runs it. Its
+`directory` argument can name any git checkout on the machine, and the CLI runs
+`git` there, which reads that checkout's `.git/config`. Give it only to an agent
+you would let run `cf-opencode run`.
 
 Other commands:
 
@@ -235,7 +247,8 @@ Other commands:
 | `cf-opencode skills [push\|remove] [name...]` | Copy skills from this machine into a workspace. Off unless you ask. `connect --skills a,b` copies in one step; `skills default a b` saves a list that every new workspace gets |
 | `cf-opencode completion <shell>` | Tab completion for bash, zsh or fish: commands, flags, workspace ids |
 | `cf-opencode skill [--install]` | Print the handoff skill for agents, or install it |
-| `cf-opencode notify-key` | Print the key that signs the POSTs to `notifyUrl` |
+| `cf-opencode notify-url [--remove]` | Set where the Worker POSTs task results and notes; a Worker secret |
+| `cf-opencode notify-key` | Print the key that signs the POSTs to the notify URL |
 | `cf-opencode doctor` | Check Node, OpenCode, ssh, the token, the Worker and its bindings. Starts nothing |
 | `cf-opencode upgrade` | Redeploy the Worker and image from this CLI version |
 | `cf-opencode uninstall [--yes]` | List, then delete, the Worker, container app and images |
@@ -390,11 +403,12 @@ workspace. Models and `cf-opencode-search` still work, and a search query
 leaves the account for the search provider.
 
 The Worker URL is on the internet. Two secrets protect it: the control token
-for `/v1`, and a per-workspace password for `/oc/<id>`, `/shell/<id>`,
+for `/v1` and `/a2a`, and a per-workspace password for `/oc/<id>`, `/shell/<id>`,
 `/ssh/<id>`, `/browse/<id>` and `/preview/<id>`. Neither is logged. The password is not in the
 URL. A preview cookie is an HMAC under a key derived from the control token,
 bound to one workspace and port, never the password. A public preview URL
-exists only after `cf-opencode preview --public`.
+exists only after `cf-opencode preview --public`, and its token carries its own
+HMAC.
 
 The password is derived from the control token, so the Worker checks it first,
 in constant time and with no state: no password or a wrong one is a 401 that
@@ -402,10 +416,26 @@ reaches no Durable Object, so an anonymous request costs one Worker request and
 names no workspace. The workspace's Durable Object then checks it again against
 the hash the last `connect` stored, before it wakes anything. Only the control
 plane, with its bearer token, can set a password, and it accepts only the
-derived one. There is no lockout: the password is 256 bits, and a lockout keyed
+derived one. The same goes for previews: the Worker checks the password, the
+preview cookie, the sign-in ticket or the public token before it calls a Durable
+Object. There is no lockout: the password is 256 bits, and a lockout keyed
 on a guessable workspace name would let anyone lock you out. `/shell`, `/ssh`
-and `/browse` also refuse a request from a web page on another site. A browser
-session is served only to the workspace that opened it.
+and `/browse` also refuse a request from a web page, on another site or on the
+Worker's own origin, where previews are. A browser session is served only to the
+workspace that opened it.
+
+Text from a workspace (task titles and summaries, branch names, commit
+subjects, file names, `--follow` events, logs) is the agent's. The Worker cuts
+it to a fixed size, and the CLI prints terminal control characters in it as
+`?`. A note from `cf-opencode-notify` is the agent's text too, signed with your
+key: the agent can send any text there, as often as it wants. The Worker does
+not follow a redirect while it holds a secret (a provider key, the GitHub token,
+the notify URL).
+
+Models, search, `cf-opencode-fetch` and browser sessions need no credential in
+the workspace, so the agent can use them as much as it wants, billed to your
+account. There is no budget for each workspace; use AI Gateway's rate limits
+and credits to cap it.
 
 The agent in the workspace runs as `user`, which has passwordless `sudo`, so a
 prompt-injected agent is root in its container and can change anything on its
@@ -505,8 +535,11 @@ give you the line.
   `--base /preview/<id>/<port>/`). A hostname for each preview would avoid
   this, but needs a custom domain with a wildcard DNS record.
 - Every preview shares the Worker's origin. A page in one preview can read
-  another preview that the same browser is signed in to. Do not preview code
-  you do not trust in that browser.
+  another preview that the same browser is signed in to, and `/oc` if the
+  browser has a workspace password cached (only after you type one into a
+  browser prompt). It cannot open `/shell`, `/ssh` or `/browse`, and the Worker
+  drops `Service-Worker-Allowed` and `Clear-Site-Data` from its responses. Do
+  not preview code you do not trust in that browser profile.
 
 ### Public URL
 
@@ -519,7 +552,9 @@ cf-opencode preview my-repo 3000 --stop     # --stop with no port removes all
 Anyone with a public URL opens that port, with no password, while the
 workspace is awake. There is none until you run `--public`. Only the control
 token makes or removes one, so the agent in the workspace cannot. The token is
-32 random bytes, kept in the workspace's Durable Object. This is cf-opencode's
+a random nonce and an HMAC under a key derived from the control token, so the
+Worker refuses a forged one before it reaches the workspace; the workspace's
+Durable Object keeps the ones that exist, so `--stop` ends one. This is cf-opencode's
 own mechanism: Cloudflare's preview URLs (Sandbox SDK `exposePort`, or a
 hostname for each preview) need a custom domain with a wildcard DNS record, and
 a `workers.dev` install has none.
