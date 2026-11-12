@@ -298,7 +298,8 @@ async function browseIngress(req: Request, env: Env): Promise<Response> {
   const body = await readJson(req).catch(() => ({}) as Record<string, unknown>);
   const keep = typeof body.keepAliveMs === "number" ? body.keepAliveMs : undefined;
   const result = await session.browse(password, keep);
-  if (!result.ok) return json(result.status, { error: result.error });
+  if (!result.ok)
+    return result.status === 401 ? unauthorized() : json(result.status, { error: result.error });
   const opened = result.session as { sessionId: string; liveUrl?: string };
   // The relay below is the only CDP endpoint the container gets.
   const websocketUrl = `${url.origin.replace(/^http/, "ws")}/browse/${encodeURIComponent(id)}/${opened.sessionId}`;

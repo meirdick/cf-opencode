@@ -94,4 +94,29 @@ describe("workspace password check", () => {
     }
     expect(container.start).not.toHaveBeenCalled();
   });
+
+  it("every refusal is the gate's one 401 body, with no workspace name in it", async () => {
+    const { unauthorized } = await import("../src/gate");
+    const want = await unauthorized().text();
+    const { session } = await pausedSession();
+    const res = await session.proxy(opencodeReq(WRONG));
+    expect(await res.text()).toBe(want);
+    expect(res.headers.get("www-authenticate")).toBe('Basic realm="cf-opencode"');
+    const term = await session.fetch(
+      new Request("https://workspace/ssh", {
+        headers: { upgrade: "websocket", "x-cf-opencode-password": WRONG },
+      }),
+    );
+    expect(await term.text()).toBe(want);
+    const browse = await session.browse(WRONG);
+    expect(JSON.stringify(browse)).not.toContain("demo");
+  });
+
+  it("a deleted workspace says so only to the holder of its password", async () => {
+    const { session, kv } = await pausedSession();
+    const rec = (await kv.get<Record<string, unknown>>("orb")) as Record<string, unknown>;
+    await kv.put("orb", { ...rec, deletedAt: new Date().toISOString() });
+    expect((await session.proxy(opencodeReq(WRONG))).status).toBe(401);
+    expect((await session.proxy(opencodeReq(RIGHT))).status).toBe(410);
+  });
 });

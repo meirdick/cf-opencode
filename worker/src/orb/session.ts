@@ -29,6 +29,7 @@ import {
 } from "../core/types";
 import type { Env } from "../env";
 import { REGISTRY_DO_NAME, workspaceDoName } from "../env";
+import { unauthorized } from "../gate";
 import { AI_HOST } from "./ai";
 import { idleTick, LAST_USE_KEY, runAlarm } from "./alarm";
 import { type BrowserSession, openBrowserSession } from "./browse";
@@ -397,18 +398,10 @@ export class WorkspaceSession extends DurableObject<Env> implements WorkspaceSes
    */
   private async admit(password: string | null): Promise<Response | null> {
     const rec = await loadOrb(this.kv);
+    // The password first: only its holder learns that the workspace exists or was deleted.
+    if (!(await passwordMatches(rec?.passwordSha, password))) return unauthorized();
     if (rec?.deletedAt)
       return jsonError(410, "workspace deleted", "start a new workspace with cf-opencode connect");
-    if (!(await passwordMatches(rec?.passwordSha, password))) {
-      // JSON: OpenCode 2's client reads a plain-text 401 as "not a compatible server".
-      return new Response(JSON.stringify({ _tag: "UnauthorizedError", message: "Authentication required" }), {
-        status: 401,
-        headers: {
-          "content-type": "application/json",
-          "www-authenticate": `Basic realm="cf-opencode ${await this.workspaceId()}"`,
-        },
-      });
-    }
     if (this.ctx.container?.running) return null;
     const { done } = await runOpWithJournal(
       this.base(await this.workspaceId()),
@@ -497,11 +490,7 @@ export class WorkspaceSession extends DurableObject<Env> implements WorkspaceSes
   ): Promise<{ ok: true; session: BrowserSession } | { ok: false; error: string; status: number }> {
     const rec = await loadOrb(this.kv);
     if (rec?.deletedAt || !(await passwordMatches(rec?.passwordSha, password))) {
-      return {
-        ok: false,
-        error: "Failed: wrong workspace password — fix: cf-opencode connect, then retry",
-        status: 401,
-      };
+      return { ok: false, error: "Authentication required", status: 401 };
     }
     const opened = await openBrowserSession(this.env.BROWSER, keepAliveMs);
     if ("error" in opened) return { ok: false, error: opened.error, status: opened.status };

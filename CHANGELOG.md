@@ -14,6 +14,8 @@
   to `/oc`, `/browse`, `/shell` or `/ssh` with no password or a wrong one is a 401 that costs one Worker
   request; before, it created a Durable Object for any id it named. Passwords are derived from the control
   token, so the check needs no state. The control API refuses a spawn with any other password.
+- Every refused password gets the same 401 body, from the Worker and from the Durable Object. It names no
+  workspace, and a deleted workspace answers 410 only to the holder of its password.
 
 - Two `connect`s in flight with different inputs no longer share one op. The op journal hashed a field the
   API never sends, so the second caller could attach to the first one's spawn and get its password.
