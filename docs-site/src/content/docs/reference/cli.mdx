@@ -103,13 +103,26 @@ Print the path and the text of the handoff skill. The skill tells a local agent 
 | `--install --dir <path>` | Copy the skill to `<path>/cf-opencode-handoff/`. |
 | `--force` | Replace a `SKILL.md` there that differs. Without it, the command fails and changes nothing. |
 
+### notify-url
+
+```text
+cf-opencode notify-url [--remove]
+```
+
+Set where the Worker sends a task's result and the workspace's notes. The command reads the URL from stdin, or asks for it on a terminal without echo. It never takes the URL as an argument. It stores the URL as the Worker secret `NOTIFY_URL`. The URL must be `https`, with no user or password in it, to a public host name. See [Get a message when a task ends](/guides/hand-off-a-task/#get-a-message-when-a-task-ends).
+
+| Flag | Meaning |
+| --- | --- |
+| `--remove` | Delete the URL from the Worker. |
+| `--token-file <path>` | A file with a Cloudflare API token. The default is the `wrangler login` or `CLOUDFLARE_API_TOKEN`. |
+
 ### notify-key
 
 ```text
 cf-opencode notify-key
 ```
 
-Print the key that signs the `POST` requests to `notifyUrl`. The receiver checks `x-cf-opencode-signature: sha256=<hex HMAC-SHA256 of the body>` with this key. The key comes from the control token. Keep it secret. See [Get a message when a task ends](/guides/hand-off-a-task/#get-a-message-when-a-task-ends).
+Print the key that signs the `POST` requests to the notify URL. The receiver checks `x-cf-opencode-signature: sha256=<hex HMAC-SHA256 of the body>` with this key. The key comes from the control token. Keep it secret. See [Get a message when a task ends](/guides/hand-off-a-task/#get-a-message-when-a-task-ends).
 
 ### doctor
 

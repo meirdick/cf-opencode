@@ -85,7 +85,7 @@ The result has `workspace`, `session` and `task`. Give `session` to the other to
 | `workspace` | No | The workspace. Default: the workspace of this machine that has the session. |
 | `timeoutSeconds` | No, `wait_task` only | 1 to 280. Default 240. |
 
-The result has `workspace`, `task`, `live` and `at`. `live` is `false` when a paused workspace answered with its saved copy. `wait_task` also returns `timedOut`.
+The result has `workspace`, `result`, `task`, `live` and `at`. `result` is the result record that `cf-opencode tasks <ses_…> --json` prints: the state, the summary, and the branch, commits, changed files and pull request that git read in the workspace. When an older Worker sends no result record, the server builds one from `task`. `live` is `false` when a paused workspace answered with its saved copy. `wait_task` also returns `timedOut`.
 
 Most MCP clients stop a tool call after 5 minutes. For this reason, `wait_task` waits 280 seconds or less. When `timedOut` is `true`, the task still runs. Call `wait_task` again.
 
@@ -102,6 +102,15 @@ Most MCP clients stop a tool call after 5 minutes. For this reason, `wait_task` 
 | `done` | The agent finished its turn. |
 | `failed` | The turn stopped with an error, or did not start. |
 | `stopped` | The session was stopped before it finished. A newer Worker reports it. |
+
+## Trust
+
+The server acts with your control token for the agent that starts it. An agent that a web page or a repository prompt-injected can call the tools like you:
+
+- It can start a task with any text in any workspace of this machine.
+- `directory` can name any git checkout on this machine. The CLI runs `git` there, and `git` reads that checkout's `.git/config`, which can run commands. The first task for a checkout also makes its workspace from the checkout's `origin` remote.
+
+Add the server only to an agent that you would let run `cf-opencode run`. The tool results hold no token or password.
 
 ## Errors
 

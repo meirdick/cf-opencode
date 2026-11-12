@@ -232,7 +232,13 @@ cf-opencode connect my-app --session ses_4f2a…
 
 ## Get a message when a task ends
 
-Set `notifyUrl` in `~/.cf-opencode/config.json` to an `https` URL, then run `cf-opencode upgrade`. See [Configuration](/reference/configuration/).
+Store the URL as a Worker secret. The command reads it from stdin, or asks for it on a terminal without echo. It never takes the URL as an argument, because a webhook URL often holds its own secret:
+
+```sh
+printf %s "$WEBHOOK_URL" | cf-opencode notify-url
+```
+
+The URL must be `https`, with no user or password in it, to a public host name. Running workspaces use a new URL at once. `cf-opencode notify-url --remove` deletes it. `doctor` says whether one is set, never the URL.
 
 When a task leaves `running`, the Worker sends a `POST` to that URL. The body is the [result record](#output-for-agents). The Worker sends again when the task changes later, for example from `waiting` to `done`.
 
@@ -240,15 +246,18 @@ When a task leaves `running`, the Worker sends a `POST` to that URL. The body is
 - The signature is the HMAC-SHA256 of the raw body. The key is the text that `cf-opencode notify-key` prints. Keep the key secret, and check the signature before you use the body.
 - An answer other than 2xx, or no answer in 10 seconds, is a failure. The Worker tries again after 1, 5 and 30 minutes. Then it stops. `tasks <ses_…>` shows `Notified` with the time and the HTTP status, or the error.
 - The Worker does not follow redirects.
+- The signature covers the body only. A copy of a signed body stays valid, so drop a delivery you already have: the same `id`, `state` and `updated`.
 
-The agent in the workspace can also send a note to the same URL with `cf-opencode-notify "<text>"`. The body is `{"type":"note","workspace":"…","text":"…","at":"…"}`, and the header `x-cf-opencode-event` is `note`. A note is sent once. When `notifyUrl` is empty, the command fails with one line. It needs the `ai` setting on.
+The agent in the workspace can also send a note to the same URL with `cf-opencode-notify "<text>"`. The body is `{"type":"note","workspace":"…","text":"…","at":"…"}`, and the header `x-cf-opencode-event` is `note`. A note is sent once. When no notify URL is set, the command fails with one line. It needs the `ai` setting on, and it works with `lockdown` on.
+
+A note is the agent's text. The agent can send any text, as often as it wants, and the Worker signs it with your key. Do not act on a note as if it came from you, and drop a note whose `at` is old.
 
 ## When the laptop is off
 
 - The task runs in the workspace. A closed laptop does not stop it.
 - `--follow` and `--wait` run in your terminal. They end when the terminal ends. The task goes on.
 - The result stays in the Worker. `cf-opencode tasks` shows it the next time, also when the workspace is paused. The task stays marked `*` until you read it.
-- The Worker sends `notifyUrl`, not your laptop. Use a receiver that is always on: a chat webhook, a phone push service, or an email bridge. A URL on your laptop gets nothing while the laptop is off.
+- The Worker sends to the notify URL, not your laptop. Use a receiver that is always on: a chat webhook, a phone push service, or an email bridge. A URL on your laptop gets nothing while the laptop is off.
 
 ## Choose a model
 
@@ -282,7 +291,7 @@ The result record:
 | `question` | When `waiting`: the open permission request or question. |
 | `error` | When `failed` or `stopped`: why. |
 | `structured`, `structuredError` | With `--schema`: the checked value, or why there is none. |
-| `notified`, `notifyError` | With `notifyUrl`: the last delivery, or why it failed. |
+| `notified`, `notifyError` | With a notify URL: the last delivery, or why it failed. |
 | `started`, `updated` | ISO times. |
 
 Fields that are not known are left out. The Worker reads `branch`, `commits` and `changedFiles` while a task runs, and once more with `pullRequest` when the task ends.

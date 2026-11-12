@@ -45,10 +45,9 @@ The CLI stops before the deploy when the file is not one JSON object. A value ou
 | `searchProvider` | `"exa"` | The Web Search API provider for `cf-opencode-search`: `exa`, `linkup` or `ceramic`. |
 | `model` | `"cloudflare-workers-ai/@cf/zai-org/glm-5.3"` | `provider/model`, or `""` | The default OpenCode model. An empty value lets OpenCode choose. |
 | `a2a` | `false` | `true` or `false` | `true` serves the A2A Agent Card and the JSON-RPC endpoint `/a2a`. See [Hand off tasks over A2A](/guides/a2a/). |
-| `notifyUrl` | `""` | An `https` URL with no user or password in it, up to 2000 characters, or `""` | When a handed-off task leaves `running`, the Worker sends its result to this URL in a signed `POST`. `cf-opencode-notify` in a workspace sends notes to it. `""` turns it off. See [Get a message when a task ends](/guides/hand-off-a-task/#get-a-message-when-a-task-ends). |
 | `images` | `{}` | An object of image references | Extra image references mapped to image keys. For advanced use. |
 
-A webhook URL often holds its own secret. `notifyUrl` is part of a plain Worker variable. Anyone who can read the Worker settings in the Cloudflare dashboard, or run `cf-opencode status --json` with the control token, can read it.
+The notify URL is not a setting. A webhook URL often holds its own secret, and these settings are a plain Worker variable. It is the Worker secret `NOTIFY_URL`; set it with `cf-opencode notify-url`. A `notifyUrl` key in the settings file fails with `Failed: … — fix: … cf-opencode notify-url`.
 
 The file `worker/wrangler.jsonc` ships with these values: the default `instance`, `maxRunning` 10, `maxAwakeHours` 12, `warmMinutes` 10, `inactivityTimeoutMinutes` 15, `alarmSeconds` 60, `serverPort` 4096, `idlePauseMinutes` 20 and `projectSnapshotRefresh` `"off"`.
 
@@ -71,6 +70,7 @@ These are not part of `CF_OPENCODE_CONFIG`.
 | --- | --- | --- |
 | `CONTROL_TOKEN` | Secret | `init` |
 | `GITHUB_TOKEN` | Secret | `init` or `cf-opencode git-token` |
+| `NOTIFY_URL` | Secret | `cf-opencode notify-url`, optional |
 | `ANTHROPIC_API_KEY` | Secret | You, optional |
 | `OPENAI_API_KEY` | Secret | You, optional |
 | `AI` | Binding, Workers AI | `wrangler.jsonc` |

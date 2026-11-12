@@ -20,7 +20,7 @@ Anyone with the control token can manage every workspace and derive every worksp
 
 ## Workspace password
 
-Each workspace has its own password. It protects `/oc/<workspace>`, `/shell/<workspace>`, `/ssh/<workspace>` and `/browse/<workspace>`.
+Each workspace has its own password. It protects `/oc/<workspace>`, `/shell/<workspace>`, `/ssh/<workspace>`, `/browse/<workspace>` and `/preview/<workspace>`.
 
 The CLI derives the password from the control token and the workspace ID with HMAC-SHA256. Because it is derived, every machine with the control token gets the same password. The Worker can compute it too. Nobody stores it on the Worker.
 
@@ -30,7 +30,32 @@ The Worker checks the password first, in constant time. Because the password is 
 
 There is no lockout. The password is 256 bits, so nobody can guess it, and a lockout on a workspace name would let anyone lock you out.
 
-`/shell`, `/ssh` and `/browse` refuse a request that a web page on another site sends. A browser session is served only to the workspace that opened it.
+`/shell`, `/ssh` and `/browse` refuse a request that a web page sends, from another site or from the Worker's own origin (a preview page is on that origin). The CLI, `ssh` and CDP clients still work. A browser session is served only to the workspace that opened it.
+
+## Previews
+
+A preview shows a dev server that the agent runs. Treat its pages as code you did not write.
+
+- `cf-opencode preview` forwards the port over SSH to `localhost` on your machine. Nothing is public.
+- `--web` serves the port at `/preview/<workspace>/<port>/` on the Worker. A browser signs in with a one-time link (2 minutes) and gets a cookie for that workspace and port only (8 hours). The cookie and the link are HMACs under a key derived from the control token. The Worker checks them, and the workspace password, before it calls any Durable Object, so a request without one costs one Worker request.
+- `--public` makes `/public/<workspace>/<token>/`. Only the control token makes or removes one, so the agent cannot. The token carries its own HMAC, so the Worker refuses a forged token before it calls a Durable Object.
+- Every preview is on the Worker's origin. A page in one preview can read another preview that the same browser is signed in to. It cannot open `/shell`, `/ssh` or `/browse`. It can call `/oc` only if your browser has a workspace password cached for the Worker, which happens only when you type one into a browser prompt. Do not do that, and open a preview of code you do not trust in a separate browser profile.
+- The Worker drops `Service-Worker-Allowed` and `Clear-Site-Data` from preview responses, so a preview cannot put a service worker over the whole origin or sign the browser out of other previews.
+
+## Handed-off tasks, MCP and A2A
+
+- Task text goes to the workspace in the environment of a script, never in a command line.
+- Branch names, commit subjects, file names, titles and summaries come from the workspace. The agent can write anything there. The Worker cuts each to a fixed size. The CLI replaces terminal control characters in them with `?` before it prints them.
+- `cf-opencode mcp` runs the task tools for the agent on your machine. A prompt-injected agent can call them like you: it can start a task in any workspace of this machine, and `directory` can name any git checkout on the machine, where the CLI then runs `git`. `git` reads that checkout's `.git/config`, which can run commands. Use the MCP server only with an agent that you would let run `cf-opencode run`.
+- The A2A endpoint is off by default (`a2a`). When it is on, `/a2a` needs the control token, and the Agent Card is public. The card names no workspace, repository or user. A blocking `SendMessage` waits 5 minutes at most.
+
+## Notify URL
+
+`cf-opencode notify-url` stores the URL as the Worker secret `NOTIFY_URL`, because a webhook URL often holds its own secret. `/v1/status` and `doctor` say only whether it is set. It must be `https`, with no user or password, to a public host name. The Worker does not follow a redirect from it.
+
+Each `POST` carries `x-cf-opencode-signature: sha256=<HMAC of the body>`, with the key from `cf-opencode notify-key`. The signature covers the body only. A receiver should drop a delivery it already has (same `id`, `state` and `updated`) and a note whose `at` is old, because a copy of a signed body stays valid.
+
+The agent can send any text to the URL with `cf-opencode-notify`, with no limit on how often. Treat a note as text from the agent, not from you.
 
 ## The agent account
 
@@ -40,7 +65,7 @@ This is on purpose, so the agent can install what a project needs. A rule such a
 
 These things protect you:
 
-- No key or token enters the workspace. See the next section.
+- No key, token or notify URL enters the workspace. See the next section.
 - The GitHub token reaches only the repositories you give it.
 - `lockdown` turns general internet off.
 - A workspace is disposable. `cf-opencode delete` drops its disk, and the next `connect` clones again.
@@ -60,7 +85,7 @@ The platform intercepts requests from the container to these hosts. The Worker r
 | `github.com` | `GITHUB_TOKEN` |
 | `api.github.com` | `GITHUB_TOKEN` |
 
-A route whose secret is not set is refused. The Worker does not forward the placeholder.
+A route whose secret is not set is refused. The Worker does not forward the placeholder. The Worker does not follow a redirect with the real credential on it: the redirect goes back to the container.
 
 The disk, the environment and every snapshot hold only the placeholder. A snapshot cannot leak a key.
 
@@ -76,7 +101,11 @@ Set `lockdown` to `true` in `~/.cf-opencode/config.json`, then run `cf-opencode 
 
 Interception of provider hosts is on either way. You cannot configure it.
 
-With lockdown on, `cf-opencode-fetch` is refused: it loads any URL through the Worker's Browser Run binding, which is general internet. Models and `cf-opencode-search` still work. A search query leaves the account for the search provider, so a workspace can still put data in a query.
+With lockdown on, `cf-opencode-fetch` is refused: it loads any URL through the Worker's Browser Run binding, which is general internet. Models, `cf-opencode-search` and `cf-opencode-notify` still work. A search query leaves the account for the search provider, and a note goes to your notify URL, so a workspace can still put data in them.
+
+## What a workspace can spend
+
+Models, `cf-opencode-search`, `cf-opencode-fetch` and `cf-opencode-browse` need no credential in the workspace, so the agent can use them as much as it wants. They bill to your account: Workers AI, AI Gateway credits and Browser Run hours. cf-opencode sets no budget for each workspace. Use the AI Gateway's rate limits and the credit balance to cap it.
 
 ## Logs
 
