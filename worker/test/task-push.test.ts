@@ -144,6 +144,26 @@ describe("result record", () => {
     } satisfies TaskResult);
   });
 
+  it("bounds every field the workspace writes: the agent is root and can answer for the scripts", () => {
+    const big = "z".repeat(200_000);
+    const base: TaskRecord = { id: "ses_1", title: "t", started: 0, state: "running", base: SHA("a") };
+    const [failed] = applyStatus(
+      [base],
+      { active: [], sessions: { ses_1: { found: true, outcome: "failed", reason: big, last: big } } },
+      1,
+    );
+    const [withFacts] = applyFacts(
+      [failed as TaskRecord],
+      {
+        branch: big,
+        pullRequest: `https://${big}`,
+        tasks: { ses_1: { commits: [], changedFiles: Array.from({ length: 500 }, () => big) } },
+      },
+      new Set(["ses_1"]),
+    );
+    expect(JSON.stringify(withFacts).length).toBeLessThan(60_000);
+  });
+
   it("a task with no commit is done with an empty list; waiting carries the question; failed the error", () => {
     const base: TaskRecord = { id: "ses_1", title: "t", started: 0, state: "running", base: SHA("a") };
     const [done] = applyFacts(

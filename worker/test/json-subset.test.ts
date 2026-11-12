@@ -77,3 +77,23 @@ describe("json block", () => {
     });
   });
 });
+
+describe("hostile input", () => {
+  it("a required or listed key must be the object's own, not one from its prototype", () => {
+    const s = { type: "object", required: ["constructor", "toString"] };
+    expect(validate({}, s)).toEqual(["$: constructor is required", "$: toString is required"]);
+    expect(validate({ constructor: "x", toString: "y" }, s)).toEqual([]);
+    expect(validate({}, { type: "object", properties: { constructor: { type: "string" } } })).toEqual([]);
+    // __proto__ from JSON.parse is an own key, checked like any other, and pollutes nothing.
+    const v = JSON.parse('{"__proto__": {"polluted": 1}}');
+    const protoSchema = JSON.parse('{"type": "object", "properties": {"__proto__": {"type": "number"}}}');
+    expect(validate(v, protoSchema)).toHaveLength(1);
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+  });
+
+  it("a json block nested too deep is a structuredError, not a crash of the task read", () => {
+    const deep = `${"[".repeat(7000)}${"]".repeat(7000)}`;
+    const r = structuredResult(`\`\`\`json\n${deep}\n\`\`\``, { enum: [[1]] });
+    expect(r).toMatchObject({ structuredError: expect.stringMatching(/^the json block/) });
+  });
+});

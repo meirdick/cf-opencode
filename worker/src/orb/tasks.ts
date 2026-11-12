@@ -99,6 +99,9 @@ export const MAX_TASKS = 30;
 export const START_GRACE_MS = 2 * 60_000;
 export const MAX_TASK_CHARS = 32_000;
 export const SUMMARY_CHARS = 4000;
+/** What the Worker keeps of the workspace's answers. The status script cuts the same; the Worker does not trust it. */
+const MAX_LAST_CHARS = 16_000;
+const MAX_REASON_CHARS = 1000;
 const SESSION_ID_RE = /^ses[A-Za-z0-9_-]{1,100}$/;
 
 type Ctx = Pick<OrbContext, "container" | "kv" | "clock" | "config" | "env" | "workspaceId">;
@@ -331,7 +334,7 @@ export function applyStatus(
         permissions: typeof s.permissions === "number" ? s.permissions : 0,
         forms: typeof s.forms === "number" ? s.forms : 0,
         ...(typeof s.outcome === "string" ? { outcome: s.outcome } : {}),
-        ...(typeof s.reason === "string" && s.reason ? { reason: s.reason } : {}),
+        ...(typeof s.reason === "string" && s.reason ? { reason: s.reason.slice(0, MAX_REASON_CHARS) } : {}),
       },
       t.started,
       now,
@@ -345,7 +348,8 @@ export function applyStatus(
     if (reason) next.reason = reason;
     else delete next.reason;
     if (found && typeof s.title === "string" && s.title) next.title = s.title.slice(0, 200);
-    const last = typeof s.last === "string" && s.last ? s.last : undefined;
+    // The script keeps 16 000 characters, but the agent is root and can answer for the script: bound it here.
+    const last = typeof s.last === "string" && s.last ? s.last.slice(-MAX_LAST_CHARS) : undefined;
     if (last) next.last = last.slice(-SUMMARY_CHARS);
     if (typeof time.updated === "number") next.updated = time.updated;
     if (state === "waiting" && typeof s.question === "string" && s.question)
@@ -396,7 +400,10 @@ export function applyFacts(tasks: TaskRecord[], facts: GitOut, ids: Set<string>)
           .map((c) => ({ sha: c.sha, subject: c.subject.slice(0, 200) }))
       : [];
     const files = Array.isArray(f.changedFiles)
-      ? f.changedFiles.filter((x): x is string => typeof x === "string").slice(0, 100)
+      ? f.changedFiles
+          .filter((x): x is string => typeof x === "string")
+          .slice(0, 100)
+          .map((x) => x.slice(0, 300))
       : [];
     const next: TaskRecord = { ...t, commits, changedFiles: files };
     if (typeof facts.branch === "string" && facts.branch) next.branch = facts.branch.slice(0, 200);

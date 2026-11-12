@@ -104,10 +104,13 @@ function walk(v: unknown, s: Schema, path: string, out: string[]): void {
   if (v && typeof v === "object" && !Array.isArray(v)) {
     const o = v as Schema;
     const props = (s.properties ?? {}) as Record<string, Schema>;
-    for (const r of (s.required ?? []) as string[]) if (!(r in o)) out.push(`${path}: ${r} is required`);
-    for (const [k, sub] of Object.entries(props)) if (k in o) walk(o[k], sub, `${path}.${k}`, out);
+    // Own keys only: `"toString" in {}` is true, so `in` passed a required key the value does not have.
+    for (const r of (s.required ?? []) as string[])
+      if (!Object.hasOwn(o, r)) out.push(`${path}: ${r} is required`);
+    for (const [k, sub] of Object.entries(props))
+      if (Object.hasOwn(o, k)) walk(o[k], sub, `${path}.${k}`, out);
     if (s.additionalProperties === false)
-      for (const k of Object.keys(o)) if (!(k in props)) out.push(`${path}: ${k} is not allowed`);
+      for (const k of Object.keys(o)) if (!Object.hasOwn(props, k)) out.push(`${path}: ${k} is not allowed`);
   }
   if (Array.isArray(v) && s.items)
     for (const [i, x] of v.entries()) walk(x, s.items as Schema, `${path}[${i}]`, out);
@@ -134,10 +137,19 @@ export function structuredResult(
   } catch (e) {
     return { structuredError: `the json block is not JSON (${e instanceof Error ? e.message : String(e)})` };
   }
-  const errors = validate(value, schema);
+  let errors: string[];
+  let size: number;
+  try {
+    errors = validate(value, schema);
+    size = JSON.stringify(value).length;
+  } catch {
+    // The agent writes the block. A value nested deep enough to exhaust the stack (canonical() for enum) must
+    // fail this check, not the task read that called it.
+    return { structuredError: "the json block is nested too deep to check" };
+  }
   if (errors.length > 0)
     return { structuredError: `the json block does not match the schema: ${errors.join("; ")}` };
-  if (JSON.stringify(value).length > MAX_SCHEMA_CHARS)
+  if (size > MAX_SCHEMA_CHARS)
     return { structuredError: `the json block is over ${MAX_SCHEMA_CHARS} characters` };
   return { structured: value };
 }
