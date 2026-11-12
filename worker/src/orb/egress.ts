@@ -47,7 +47,9 @@ export function rewriteEgress(
         ? `Bearer ${value}`
         : value,
   );
-  return new Request(req, { headers });
+  // manual: a redirect goes back to the container, which follows it itself. Following it here would send the
+  // secret on to the host the redirect names (api.github.com sends a release download to another host).
+  return new Request(req, { headers, redirect: "manual" });
 }
 
 /**
