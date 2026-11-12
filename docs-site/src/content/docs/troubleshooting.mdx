@@ -67,7 +67,7 @@ On a first run that failed after it created the Worker, `~/.cf-opencode/deployin
 | `no control token` | Run `cf-opencode init`. It writes `~/.cf-opencode/control-token`. |
 | `OpenCode is not installed here` | Install OpenCode 2: `curl -fsSL https://opencode.ai/v2/install \| bash`. |
 | `cannot reach <url> …` | Run `cf-opencode doctor`. Check the URL. |
-| `missing or wrong bearer token` | The control token on this machine differs from the Worker. Copy the right token, or run `init`. |
+| `the Worker refused the control token on this machine` | The control token on this machine differs from the Worker. Copy `~/.cf-opencode/control-token` from the machine that ran `init`, or run `cf-opencode init --adopt`. |
 | `N/M workspaces already running` | Pause an idle workspace with `cf-opencode pause <workspace>`. Or raise `maxRunning` in `~/.cf-opencode/config.json` and run `cf-opencode upgrade`. |
 | `spawn did not finish in 4 min 30 s` | Retry. Check `cf-opencode status <workspace>`. |
 | `container was not ready in time` | Retry. The first start on a new host pulls the image and is slow. |

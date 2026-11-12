@@ -10,6 +10,25 @@ describe("handleApi auth", () => {
     expect(res.status).toBe(401);
   });
 
+  it("tells a visitor without the token nothing: one bare 401 for every path", async () => {
+    const bodies = new Set<string>();
+    for (const [path, auth] of [
+      ["/", undefined],
+      ["/v1/health", undefined],
+      ["/v1/workspaces/app", "Bearer wrong"],
+      ["/v1/nope", "Basic abc"],
+      ["/favicon.ico", undefined],
+    ] as const) {
+      const res = await handleApi(
+        new Request(`https://w${path}`, auth ? { headers: { authorization: auth } } : {}),
+        env,
+      );
+      expect(res.status).toBe(401);
+      bodies.add(await res.text());
+    }
+    expect([...bodies]).toEqual(['{"error":"Unauthorized"}']);
+  });
+
   it("answers health with the right bearer", async () => {
     const res = await handleApi(
       new Request("https://w/v1/health", { headers: { authorization: "Bearer control-secret" } }),

@@ -119,12 +119,13 @@ async function checkAuth(req: Request, env: Env): Promise<Response | null> {
   const want = env.CONTROL_TOKEN;
   if (!want) return notFound(req);
   const m = /^Bearer\s+(\S+)\s*$/i.exec(req.headers.get("authorization") ?? "");
+  // The same bare answer for every path and every wrong token. It names no product, no secret and no
+  // route, so a visitor to the Worker URL learns nothing about what runs here. The CLI adds the fix line.
   if (!m?.[1] || !(await timingSafeEqualStr(m[1], want))) {
-    return fail(
-      401,
-      "missing or wrong bearer token",
-      "set CF_OPENCODE_CONTROL_TOKEN to the CONTROL_TOKEN secret",
-    );
+    return new Response('{"error":"Unauthorized"}', {
+      status: 401,
+      headers: { "content-type": "application/json", "www-authenticate": "Bearer" },
+    });
   }
   return null;
 }

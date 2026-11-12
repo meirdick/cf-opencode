@@ -31,6 +31,7 @@ import {
   resolveDefaults,
   selectSkills,
   skillRoots,
+  skillsHook,
   sshRun,
   writeDefaults,
 } from "./skills-sync.js";
@@ -141,6 +142,7 @@ const COMMANDS: Record<string, Command> = {
       "--title <text>             session title (default: from the task)",
       "--model <provider/model>   for example cloudflare-workers-ai/@cf/zai-org/glm-5.3",
       "--allow-dirty              start anyway, and say what the workspace will not see",
+      "--skills <a,b|all>         copy these skills from this machine into the workspace first",
       "--schema <file.json>       the last message must end with a json block that matches this JSON Schema",
       "                           (subset: type, properties, required, items, enum, additionalProperties false)",
       "--wait                     wait until the task leaves running, then print its result",
@@ -152,6 +154,7 @@ const COMMANDS: Record<string, Command> = {
       title: { type: "string" },
       model: { type: "string" },
       "allow-dirty": { type: "boolean" },
+      skills: { type: "string" },
       schema: { type: "string" },
       wait: { type: "boolean" },
       follow: { type: "boolean" },
@@ -170,6 +173,8 @@ const COMMANDS: Record<string, Command> = {
       "A task that ended shows * until you read it with tasks <session>.",
       "--workspace <id>      the workspace of the task (default: found in your workspaces)",
       "--unseen              list only the tasks that ended and are not read yet",
+      '--reply "<text>"      with a session: send one more message to it, for example the answer to its question.',
+      "                      A permission request is answered in OpenCode: cf-opencode connect <workspace> --session <id>",
       "--wait                with a session: wait until the task leaves running",
       "--follow              with a session: the same, and show the agent's progress live",
       "--timeout <minutes>   how long --wait and --follow wait (default 60)",
@@ -181,6 +186,7 @@ const COMMANDS: Record<string, Command> = {
       wait: { type: "boolean" },
       follow: { type: "boolean" },
       unseen: { type: "boolean" },
+      reply: { type: "string" },
       timeout: { type: "string" },
     },
     run: (args) => tasksCommand(args, requireInstall(args)),
@@ -667,15 +673,9 @@ async function connectCommand(args: ParsedArgs): Promise<number> {
   const { url, token } = requireInstall(args);
   const id = args.positionals[0];
   // Checked before the wake, so a wrong name costs nothing.
-  const wanted = flagString(args, "skills");
-  const skills =
-    wanted === undefined
-      ? []
-      : selectSkills(
-          localSkills(skillRoots()),
-          wanted === "all" ? [] : wanted.split(",").filter(Boolean),
-          wanted === "all",
-        );
+  const beforeAttach = skillsHook(flagString(args, "skills"), flagString(args, "url"), (l: string) =>
+    process.stderr.write(`${l}\n`),
+  );
   const result = await connect({
     url,
     token,
@@ -687,19 +687,8 @@ async function connectCommand(args: ParsedArgs): Promise<number> {
     continueLast: flagBool(args, "continue"),
     ...(flagString(args, "session") ? { session: flagString(args, "session") } : {}),
     onLine: (line) => process.stderr.write(`${terminalSafe(line)}\n`),
-    // Off unless asked: a skill can hold local paths, and a copy stays on the workspace disk. --skills copies
-    // now. The saved default list is copied only to a workspace that starts from the bare image; a later
-    // connect finds them on the disk.
-    beforeAttach: async (ws: string, info: { fresh: boolean }) => {
-      const say = (s: string) => process.stderr.write(`${s}\n`);
-      const list =
-        wanted !== undefined
-          ? skills
-          : info.fresh
-            ? resolveDefaults(localSkills(skillRoots()), readDefaults(), say)
-            : [];
-      if (list.length) await pushSkills(ws, list, sshRun(flagString(args, "url")), say);
-    },
+    // Off unless asked: a skill can hold local paths, and a copy stays on the workspace disk (skillsHook).
+    beforeAttach,
   });
   if (flagBool(args, "json") || flagBool(args, "no-attach")) {
     process.stdout.write(

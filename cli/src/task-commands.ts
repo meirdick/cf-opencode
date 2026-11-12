@@ -1,5 +1,6 @@
 // The `run`, `tasks`, `skill` and `notify-key` commands: argument handling and output. The logic is in
 // handoff.ts, tasks.ts, follow.ts, skill.ts and notify-key.ts.
+
 import { readFileSync } from "node:fs";
 import { ControlClient } from "./api.js";
 import { flagBool, flagString, type ParsedArgs } from "./args.js";
@@ -9,9 +10,11 @@ import { CliError, toFailedLine } from "./errors.js";
 import { followTask, openEventStream, renderEvent } from "./follow.js";
 import { renderStarted, runTask } from "./handoff.js";
 import { notifyKey } from "./notify-key.js";
+import { replyTask } from "./reply.js";
 import { readSchema } from "./schema.js";
 import { localWorkspaceIds } from "./sessions.js";
 import { installSkill, skillFile, skillTarget } from "./skill.js";
+import { skillsHook } from "./skills-sync.js";
 import { resultOf } from "./task-result.js";
 import {
   exitCodeFor,
@@ -26,6 +29,7 @@ import {
   WaitTimeout,
   waitTask,
 } from "./tasks.js";
+import { target } from "./terminal.js";
 import { terminalSafe } from "./ui.js";
 
 type Install = { url: string; token: string };
@@ -76,6 +80,7 @@ export async function runCommand(args: ParsedArgs, install: Install): Promise<nu
       ...(model ? { model } : {}),
       ...(schema !== undefined ? { schema } : {}),
       allowDirty: flagBool(args, "allow-dirty"),
+      beforeAttach: skillsHook(flagString(args, "skills"), flagString(args, "url"), err),
       onLine: err,
     },
     { connect, client: (url, token) => new ControlClient(url, token) },
@@ -109,6 +114,15 @@ export async function tasksCommand(args: ParsedArgs, install: Install): Promise<
   if (pos && looksLikeSession(pos)) {
     const limit = mode ? timeoutMs(args) : 0;
     const workspace = ws ?? (await findTask(client, localWorkspaceIds(), pos));
+    const reply = flagString(args, "reply");
+    if (reply !== undefined) {
+      await replyTask(target(install.url, workspace), pos, reply);
+      if (!mode) {
+        if (json) out(JSON.stringify({ ok: true, workspace, session: pos, replied: true }));
+        else err(`Sent to ${pos}. Watch: cf-opencode tasks ${pos} --workspace ${workspace} --follow`);
+        return 0;
+      }
+    }
     if (mode) return finishWatch(install, workspace, pos, mode, limit, json);
     // This read shows the result: it marks the task seen.
     const r = await client.task(workspace, pos, true);
@@ -116,6 +130,8 @@ export async function tasksCommand(args: ParsedArgs, install: Install): Promise<
     else out(renderTask({ workspace, ...r }));
     return 0;
   }
+  if (flagString(args, "reply") !== undefined)
+    throw new CliError("--reply needs one task", 'cf-opencode tasks <session> --reply "<text>"');
   if (mode) throw new CliError(`--${mode} needs one task`, `cf-opencode tasks <session> --${mode}`);
   const ids = pos ? [pos] : ws ? [ws] : localWorkspaceIds();
   const all = await listTasks(client, ids);

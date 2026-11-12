@@ -52,6 +52,11 @@
   `skills default a b` saves a list on this machine; a workspace that starts from the image gets those skills on
   its first connect. The list is empty until you set it.
   `.git`, `node_modules`, `.env` and key files are left out, and links inside a skill are not followed.
+- `cf-opencode tasks <ses_…> --reply "<text>"` sends one more message to a handed-off session, for example the
+  answer to its question. `run --skills a,b` copies skills before the task starts.
+- A session knows where it is. The workspace notes say it is a clone of the remote with no local files, and how
+  to tell an attended session from a handoff. A handed-off session gets a Handoff block before the task: who
+  started it, the start branch and commit, to work alone, and that its last message is the result.
 - `cf-opencode completion <bash|zsh|fish>`: tab completion for commands, flags and workspace ids.
 - `cf-opencode preview … --web` opens the dev server on a Worker URL instead, behind
   the workspace password. A one-time sign-in link gives the browser a cookie for that workspace and port; the
@@ -64,6 +69,8 @@
 
 ### Security
 
+- A visitor to the Worker URL without the control token gets one bare `401 Unauthorized` for every path. The
+  answer no longer names the product, the secret or the route.
 - The Worker checks the workspace password itself before it calls a workspace's Durable Object. A request
   to `/oc`, `/browse`, `/shell` or `/ssh` with no password or a wrong one is a 401 that costs one Worker
   request; before, it created a Durable Object for any id it named. Passwords are derived from the control

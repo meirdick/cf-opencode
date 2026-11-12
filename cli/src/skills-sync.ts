@@ -253,3 +253,28 @@ export function resolveDefaults(
   }
   return out;
 }
+
+/**
+ * What `connect` and `run` do about skills once the workspace is up. `wanted` is --skills (names with
+ * commas, or "all"): copy those now. Without it, a workspace that started from the bare image gets the
+ * saved default list; an older disk already has what was copied to it. Names are checked before the wake.
+ */
+export function skillsHook(
+  wanted: string | undefined,
+  url: string | undefined,
+  say: (s: string) => void,
+): (id: string, info: { fresh: boolean }) => Promise<void> {
+  const explicit =
+    wanted === undefined
+      ? undefined
+      : selectSkills(
+          localSkills(skillRoots()),
+          wanted === "all" ? [] : wanted.split(",").filter(Boolean),
+          wanted === "all",
+        );
+  return async (id, info) => {
+    const list =
+      explicit ?? (info.fresh ? resolveDefaults(localSkills(skillRoots()), readDefaults(), say) : []);
+    if (list.length) await pushSkills(id, list, sshRun(url), say);
+  };
+}
