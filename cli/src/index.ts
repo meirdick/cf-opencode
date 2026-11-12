@@ -15,6 +15,7 @@ import {
   renderList,
   uninstall,
 } from "./manage.js";
+import { preview } from "./preview.js";
 import { listSessions, localWorkspaceIds, renderSessions } from "./sessions.js";
 import { runCommand, tasksCommand } from "./task-commands.js";
 import { forgetHostKey, shell, ssh, sshConfigBlock, sshKey, sshProxy, target } from "./terminal.js";
@@ -310,6 +311,45 @@ const COMMANDS: Record<string, Command> = {
     ],
     flags: {},
     run: browseCommand,
+  },
+  preview: {
+    group: "Browser",
+    usage: "preview <workspace> <port>",
+    summary: "Open a dev server that runs in the workspace, in your browser. No public URL.",
+    details: [
+      "Prints the preview URL and opens it, signed in, with a one-time link. The password is not in the URL.",
+      "The dev server must listen on 0.0.0.0. A paused workspace is not woken: cf-opencode connect first.",
+      "--no-open           print the URL and the one-time sign-in link; open nothing",
+      "--public            make a URL that needs no password, until --stop. Needs the control token",
+      "--stop              remove the public URL of <port>, or of every port without one",
+      "--list              list the public URLs of the workspace",
+    ],
+    flags: {
+      "no-open": { type: "boolean" },
+      public: { type: "boolean" },
+      stop: { type: "boolean" },
+      list: { type: "boolean" },
+    },
+    run: async (args) => {
+      const [id, port] = args.positionals;
+      if (!id) throw new CliError("preview needs a workspace id", "cf-opencode preview <workspace> <port>");
+      return preview({
+        id,
+        ...(port ? { port } : {}),
+        public: flagBool(args, "public"),
+        stop: flagBool(args, "stop"),
+        list: flagBool(args, "list"),
+        open: !flagBool(args, "no-open") && Boolean(process.stdout.isTTY),
+        json: flagBool(args, "json"),
+        target: () => target(requireUrl(args).url, id),
+        control: () => {
+          const { url, token } = requireInstall(args);
+          return new ControlClient(url, token);
+        },
+        out: (s) => process.stdout.write(`${s}\n`),
+        err: (s) => process.stderr.write(`${s}\n`),
+      });
+    },
   },
 };
 

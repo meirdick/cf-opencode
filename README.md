@@ -187,6 +187,8 @@ Other commands:
 | `cf-opencode ssh <id> [-- cmd]` | SSH into the workspace as `user` |
 | `cf-opencode ssh-config <id>` | Print a `~/.ssh/config` block for ssh, scp and herdr |
 | `cf-opencode browse <id>` | Open a Browser Run session for the workspace |
+| `cf-opencode preview <id> <port>` | Open a dev server in the workspace in your browser, behind the workspace password |
+| `cf-opencode preview <id> <port> --public` | Make a public URL for that port; `--stop` removes it, `--list` lists them |
 | `cf-opencode git-token` | Let workspaces use GitHub; the token stays in the Worker |
 | `cf-opencode doctor` | Check Node, OpenCode, ssh, the token, the Worker and its bindings. Starts nothing |
 | `cf-opencode upgrade` | Redeploy the Worker and image from this CLI version |
@@ -278,6 +280,7 @@ installs what a project needs with `apt-get`, and the snapshot keeps it.
 ```
 local OpenCode  --basic auth-->  Worker /oc/<id>/...  -->  container :4096 (opencode serve)
 cf-opencode     --bearer------>  Worker /v1/...       -->  WorkspaceSession DO
+your browser    --cookie------>  Worker /preview/<id>/<port>/...  -->  container :<port> (dev server)
 ```
 
 One Durable Object per workspace owns the container, the snapshot handle, and
@@ -336,8 +339,10 @@ the provider hosts whose secret is set. It is off unless you set it.
 
 The Worker URL is on the internet. Two secrets protect it: the control token
 for `/v1`, and a per-workspace password for `/oc/<id>`, `/shell/<id>`,
-`/ssh/<id>` and `/browse/<id>`. Neither is logged. The password is not in the
-URL.
+`/ssh/<id>`, `/browse/<id>` and `/preview/<id>`. Neither is logged. The password is not in the
+URL. A preview cookie is an HMAC under a key derived from the control token,
+bound to one workspace and port, never the password. A public preview URL
+exists only after `cf-opencode preview --public`.
 
 The workspace's Durable Object checks that password itself, in constant time,
 against the hash the last `connect` stored, before it wakes anything. Only the
@@ -385,6 +390,75 @@ can open a browser from its shell tool.
 On the Workers Paid plan a session costs $0.09 per browser hour after 10 hours
 a month, plus $2.00 per concurrent browser above a monthly average of 10. A
 session closes after 10 minutes without activity.
+
+## Preview a dev server
+
+The agent starts a dev server in the workspace. You open it on your machine:
+
+```sh
+cf-opencode preview my-repo 3000
+```
+
+The command prints `https://<worker>/preview/my-repo/3000/` and opens it in
+your browser, signed in. Nothing is public: the Worker asks for the workspace
+password, as for `/oc`. The password is not in the URL. The CLI gets a one-time
+sign-in link from the Worker (it works once, for 2 minutes), and the browser
+trades it for a cookie. The cookie works for that workspace and that port only,
+for 8 hours. `--no-open` prints the link instead of opening it.
+
+Inside the workspace, `cf-opencode-preview 3000` prints the same URL and checks
+that something listens on the port. The agent's notes tell it to run that and
+give you the line.
+
+- The dev server must listen on `0.0.0.0`, not `127.0.0.1`. For Vite:
+  `--host 0.0.0.0`.
+- A preview does not wake a paused workspace, because a dev server does not
+  survive a pause. The page says to run `cf-opencode connect`; then start the
+  dev server again.
+- A request through a preview counts as use, like the OpenCode client, so a
+  preview tab that loads pages keeps the workspace awake.
+- The preview lives under the path `/preview/<id>/<port>/`. A page that loads
+  `/assets/app.js` asks for a path outside it. The Worker sends that request
+  back under the prefix when its Referer is a preview page, which covers most
+  dev servers. Hot reload opens a websocket with no Referer, so it may not
+  connect: reload by hand, or give the dev server its base path (Vite:
+  `--base /preview/<id>/<port>/`). A hostname for each preview would avoid
+  this, but needs a custom domain with a wildcard DNS record.
+- Every preview shares the Worker's origin. A page in one preview can read
+  another preview that the same browser is signed in to. Do not preview code
+  you do not trust in that browser.
+
+### Public URL
+
+```sh
+cf-opencode preview my-repo 3000 --public   # prints https://<worker>/public/my-repo/<token>/
+cf-opencode preview my-repo --list
+cf-opencode preview my-repo 3000 --stop     # --stop with no port removes all
+```
+
+Anyone with a public URL opens that port, with no password, while the
+workspace is awake. There is none until you run `--public`. Only the control
+token makes or removes one, so the agent in the workspace cannot. The token is
+32 random bytes, kept in the workspace's Durable Object. This is cf-opencode's
+own mechanism: Cloudflare's preview URLs (Sandbox SDK `exposePort`, or a
+hostname for each preview) need a custom domain with a wildcard DNS record, and
+a `workers.dev` install has none.
+
+### The agent's own browser
+
+The workspace's remote browser opens the dev server with no public URL, as
+`http://p<port>.preview.internal/`:
+
+```sh
+cf-opencode-fetch http://p3000.preview.internal/     # Markdown; --screenshot f.png, --html, --links, --pdf
+cf-opencode-browse --preview 3000                  # a CDP session that can open that address
+```
+
+Browser Run sends the browser's requests for that hostname to the Worker
+([outbound Workers](https://developers.cloudflare.com/browser-run/features/outbound-workers/)),
+and the Worker passes them to the port. `cf-opencode-fetch
+http://localhost:3000/` works the same. It is HTTP only, with no websockets, so
+hot reload does not connect there.
 
 ## Limits
 

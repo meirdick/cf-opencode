@@ -2,7 +2,7 @@
 import { handleApi } from "./api";
 import type { Env } from "./env";
 
-export { AiEgress, ProviderEgress } from "./orb/egress-worker";
+export { AiEgress, PreviewEgress, ProviderEgress } from "./orb/egress-worker";
 export { WorkspaceSession } from "./orb/session";
 export { Registry } from "./registry";
 

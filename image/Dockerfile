@@ -78,9 +78,11 @@ COPY entrypoint.sh /usr/local/bin/cf-opencode-entrypoint
 COPY browse.sh /usr/local/bin/cf-opencode-browse
 COPY search.sh /usr/local/bin/cf-opencode-search
 COPY fetch.sh /usr/local/bin/cf-opencode-fetch
+COPY preview.sh /usr/local/bin/cf-opencode-preview
 COPY opencode.sh /usr/local/bin/opencode
 RUN chmod 755 /usr/local/bin/cf-opencode-entrypoint /usr/local/bin/cf-opencode-browse \
-      /usr/local/bin/cf-opencode-search /usr/local/bin/cf-opencode-fetch /usr/local/bin/opencode
+      /usr/local/bin/cf-opencode-search /usr/local/bin/cf-opencode-fetch /usr/local/bin/cf-opencode-preview \
+      /usr/local/bin/opencode
 
 # Stay root. The entrypoint trusts the egress CA, which only root can install, and the
 # Worker starts opencode serve with `user: 1000:1000`. A root entrypoint is what the

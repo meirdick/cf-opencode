@@ -29,6 +29,7 @@ import {
 } from "../core/types";
 import type { Env } from "../env";
 import { REGISTRY_DO_NAME, workspaceDoName } from "../env";
+import { checkPort, previewKey } from "../preview-auth";
 import { AI_HOST } from "./ai";
 import { idleTick, LAST_USE_KEY, runAlarm } from "./alarm";
 import { type BrowserSession, openBrowserSession } from "./browse";
@@ -52,6 +53,16 @@ import {
   redactWith,
 } from "./journal";
 import { runPause } from "./pause";
+import {
+  addShare,
+  handlePreview,
+  internalPreview,
+  listShares,
+  type PreviewDeps,
+  type PreviewShare,
+  removeShares,
+} from "./preview";
+import { MAX_PREVIEW_PORTS, type PreviewEgressFactory, previewOutbound } from "./preview-hosts";
 import { type RebuildTarget, receiveRebuild, runRebuild } from "./rebuild";
 import { LOGTAIL_SH, SSH_PREP_SH } from "./scripts";
 import { readSessions, type SessionList } from "./sessions";
@@ -295,7 +306,7 @@ export class WorkspaceSession extends DurableObject<Env> implements WorkspaceSes
     return {
       workspaceId,
       orbId: workspaceId,
-      container: withEgress(this, container),
+      container: withEgress(this, container, workspaceId),
       kv: this.kv,
       clock: realClock,
       config: this.config,
@@ -505,6 +516,7 @@ export class WorkspaceSession extends DurableObject<Env> implements WorkspaceSes
   async browse(
     password: string,
     keepAliveMs?: number,
+    previewPorts?: number[],
   ): Promise<{ ok: true; session: BrowserSession } | { ok: false; error: string; status: number }> {
     const rec = await loadOrb(this.kv);
     if (rec?.deletedAt || !(await passwordMatches(rec?.passwordSha, password))) {
@@ -514,7 +526,28 @@ export class WorkspaceSession extends DurableObject<Env> implements WorkspaceSes
         status: 401,
       };
     }
-    const opened = await openBrowserSession(this.env.BROWSER, keepAliveMs);
+    // p<port>.preview.internal in this session reaches this workspace's dev server on that port.
+    const ports = previewPorts ?? [];
+    for (const p of ports) {
+      const checked = checkPort(p, this.config.serverPort);
+      if ("error" in checked)
+        return {
+          ok: false,
+          error: `Failed: ${checked.error} — fix: cf-opencode-browse --preview <port>`,
+          status: 400,
+        };
+    }
+    if (ports.length > MAX_PREVIEW_PORTS)
+      return {
+        ok: false,
+        error: `Failed: more than ${MAX_PREVIEW_PORTS} preview ports — fix: pass fewer`,
+        status: 400,
+      };
+    const factory = (this.ctx as unknown as { exports?: { PreviewEgress?: PreviewEgressFactory } }).exports
+      ?.PreviewEgress;
+    const outbound =
+      ports.length && factory ? previewOutbound(factory, await this.workspaceId(), ports) : undefined;
+    const opened = await openBrowserSession(this.env.BROWSER, keepAliveMs, outbound);
     if ("error" in opened) return { ok: false, error: opened.error, status: opened.status };
     return { ok: true, session: opened };
   }
@@ -526,6 +559,7 @@ export class WorkspaceSession extends DurableObject<Env> implements WorkspaceSes
    */
   override async fetch(req: Request): Promise<Response> {
     const url = new URL(req.url);
+    if (url.pathname === "/preview") return handlePreview(await this.previewDeps(), req);
     const kind = url.pathname === "/shell" ? "shell" : url.pathname === "/ssh" ? "ssh" : undefined;
     if (!kind) return jsonError(404, `no route ${url.pathname}`, "use /shell or /ssh");
     if (req.headers.get("upgrade")?.toLowerCase() !== "websocket") {
@@ -602,6 +636,55 @@ export class WorkspaceSession extends DurableObject<Env> implements WorkspaceSes
     return new Response(null, { status: 101, webSocket: client });
   }
 
+  // --- Preview a dev server (preview.ts). ---
+
+  private previewKeyCache?: Promise<CryptoKey | undefined>;
+
+  private async previewDeps(): Promise<PreviewDeps> {
+    this.previewKeyCache ??= previewKey(this.env.CONTROL_TOKEN);
+    const container = this.ctx.container;
+    return {
+      workspaceId: await this.workspaceId(),
+      kv: this.kv,
+      key: await this.previewKeyCache,
+      serverPort: this.config.serverPort,
+      running: Boolean(container?.running),
+      portFetch: (port, r) => {
+        if (!container) return Promise.reject(new Error("no container"));
+        const tcp = (
+          container as unknown as { getTcpPort(p: number): { fetch(r: Request): Promise<Response> } }
+        ).getTcpPort(port);
+        return tcp.fetch(r);
+      },
+      touch: () => this.touch(),
+      now: () => Date.now(),
+    };
+  }
+
+  /** p<port>.preview.internal from this workspace's remote browser. Only PreviewEgress calls this, over RPC. */
+  async previewInternal(req: Request, port: number): Promise<Response> {
+    return internalPreview(await this.previewDeps(), req, port);
+  }
+
+  /** Public preview URLs. The Worker routes these from /v1 only, after the bearer check. */
+  async previewShares(): Promise<PreviewShare[]> {
+    return listShares(this.kv);
+  }
+
+  async sharePreview(
+    port: number,
+  ): Promise<{ ok: true; share: PreviewShare } | { ok: false; error: string; status: number }> {
+    const r = await addShare(this.kv, port, iso(Date.now()), this.config.serverPort);
+    if (r.ok) this.note(`public preview on port ${port} on`);
+    return r;
+  }
+
+  async unsharePreview(port?: number): Promise<number[]> {
+    const gone = await removeShares(this.kv, port);
+    if (gone.length) this.note(`public preview off for port ${gone.join(", ")}`);
+    return gone;
+  }
+
   async alarm(): Promise<void> {
     const workspaceId = await this.workspaceId();
     const ctx: OrbContext = {
@@ -646,7 +729,7 @@ function jsonError(status: number, cause: string, fix: string): Response {
 }
 
 /** The real container plus egress. Tests use the wrapper alone; they never call intercept. */
-function withEgress(session: WorkspaceSession, container: Container): ContainerPort {
+function withEgress(session: WorkspaceSession, container: Container, workspaceId: string): ContainerPort {
   // Assign rather than spread: a spread would freeze the `running` getter at its current value.
   const port = wrapContainer(container);
   port.intercept = (routes: EgressRoute[]) => {
@@ -660,10 +743,11 @@ function withEgress(session: WorkspaceSession, container: Container): ContainerP
   port.interceptAi = (gateway: string) => {
     const exports = (
       session as unknown as {
-        ctx: { exports: { AiEgress(opts: { props: { gateway: string } }): Fetcher } };
+        ctx: { exports: { AiEgress(opts: { props: { gateway: string; workspaceId: string } }): Fetcher } };
       }
     ).ctx.exports;
-    return container.interceptOutboundHttp(AI_HOST, exports.AiEgress({ props: { gateway } }));
+    // workspaceId lets cf-opencode-fetch open this workspace's own dev servers (preview-browser.ts).
+    return container.interceptOutboundHttp(AI_HOST, exports.AiEgress({ props: { gateway, workspaceId } }));
   };
   return port;
 }

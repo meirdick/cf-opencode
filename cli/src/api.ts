@@ -45,6 +45,12 @@ export interface RemoteTasks {
   live: boolean;
 }
 
+export interface PublicPreview {
+  port: number;
+  url: string;
+  createdAt: string;
+}
+
 export class ControlClient {
   constructor(
     private readonly url: string,
@@ -107,6 +113,20 @@ export class ControlClient {
 
   async logs(workspaceId: string, lines: number): Promise<{ log: string }> {
     return this.get(`/v1/workspaces/${encodeURIComponent(workspaceId)}/logs?lines=${lines}`);
+  }
+
+  /** Public preview URLs of a workspace. Only the control token can make or remove one. */
+  async previews(workspaceId: string): Promise<{ public: PublicPreview[] }> {
+    return this.get(`/v1/workspaces/${encodeURIComponent(workspaceId)}/previews`);
+  }
+
+  async sharePreview(workspaceId: string, port: number): Promise<PublicPreview> {
+    return this.send("POST", `/v1/workspaces/${encodeURIComponent(workspaceId)}/previews`, { port });
+  }
+
+  async unsharePreview(workspaceId: string, port?: number): Promise<{ removed: number[] }> {
+    const q = port === undefined ? "" : `?port=${port}`;
+    return this.send("DELETE", `/v1/workspaces/${encodeURIComponent(workspaceId)}/previews${q}`);
   }
 
   /** Poll until the op finishes. Prints new progress lines through `onLine`. */

@@ -5,6 +5,8 @@
 #   cf-opencode-fetch --html <url>             the rendered HTML
 #   cf-opencode-fetch --screenshot f.png <url> save a screenshot
 #   cf-opencode-fetch --pdf f.pdf <url>        save a PDF
+#   cf-opencode-fetch http://p3000.preview.internal/   this workspace's dev server on port 3000 (or
+#                                              http://localhost:3000/); the browser reaches it with no public URL
 # The cf-opencode Worker loads the page in a real browser (Browser Run Quick Actions), so pages that
 # need JavaScript work. No token exists in the workspace. It bills to the account's Browser Run usage.
 set -euo pipefail

@@ -128,6 +128,47 @@ address, a websocket on the Worker that relays to the Browser Run binding. It
 says, on stderr, that the session is billed per browser hour and closes after 10
 minutes idle. A workspace with no local password tells the user to connect first.
 
+## Preview a dev server
+
+A preview exposes a port of a machine that holds the user's code, so it is
+private by default and every check is in the workspace's Durable Object
+(`worker/src/orb/preview.ts`); the Worker only routes (`preview-ingress.ts`).
+
+- Credentials. `/preview/<id>/<port>/` takes the workspace password (Basic),
+  the same check as `/oc`, in constant time. A browser cannot send it, so the
+  Worker gives a cookie: `HMAC(key, "cookie", id, port, expiry)`, where key =
+  `HMAC(control token, "cf-opencode/preview/v1")`. No state, no password in
+  it, and a cookie for another workspace or port does not verify. HttpOnly,
+  Secure, SameSite=Lax, Path `/preview/<id>/<port>/`, 8 hours. Rotating the
+  control token signs every browser out.
+- Sign-in without the password in a URL. The CLI posts the password in a
+  header to `/preview/<id>/link` and gets a ticket: `HMAC(key, "ticket", id,
+  port, expiry, nonce)`, 2 minutes. The Durable Object keeps spent nonces until
+  they expire, so a ticket works once. The redirect after it is a path on the
+  same origin, built from the prefix, never from input: no open redirect.
+- The dev server never sees the password, the cookie or our routing header.
+  The Worker drops every client `x-cf-opencode-*` header before it sets its own.
+- Ports: 1024-65535, not OpenCode's port, not 22.
+- No wake. A dev server does not survive a pause, so waking would only start
+  OpenCode. A paused workspace answers a page that says to connect. A request
+  through an awake preview counts as use, rate-limited like the terminals.
+- Path prefix. Previews share the Worker's origin under a path, because
+  `workers.dev` has no wildcard hostnames. Two costs: absolute paths leave the
+  prefix (a same-origin Referer sends them back; hot reload's websocket has no
+  Referer), and a preview page can read other previews the same browser is
+  signed in to. A hostname for each preview fixes both and needs a custom
+  domain with wildcard DNS; it is the next step if users have one.
+- Public is explicit. `/public/<id>/<token>/` exists only after `preview
+  --public`, which needs the control token: the agent has the workspace
+  password, and must not be able to publish a port. The token is 32 random
+  bytes in the Durable Object, compared in constant time. Cloudflare's own
+  preview URLs need a custom domain, so this is our mechanism, shaped like the
+  token links in the Sandbox previews docs.
+- The agent's browser. Browser Run's `acquire({ outboundByHost })` sends a
+  hostname's requests to a Worker Fetcher. `p<port>.preview.internal` goes to
+  `PreviewEgress`, whose props (workspace, port) only this Worker sets, and on
+  to the port. No public URL, no password in the browser. HTTP only.
+
 ## Close the laptop, the work goes on
 
 The core promise: start a task from the laptop, close it, the task finishes, the

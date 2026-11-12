@@ -3,9 +3,11 @@
 import { WorkerEntrypoint } from "cloudflare:workers";
 import { parseConfig } from "../core/config";
 import type { EgressRoute } from "../core/container-port";
-import type { Env } from "../env";
-import { type AiRunner, handleAi, type PageRunner } from "./ai";
+import { type Env, workspaceDoName } from "../env";
+import { type AiRunner, handleAi, type PageRunner, type PreviewPageReader } from "./ai";
 import { rewriteEgress } from "./egress";
+import { type PreviewBrowser, readPreviewPage } from "./preview-browser";
+import { type PreviewEgressFactory, type PreviewEgressProps, previewOutbound } from "./preview-hosts";
 
 interface EgressProps {
   routes: EgressRoute[];
@@ -24,7 +26,7 @@ export class ProviderEgress extends WorkerEntrypoint<Env, EgressProps> {
 }
 
 /** The platform calls this for every request the container sends to AI_HOST. */
-export class AiEgress extends WorkerEntrypoint<Env, { gateway: string }> {
+export class AiEgress extends WorkerEntrypoint<Env, { gateway: string; workspaceId?: string }> {
   override fetch(req: Request): Promise<Response> {
     let searchProvider: string | undefined;
     try {
@@ -38,6 +40,32 @@ export class AiEgress extends WorkerEntrypoint<Env, { gateway: string }> {
       this.ctx.props.gateway,
       searchProvider,
       this.env.BROWSER as unknown as PageRunner | undefined,
+      this.previewReader(),
     );
+  }
+
+  /** cf-opencode-fetch of this workspace's own dev server. Needs the workspace id, which a container started before 0.2 lacks. */
+  private previewReader(): PreviewPageReader | undefined {
+    const workspaceId = this.ctx.props.workspaceId;
+    const browser = this.env.BROWSER as unknown as PreviewBrowser | undefined;
+    const factory = (this.ctx as unknown as { exports?: { PreviewEgress?: PreviewEgressFactory } }).exports
+      ?.PreviewEgress;
+    if (!workspaceId || !browser || !factory) return undefined;
+    return (port, path, format) =>
+      readPreviewPage(browser, previewOutbound(factory, workspaceId, [port]), port, path, format);
+  }
+}
+
+/**
+ * Browser Run calls this for each request its browser sends to p<port>.preview.internal (preview-hosts.ts).
+ * The props come from this Worker only, when it opens the session, so they name this workspace and port.
+ */
+export class PreviewEgress extends WorkerEntrypoint<Env, PreviewEgressProps> {
+  override fetch(req: Request): Promise<Response> {
+    const { workspaceId, port } = this.ctx.props;
+    const stub = this.env.WORKSPACE.getByName(workspaceDoName(workspaceId)) as unknown as {
+      previewInternal(req: Request, port: number): Promise<Response>;
+    };
+    return stub.previewInternal(req, port);
   }
 }

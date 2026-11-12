@@ -110,6 +110,10 @@ You run in a cf-opencode workspace: a Debian container on Cloudflare, owned by t
   that need JavaScript work. \`--links\` lists the links, \`--screenshot file.png\` and \`--pdf file.pdf\` save a file.
 - Browser: no browser is installed. Run \`cf-opencode-browse\` to open a remote browser session. It prints a
   Chrome DevTools Protocol websocket URL and how to connect. Python has the \`websocket\` module for it.
+- Dev server: start it on 0.0.0.0 (for Vite: \`--host 0.0.0.0\`), then run \`cf-opencode-preview <port>\`. Give the user
+  the line it prints; they open it with \`cf-opencode preview\` on their machine. Nothing is public. To check your own
+  frontend, \`cf-opencode-fetch http://p<port>.preview.internal/\` (\`--screenshot f.png\` too), or
+  \`cf-opencode-browse --preview <port>\` and open that address.
 - The disk is saved when the workspace is idle. Processes do not survive that; files do.
 CF_OPENCODE_NOTES
 fi
