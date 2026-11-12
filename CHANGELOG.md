@@ -24,6 +24,8 @@
 - `authorized_keys` in a workspace is no longer append-only. A cf-opencode block holds the CLI keys that
   connected in the last 30 days; each SSH connect rewrites it, as the workspace user, not root. Keys an
   earlier release appended (comment `cf-opencode`) are removed; lines you wrote stay.
+- `ssh` and `ssh-config` accept only an https Worker origin for `--url` (http only for localhost), and quote
+  every part of the ssh `ProxyCommand`. Before, a `--url` with a `"` ran shell on this machine.
 
 - Two `connect`s in flight with different inputs no longer share one op. The op journal hashed a field the
   API never sends, so the second caller could attach to the first one's spawn and get its password.
