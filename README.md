@@ -232,6 +232,7 @@ Other commands:
 | `cf-opencode preview <id> <port>` | Open a dev server in the workspace in your browser, behind the workspace password |
 | `cf-opencode preview <id> <port> --public` | Make a public URL for that port; `--stop` removes it, `--list` lists them |
 | `cf-opencode git-token` | Let workspaces use GitHub; the token stays in the Worker |
+| `cf-opencode skills [push\|remove] [name...]` | Copy skills from this machine into a workspace. Off unless you ask; `connect --skills a,b` does it in one step |
 | `cf-opencode completion <shell>` | Tab completion for bash, zsh or fish: commands, flags, workspace ids |
 | `cf-opencode skill [--install]` | Print the handoff skill for agents, or install it |
 | `cf-opencode notify-key` | Print the key that signs the POSTs to `notifyUrl` |

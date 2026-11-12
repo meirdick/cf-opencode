@@ -34,6 +34,8 @@ export interface ConnectInput {
   /** Open this session in the workspace. */
   session?: string;
   onLine?: (line: string) => void;
+  /** Runs when the workspace is up, before the client opens: copy skills, for example. */
+  beforeAttach?: (id: string) => Promise<void>;
 }
 
 export interface ConnectResult {
@@ -123,6 +125,7 @@ export async function connect(input: ConnectInput): Promise<ConnectResult> {
   };
   writeWorkspace(workspace);
   const serverUrl = `${input.url}/oc/${encodeURIComponent(id)}`;
+  await input.beforeAttach?.(id);
   if (input.attach !== false) {
     await attach(serverUrl, password, input.directory ?? process.cwd(), attachArgs(serverUrl, input));
     // OpenCode prints "Continue  opencode -s <id>" on exit. That command starts a local session, not this one.

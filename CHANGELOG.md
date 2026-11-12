@@ -45,6 +45,10 @@
 - `cf-opencode preview [workspace] <port...>` opens a dev server that runs in the workspace at
   `http://localhost:<port>` on your machine, through an SSH port forward. Nothing is public, and the app is at
   the root, so hot reload works.
+- `cf-opencode skills push <name...>` copies skills from this machine (`~/.config/opencode/skills`,
+  `~/.claude/skills`) into a workspace, so the remote agent has them; `skills remove` deletes them and `skills`
+  lists both sides. Nothing is copied unless you ask: `connect --skills a,b` (or `all`) copies in the same step.
+  `.git`, `node_modules`, `.env` and key files are left out, and links inside a skill are not followed.
 - `cf-opencode completion <bash|zsh|fish>`: tab completion for commands, flags and workspace ids.
 - `cf-opencode preview … --web` opens the dev server on a Worker URL instead, behind
   the workspace password. A one-time sign-in link gives the browser a cookie for that workspace and port; the

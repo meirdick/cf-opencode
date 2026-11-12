@@ -20,6 +20,16 @@ import {
 import { mcpCommand } from "./mcp.js";
 import { openInBrowser, preview } from "./preview.js";
 import { listSessions, localWorkspaceIds, renderSessions } from "./sessions.js";
+import {
+  localSkills,
+  pushSkills,
+  remoteSkills,
+  removeCommand,
+  renderSkills,
+  selectSkills,
+  skillRoots,
+  sshRun,
+} from "./skills-sync.js";
 import { notifyKeyCommand, runCommand, skillCommand, tasksCommand } from "./task-commands.js";
 import { forgetHostKey, shell, ssh, sshConfigBlock, sshKey, sshProxy, target } from "./terminal.js";
 import { fmtAge, makeUi, readSecret } from "./ui.js";
@@ -53,6 +63,8 @@ const COMMANDS: Record<string, Command> = {
       "--repo <url>        git remote to clone when the workspace has no snapshot yet",
       "--branch <name>     branch to check out",
       "--no-attach         print the server URL instead of opening OpenCode",
+      "--skills <a,b|all>  copy these skills from this machine into the workspace first (off by default;",
+      "                    cf-opencode skills lists them)",
       "--continue, -c      open the workspace's last session",
       "--session, -s <id>  open that session (the ses_… id OpenCode prints on exit)",
       "--url <url>         Worker URL (default: ~/.cf-opencode/install.json)",
@@ -62,6 +74,7 @@ const COMMANDS: Record<string, Command> = {
       repo: { type: "string" },
       branch: { type: "string" },
       "no-attach": { type: "boolean" },
+      skills: { type: "string" },
       continue: { type: "boolean", short: "c" },
       session: { type: "string", short: "s" },
     },
@@ -440,6 +453,54 @@ const COMMANDS: Record<string, Command> = {
   },
 };
 
+COMMANDS.skills = {
+  group: "Workspaces",
+  usage: "skills [push|remove] [name...]",
+  summary: "Copy skills from this machine into a workspace, so the remote agent has them.",
+  details: [
+    "cf-opencode skills                 skills on this machine, and which are in the workspace",
+    "cf-opencode skills push a b        copy skills a and b (replaces the copy that is there)",
+    "cf-opencode skills push --all      copy every skill found here",
+    "cf-opencode skills remove a        delete skill a from the workspace",
+    "--workspace <id>   the workspace (default: the one of this directory)",
+    "--from <dir>       a skills folder to read (default: ~/.config/opencode/skills, ~/.claude/skills, ~/.agents/skills)",
+    "A skill is a folder with a SKILL.md. Copies go to ~/.config/opencode/skills in the workspace and stay",
+    "on its disk and in its snapshots. .git, node_modules, .env and key files are not copied. Needs ssh here.",
+  ],
+  flags: { workspace: { type: "string" }, from: { type: "string" }, all: { type: "boolean" } },
+  run: async (args) => {
+    const [verb, ...names] = args.positionals;
+    const id = flagString(args, "workspace") ?? workspaceIdFrom(process.cwd());
+    const found = localSkills(skillRoots(undefined, flagString(args, "from")));
+    const run = sshRun(flagString(args, "url"));
+    const say = (s: string) => process.stderr.write(`${s}\n`);
+    if (verb === undefined) {
+      // Listing must not need the workspace: show what is here, and the workspace column when it answers.
+      let remote: string[] | undefined;
+      if (readWorkspace(id)) remote = await remoteSkills(id, run).catch(() => undefined);
+      if (flagBool(args, "json"))
+        process.stdout.write(`${JSON.stringify({ ok: true, workspace: id, local: found, remote })}\n`);
+      else process.stdout.write(`${renderSkills(found, remote, id)}\n`);
+      return 0;
+    }
+    target(requireUrl(args).url, id);
+    if (verb === "push") {
+      const picked = selectSkills(found, names, flagBool(args, "all"));
+      await pushSkills(id, picked, run, say);
+      say(`A new OpenCode session in ${id} sees them.`);
+      return 0;
+    }
+    if (verb === "remove") {
+      if (names.length === 0)
+        throw new CliError("skills remove needs skill names", "cf-opencode skills remove <name...>");
+      await run(id, removeCommand(names));
+      say(`✓ removed from ${id}: ${names.join(", ")}`);
+      return 0;
+    }
+    throw new CliError(`unknown skills action ${verb}`, "use: cf-opencode skills [push|remove] [name...]");
+  },
+};
+
 COMMANDS.completion = {
   group: "Set up",
   usage: "completion <bash|zsh|fish>",
@@ -544,6 +605,16 @@ export async function main(argv: string[]): Promise<number> {
 async function connectCommand(args: ParsedArgs): Promise<number> {
   const { url, token } = requireInstall(args);
   const id = args.positionals[0];
+  // Checked before the wake, so a wrong name costs nothing.
+  const wanted = flagString(args, "skills");
+  const skills =
+    wanted === undefined
+      ? []
+      : selectSkills(
+          localSkills(skillRoots()),
+          wanted === "all" ? [] : wanted.split(",").filter(Boolean),
+          wanted === "all",
+        );
   const result = await connect({
     url,
     token,
@@ -555,6 +626,13 @@ async function connectCommand(args: ParsedArgs): Promise<number> {
     continueLast: flagBool(args, "continue"),
     ...(flagString(args, "session") ? { session: flagString(args, "session") } : {}),
     onLine: (line) => process.stderr.write(`${line}\n`),
+    // Off unless asked: a skill can hold local paths, and a copy stays on the workspace disk.
+    ...(skills.length
+      ? {
+          beforeAttach: (ws: string) =>
+            pushSkills(ws, skills, sshRun(flagString(args, "url")), (s) => process.stderr.write(`${s}\n`)),
+        }
+      : {}),
   });
   if (flagBool(args, "json") || flagBool(args, "no-attach")) {
     process.stdout.write(
