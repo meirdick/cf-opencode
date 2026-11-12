@@ -15,7 +15,7 @@ import {
 import { type Env, REGISTRY_DO_NAME, workspaceDoName } from "./env";
 import { connectCdp, relay, SESSION_ID_RE } from "./orb/browse";
 import type { SessionList } from "./orb/sessions";
-import type { StartResult, TaskInput, TaskList } from "./orb/tasks";
+import type { StartResult, TaskInput, TaskList, TaskOne } from "./orb/tasks";
 import { isPreviewPath, previewControl, previewFallback, previewIngress } from "./preview-ingress";
 import { tasksRoute } from "./tasks-api";
 
@@ -39,6 +39,8 @@ export interface WorkspaceSessionApi {
   startTask(input: TaskInput): Promise<StartResult>;
   /** Handed-off tasks: live from a running workspace, else the saved copy. Wakes nothing. */
   tasks(): Promise<TaskList>;
+  /** One task and its result record; `seen` clears its unseen mark. Wakes nothing. */
+  task(sessionId: string, seen?: boolean): Promise<TaskOne | undefined>;
   /** Proxy to opencode serve. Wakes a paused workspace when the password header is present. */
   proxy(req: Request): Promise<Response>;
   /** Open a Browser Run session for this workspace through the Browser Run binding. */

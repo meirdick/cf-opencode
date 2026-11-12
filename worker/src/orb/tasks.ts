@@ -5,13 +5,31 @@
 // state it last read. A running workspace refreshes the list; a paused one answers from the copy, which
 // is refreshed before each pause, so nothing is woken to show a task.
 import { workspacePassword } from "../auth";
+import { checkSchema, MAX_SCHEMA_CHARS, structuredResult } from "../core/json-subset";
 import { LAST_USE_KEY } from "./alarm";
 import type { OrbContext } from "./context";
 import { iso, loadOrb, redactWith } from "./journal";
 import { sh } from "./spawn";
-import { TASK_START_SH, TASK_STATUS_SH } from "./task-scripts";
+import type { TaskResult } from "./task-result";
+import { TASK_GIT_SH, TASK_START_SH, TASK_STATUS_SH } from "./task-scripts";
 
-export type TaskState = "running" | "done" | "failed" | "waiting";
+/** stopped: the workspace paused while the task ran. The session goes on after a connect. */
+export type TaskState = "running" | "done" | "failed" | "waiting" | "stopped";
+
+export interface Commit {
+  sha: string;
+  subject: string;
+}
+
+/** A delivery to notifyUrl that has not succeeded yet (task-notify.ts). */
+export interface PendingNotify {
+  /** The state the delivery reports. */
+  state: TaskState;
+  /** Tries made so far. */
+  tries: number;
+  /** Epoch ms of the next try. */
+  next: number;
+}
 
 export interface TaskRecord {
   /** The OpenCode session id. */
@@ -22,12 +40,30 @@ export interface TaskRecord {
   /** provider/model, when `run` chose one. */
   model?: string;
   state: TaskState;
-  /** Why a failed task failed, when that is known. */
+  /** Why a failed task failed, or why a task stopped, when that is known. */
   reason?: string;
   /** The end of the last assistant message with text. */
   last?: string;
   /** Epoch ms of the session's last change, from OpenCode. */
   updated?: number;
+  /** HEAD of the checkout when the task started. Commits after it are the task's. */
+  base?: string;
+  /** The JSON Schema (json-subset.ts) the last message must end with, from `run --schema`. */
+  schema?: unknown;
+  /** The open permission request or form, while waiting. */
+  question?: string;
+  /** Facts read with git in the workspace (TASK_GIT_SH). Absent until they were read once. */
+  branch?: string;
+  commits?: Commit[];
+  pullRequest?: string;
+  changedFiles?: string[];
+  structured?: unknown;
+  structuredError?: string;
+  /** Set when the task leaves running; cleared when a client reads this one task. */
+  unseen?: boolean;
+  notify?: PendingNotify;
+  notified?: { at: string; status: number; state: TaskState };
+  notifyError?: string;
 }
 
 export interface TaskList {
@@ -38,11 +74,21 @@ export interface TaskList {
   live: boolean;
 }
 
+/** One task for GET /tasks/<id>: the saved record and its result record (task-result.ts). */
+export interface TaskOne {
+  task: TaskRecord;
+  result: TaskResult;
+  live: boolean;
+  at?: string;
+}
+
 export interface TaskInput {
   text: string;
   title?: string;
   /** provider/model, for example cloudflare-workers-ai/@cf/zai-org/glm-5.3. */
   model?: string;
+  /** JSON Schema subset for the result block. The CLI already put it in the text. */
+  schema?: unknown;
 }
 
 export type StartResult = { ok: true; task: TaskRecord } | { ok: false; status: number; error: string };
@@ -52,9 +98,11 @@ export const MAX_TASKS = 30;
 /** A new session is not active until the agent loop picks up the prompt. Until then it counts as running. */
 export const START_GRACE_MS = 2 * 60_000;
 export const MAX_TASK_CHARS = 32_000;
+export const SUMMARY_CHARS = 4000;
 const SESSION_ID_RE = /^ses[A-Za-z0-9_-]{1,100}$/;
 
 type Ctx = Pick<OrbContext, "container" | "kv" | "clock" | "config" | "env" | "workspaceId">;
+type Saved = { tasks: TaskRecord[]; at?: string };
 
 /** What OpenCode says about one session. */
 export interface SessionFacts {
@@ -74,7 +122,8 @@ export interface SessionFacts {
 /**
  * The task state from what OpenCode says. A question waits even while the session is active, because the
  * agent cannot go on without an answer. A session with no outcome and no activity is a prompt the loop has
- * not picked up yet; after START_GRACE_MS it never started.
+ * not picked up yet; after START_GRACE_MS it never started. A task that made no commit is still done: many
+ * tasks are research. `stopped` is not here: only a pause sets it (stopTasks).
  */
 export function taskState(
   f: SessionFacts,
@@ -107,7 +156,7 @@ export function modelRef(model: string): { providerID: string; id: string } | un
 export function parseTaskInput(
   body: Record<string, unknown>,
 ): { input: TaskInput } | { error: string; fix: string } {
-  const { text, title, model } = body;
+  const { text, title, model, schema } = body;
   if (typeof text !== "string" || !text.trim())
     return { error: "text is empty", fix: 'send { text: "<task>" }' };
   if (text.length > MAX_TASK_CHARS)
@@ -129,6 +178,17 @@ export function parseTaskInput(
       };
     input.model = model;
   }
+  if (schema !== undefined) {
+    if (JSON.stringify(schema).length > MAX_SCHEMA_CHARS)
+      return { error: `the schema is over ${MAX_SCHEMA_CHARS} characters`, fix: "make the schema smaller" };
+    const why = checkSchema(schema);
+    if (why)
+      return {
+        error: `the schema is outside the supported subset (${why})`,
+        fix: "use type, properties, required, items, enum and additionalProperties false only",
+      };
+    input.schema = schema;
+  }
   return { input };
 }
 
@@ -137,6 +197,10 @@ function oneLine(s: string, cap: number): string {
     .replace(/\s*\n\s*/g, " ")
     .trim()
     .slice(0, cap);
+}
+
+async function directoryOf(ctx: Ctx): Promise<string> {
+  return (await loadOrb(ctx.kv))?.directory ?? "/home/user/project";
 }
 
 /** Start a session with the task as its first prompt, and keep it in the task list. Wakes nothing. */
@@ -155,7 +219,7 @@ export async function startTask(ctx: Ctx, input: TaskInput): Promise<StartResult
       error: "Failed: the Worker has no CONTROL_TOKEN — fix: cf-opencode upgrade",
     };
   const password = await workspacePassword(ctx.env.CONTROL_TOKEN, id);
-  const directory = (await loadOrb(ctx.kv))?.directory ?? "/home/user/project";
+  const directory = await directoryOf(ctx);
   const model = input.model ? modelRef(input.model) : undefined;
   const spec = {
     create: {
@@ -165,12 +229,13 @@ export async function startTask(ctx: Ctx, input: TaskInput): Promise<StartResult
     },
     prompt: { text: input.text },
   };
-  let out: { id?: unknown; title?: unknown; error?: unknown } | undefined;
+  let out: { id?: unknown; title?: unknown; base?: unknown; error?: unknown } | undefined;
   try {
     const [cmd, opts] = sh(TASK_START_SH, {
       PORT: String(ctx.config.serverPort),
       OPENCODE_SERVER_PASSWORD: password,
       TASK: JSON.stringify(spec),
+      DIRECTORY: directory,
     });
     const r = await ctx.container.exec(cmd, { ...opts, timeoutMs: 45_000 });
     out = r.exitCode === 0 ? (JSON.parse(r.stdout.trim()) as typeof out) : undefined;
@@ -199,8 +264,10 @@ export async function startTask(ctx: Ctx, input: TaskInput): Promise<StartResult
     started: now,
     ...(input.model ? { model: input.model } : {}),
     state: "running",
+    ...(typeof out.base === "string" && /^[0-9a-f]{40}$/.test(out.base) ? { base: out.base } : {}),
+    ...(input.schema !== undefined ? { schema: input.schema } : {}),
   };
-  const saved = (await ctx.kv.get<{ tasks: TaskRecord[]; at?: string }>(TASKS_KEY)) ?? { tasks: [] };
+  const saved = (await ctx.kv.get<Saved>(TASKS_KEY)) ?? { tasks: [] };
   await ctx.kv.put(TASKS_KEY, {
     ...saved,
     tasks: [task, ...saved.tasks.filter((t) => t.id !== task.id)].slice(0, MAX_TASKS),
@@ -228,15 +295,36 @@ export function parseTaskStatus(stdout: string): StatusOut | undefined {
   return { active: r.active.filter((x): x is string => typeof x === "string"), sessions: r.sessions };
 }
 
-/** Apply one status read to the saved tasks. A session that could not be read keeps its last state. */
-export function applyStatus(tasks: TaskRecord[], status: StatusOut, now: number): TaskRecord[] {
+/**
+ * The task left running, or moved between two end states. Mark it unseen for the inbox, and queue one
+ * delivery to notifyUrl when one is set. A newer change replaces a delivery still waiting for a retry.
+ */
+export function markEnded(t: TaskRecord, now: number, notify: boolean): TaskRecord {
+  const next: TaskRecord = { ...t, unseen: true };
+  delete next.notified;
+  delete next.notifyError;
+  if (notify) next.notify = { state: t.state, tries: 0, next: now };
+  else delete next.notify;
+  return next;
+}
+
+/**
+ * Apply one status read to the saved tasks. A session that could not be read keeps its last state. With
+ * `notify`, a task that changes to an end state queues a delivery (markEnded).
+ */
+export function applyStatus(
+  tasks: TaskRecord[],
+  status: StatusOut,
+  now: number,
+  opts: { notify?: boolean } = {},
+): TaskRecord[] {
   const active = new Set(status.active);
   return tasks.map((t) => {
     const s = status.sessions[t.id];
     if (!s || typeof s.error === "string") return t;
     const found = s.found === true;
     const time = (s.time ?? {}) as Record<string, unknown>;
-    const { state, reason } = taskState(
+    let { state, reason } = taskState(
       {
         found,
         active: active.has(t.id),
@@ -248,20 +336,107 @@ export function applyStatus(tasks: TaskRecord[], status: StatusOut, now: number)
       t.started,
       now,
     );
-    const next: TaskRecord = { ...t, state };
+    // The pause interrupted the session. That is the stop already recorded, not a failure of the task.
+    if (t.state === "stopped" && state === "failed" && s.outcome === "interrupted") {
+      state = "stopped";
+      reason = t.reason;
+    }
+    let next: TaskRecord = { ...t, state };
     if (reason) next.reason = reason;
     else delete next.reason;
     if (found && typeof s.title === "string" && s.title) next.title = s.title.slice(0, 200);
-    if (typeof s.last === "string" && s.last) next.last = s.last.slice(-4000);
+    const last = typeof s.last === "string" && s.last ? s.last : undefined;
+    if (last) next.last = last.slice(-SUMMARY_CHARS);
     if (typeof time.updated === "number") next.updated = time.updated;
+    if (state === "waiting" && typeof s.question === "string" && s.question)
+      next.question = s.question.slice(0, 1000);
+    else delete next.question;
+    delete next.structured;
+    delete next.structuredError;
+    // Read the result block from the whole last message: the summary keeps only its end.
+    if (t.schema !== undefined && state !== "running")
+      Object.assign(next, structuredResult(last ?? t.last, t.schema));
+    if (state !== t.state && state !== "running") next = markEnded(next, now, opts.notify === true);
     return next;
   });
 }
 
+interface GitOut {
+  branch?: string;
+  pullRequest?: string;
+  tasks: Record<string, { commits?: unknown; changedFiles?: unknown }>;
+}
+
+/** The git script's output, or undefined when it is not that. */
+export function parseGitFacts(stdout: string): GitOut | undefined {
+  try {
+    const r = JSON.parse(stdout.trim()) as Partial<GitOut> | null;
+    if (!r?.tasks || typeof r.tasks !== "object") return undefined;
+    return { tasks: r.tasks, ...r } as GitOut;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Put the git facts on the tasks they are for. A task with no entry keeps what it had. */
+export function applyFacts(tasks: TaskRecord[], facts: GitOut, ids: Set<string>): TaskRecord[] {
+  return tasks.map((t) => {
+    const f = facts.tasks[t.id];
+    if (!ids.has(t.id) || !f) return t;
+    const commits = Array.isArray(f.commits)
+      ? f.commits
+          .filter(
+            (c): c is Commit =>
+              !!c &&
+              typeof c.sha === "string" &&
+              /^[0-9a-f]{40}$/.test(c.sha) &&
+              typeof c.subject === "string",
+          )
+          .slice(0, 30)
+          .map((c) => ({ sha: c.sha, subject: c.subject.slice(0, 200) }))
+      : [];
+    const files = Array.isArray(f.changedFiles)
+      ? f.changedFiles.filter((x): x is string => typeof x === "string").slice(0, 100)
+      : [];
+    const next: TaskRecord = { ...t, commits, changedFiles: files };
+    if (typeof facts.branch === "string" && facts.branch) next.branch = facts.branch.slice(0, 200);
+    if (typeof facts.pullRequest === "string" && /^https:\/\//.test(facts.pullRequest))
+      next.pullRequest = facts.pullRequest.slice(0, 500);
+    return next;
+  });
+}
+
+/** Run TASK_GIT_SH for these tasks. undefined when it did not answer; facts are a nice to have. */
+async function readFacts(ctx: Ctx, tasks: TaskRecord[], gh: boolean): Promise<GitOut | undefined> {
+  const want = tasks.filter((t) => t.base);
+  if (want.length === 0) return undefined;
+  try {
+    const [cmd, opts] = sh(TASK_GIT_SH, {
+      DIRECTORY: await directoryOf(ctx),
+      TASKS: JSON.stringify(
+        want.map((t) => ({ id: t.id, base: t.base, since: Math.floor(t.started / 1000) })),
+      ),
+      GH: gh ? "1" : "0",
+      GH_TOKEN: "cf-opencode-egress",
+    });
+    const r = await ctx.container.exec(cmd, { ...opts, timeoutMs: 40_000 });
+    return r.exitCode === 0 ? parseGitFacts(r.stdout) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export interface CaptureOptions {
+  /** Read git facts for these tasks too. Tasks that leave running get them anyway. */
+  facts?: string[];
+  /** Ask gh for the pull request. On by itself when a task leaves running. */
+  gh?: boolean;
+}
+
 /** Read the states from the running workspace and keep them. undefined when OpenCode did not answer. */
-export async function captureTasks(ctx: Ctx): Promise<TaskList | undefined> {
+export async function captureTasks(ctx: Ctx, o: CaptureOptions = {}): Promise<TaskList | undefined> {
   if (!ctx.container.running || !ctx.env.CONTROL_TOKEN) return undefined;
-  const before = await ctx.kv.get<{ tasks: TaskRecord[]; at?: string }>(TASKS_KEY);
+  const before = await ctx.kv.get<Saved>(TASKS_KEY);
   if (!before || before.tasks.length === 0) return { tasks: [], live: true };
   try {
     const ids = before.tasks.map((t) => t.id).filter((id) => SESSION_ID_RE.test(id));
@@ -273,9 +448,24 @@ export async function captureTasks(ctx: Ctx): Promise<TaskList | undefined> {
     const r = await ctx.container.exec(cmd, { ...opts, timeoutMs: 20_000 });
     const status = r.exitCode === 0 ? parseTaskStatus(r.stdout) : undefined;
     if (!status) return undefined;
-    // Read again: a task started while the script ran must not be lost.
-    const current = (await ctx.kv.get<{ tasks: TaskRecord[] }>(TASKS_KEY)) ?? before;
-    const tasks = applyStatus(current.tasks, status, ctx.clock.now());
+    // Facts for the tasks that end with this read, so the result and the notification carry them.
+    const preview = applyStatus(before.tasks, status, ctx.clock.now());
+    const ending = preview.filter((t, i) => t.state !== before.tasks[i]?.state && t.state !== "running");
+    const factIds = new Set([...(o.facts ?? []), ...ending.map((t) => t.id)]);
+    const facts = factIds.size
+      ? await readFacts(
+          ctx,
+          preview.filter((t) => factIds.has(t.id)),
+          o.gh === true || ending.length > 0,
+        )
+      : undefined;
+    // Read again: a task started while the scripts ran must not be lost. No await from here to the put, so
+    // a concurrent read cannot mark the same change twice.
+    const current = (await ctx.kv.get<Saved>(TASKS_KEY)) ?? before;
+    let tasks = applyStatus(current.tasks, status, ctx.clock.now(), {
+      notify: Boolean(ctx.config.notifyUrl),
+    });
+    if (facts) tasks = applyFacts(tasks, facts, factIds);
     const at = iso(ctx.clock.now());
     await ctx.kv.put(TASKS_KEY, { tasks, at });
     return { tasks, at, live: true };
@@ -288,6 +478,62 @@ export async function captureTasks(ctx: Ctx): Promise<TaskList | undefined> {
 export async function readTasks(ctx: Ctx): Promise<TaskList> {
   const live = await captureTasks(ctx);
   if (live) return live;
-  const saved = await ctx.kv.get<{ tasks: TaskRecord[]; at?: string }>(TASKS_KEY);
+  const saved = await ctx.kv.get<Saved>(TASKS_KEY);
   return saved ? { ...saved, live: false } : { tasks: [], live: false };
+}
+
+/**
+ * One task, with its git facts: live for a running task, read once (with the pull request) for one that
+ * ended. `seen` clears the unseen mark: this is the read that shows the result to someone.
+ */
+export async function readTask(
+  ctx: Ctx,
+  id: string,
+  o: { seen?: boolean } = {},
+): Promise<{ task: TaskRecord; live: boolean; at?: string } | undefined> {
+  const saved = await ctx.kv.get<Saved>(TASKS_KEY);
+  const t = saved?.tasks.find((x) => x.id === id);
+  if (!t) return undefined;
+  const ended = t.state !== "running";
+  const needFacts = !ended || t.commits === undefined;
+  const live = await captureTasks(ctx, needFacts ? { facts: [id], gh: ended } : {});
+  const list = live ?? { ...(saved as Saved), live: false };
+  let task = list.tasks.find((x) => x.id === id) ?? t;
+  if (o.seen && task.unseen) {
+    // Read again and write at once, so a refresh that ran meanwhile is kept.
+    const now = (await ctx.kv.get<Saved>(TASKS_KEY)) ?? { tasks: [] };
+    const tasks = now.tasks.map((x) => (x.id === id ? { ...x, unseen: false } : x));
+    await ctx.kv.put(TASKS_KEY, { ...now, tasks });
+    task = tasks.find((x) => x.id === id) ?? { ...task, unseen: false };
+  }
+  return { task, live: list.live, ...(list.at ? { at: list.at } : {}) };
+}
+
+/**
+ * The workspace stops under its running tasks (a cold pause, the end of a warm period). Read them one last
+ * time, with their git facts, then save the ones still running as stopped, so `tasks` on the paused
+ * workspace says so instead of running. The session goes on after a connect.
+ */
+export async function stopTasks(ctx: Ctx): Promise<void> {
+  const saved = await ctx.kv.get<Saved>(TASKS_KEY);
+  const running = saved?.tasks.filter((t) => t.state === "running").map((t) => t.id) ?? [];
+  await captureTasks(ctx, running.length ? { facts: running, gh: true } : {}).catch(() => undefined);
+  const after = await ctx.kv.get<Saved>(TASKS_KEY);
+  if (!after?.tasks.some((t) => t.state === "running")) return;
+  const now = ctx.clock.now();
+  const notify = Boolean(ctx.config.notifyUrl);
+  const tasks = after.tasks.map((t) =>
+    t.state !== "running"
+      ? t
+      : markEnded(
+          {
+            ...t,
+            state: "stopped",
+            reason: `the workspace paused while the task ran; continue it with cf-opencode connect ${ctx.workspaceId} --session ${t.id}`,
+          },
+          now,
+          notify,
+        ),
+  );
+  await ctx.kv.put(TASKS_KEY, { ...after, tasks });
 }

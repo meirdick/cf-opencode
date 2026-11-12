@@ -8,6 +8,7 @@ import { type AiRunner, handleAi, type PageRunner, type PreviewPageReader } from
 import { rewriteEgress } from "./egress";
 import { type PreviewBrowser, readPreviewPage } from "./preview-browser";
 import { type PreviewEgressFactory, type PreviewEgressProps, previewOutbound } from "./preview-hosts";
+import { handleNote, NOTE_PATH } from "./task-notify";
 
 interface EgressProps {
   routes: EgressRoute[];
@@ -28,6 +29,12 @@ export class ProviderEgress extends WorkerEntrypoint<Env, EgressProps> {
 /** The platform calls this for every request the container sends to AI_HOST. */
 export class AiEgress extends WorkerEntrypoint<Env, { gateway: string; workspaceId?: string }> {
   override fetch(req: Request): Promise<Response> {
+    if (req.method === "POST" && new URL(req.url).pathname === NOTE_PATH)
+      return handleNote(req, {
+        workspaceId: this.ctx.props.workspaceId,
+        controlToken: this.env.CONTROL_TOKEN,
+        rawConfig: this.env.CF_OPENCODE_CONFIG,
+      });
     let searchProvider: string | undefined;
     try {
       searchProvider = parseConfig(this.env.CF_OPENCODE_CONFIG).searchProvider;

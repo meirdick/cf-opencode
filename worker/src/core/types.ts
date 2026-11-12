@@ -204,6 +204,11 @@ export interface ProviderConfig {
    * that, the alarm restores it briefly (no opencode, no internet) to start a new 30 days. 0: let it expire.
    */
   snapshotRefreshDays: number;
+  /**
+   * https URL the Worker POSTs a handed-off task's result to when the task leaves running, and the notes of
+   * cf-opencode-notify. Signed with a key derived from CONTROL_TOKEN. Empty: no push.
+   */
+  notifyUrl: string;
 }
 
 export const DEFAULT_CONFIG: ProviderConfig = {
@@ -225,6 +230,7 @@ export const DEFAULT_CONFIG: ProviderConfig = {
   searchProvider: "exa",
   model: "cloudflare-workers-ai/@cf/zai-org/glm-5.3",
   snapshotRefreshDays: 3,
+  notifyUrl: "",
 };
 
 export const SNAPSHOT_TTL_MS = 30 * 24 * 3600_000;

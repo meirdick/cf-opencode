@@ -1,6 +1,9 @@
 import { execFile, spawnSync } from "node:child_process";
+import { mkdtempSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { WorkspaceSessionApi } from "../src/api";
 import { handleApi } from "../src/api";
@@ -9,6 +12,7 @@ import { LAST_USE_KEY } from "../src/orb/alarm";
 import { runDelete } from "../src/orb/delete";
 import { runPause } from "../src/orb/pause";
 import { runSpawn } from "../src/orb/spawn";
+import { taskResult } from "../src/orb/task-result";
 import { TASK_START_SH, TASK_STATUS_SH } from "../src/orb/task-scripts";
 import {
   applyStatus,
@@ -310,14 +314,28 @@ describe("tasks routes", () => {
   });
 
   it("GET lists, and GET one finds a task or answers 404", async () => {
+    const seenArgs: unknown[] = [];
     const { env: e, names } = env({
       tasks: async () => ({ tasks: [task], live: false, at: "2026-11-12T10:00:00Z" }),
+      task: async (sid, seen) => {
+        seenArgs.push(seen);
+        return sid === "ses_1"
+          ? { task, result: taskResult("app", task), live: false, at: "2026-11-12T10:00:00Z" }
+          : undefined;
+      },
     });
     const get = (p: string) =>
       handleApi(new Request(`https://w/v1/workspaces/app/tasks${p}`, { headers: auth }), e);
     expect(((await (await get("")).json()) as { tasks: unknown[] }).tasks).toHaveLength(1);
     const one = await get("/ses_1");
-    expect(await one.json()).toEqual({ task, live: false, at: "2026-11-12T10:00:00Z" });
+    expect(await one.json()).toEqual({
+      task,
+      result: taskResult("app", task),
+      live: false,
+      at: "2026-11-12T10:00:00Z",
+    });
+    await get("/ses_1?seen=1");
+    expect(seenArgs).toEqual([false, true]);
     expect((await get("/ses_2")).status).toBe(404);
     expect((await get("/not-a-session")).status).toBe(400);
     expect(names.every((n) => n === "ws:app")).toBe(true);
@@ -367,8 +385,37 @@ function stubOpenCode(password: string) {
             time: { created: 1, updated: 2 },
           },
         });
-      if (sub === "/permission") return send(res, 200, { data: sid === "ses_ask" ? [{ id: "per_1" }] : [] });
-      if (sub === "/form") return send(res, 200, { data: [] });
+      if (sub === "/permission")
+        return send(res, 200, {
+          data:
+            sid === "ses_ask"
+              ? [{ id: "per_1", sessionID: sid, action: "bash", resources: ["rm -rf build"] }]
+              : [],
+        });
+      if (sub === "/form")
+        return send(res, 200, {
+          data:
+            sid === "ses_form"
+              ? [
+                  {
+                    id: "frm_1",
+                    sessionID: sid,
+                    title: "Which database?",
+                    fields: [
+                      {
+                        key: "db",
+                        type: "string",
+                        title: "Database",
+                        options: [
+                          { value: "pg", label: "Postgres" },
+                          { value: "d1", label: "D1" },
+                        ],
+                      },
+                    ],
+                  },
+                ]
+              : [],
+        });
       if (sub === "/message" && u.searchParams.get("type") === "assistant")
         return send(res, 200, {
           data: [
@@ -431,6 +478,22 @@ describe.skipIf(!hasPython || process.platform === "win32")("task scripts agains
         TASK: JSON.stringify(spec),
       });
       expect(JSON.parse(denied)).toEqual({ error: "session.create: HTTP 401 UnauthorizedError" });
+
+      // With the checkout's directory, HEAD before the prompt is the task's base.
+      const repo = mkdtempSync(join(tmpdir(), "cfoc-start-"));
+      const git = (...a: string[]) =>
+        spawnSync("git", ["-C", repo, "-c", "user.name=t", "-c", "user.email=t@example.com", ...a], {
+          encoding: "utf8",
+        }).stdout.trim();
+      git("init", "-q", "-b", "main");
+      git("commit", "-q", "--allow-empty", "-m", "first");
+      const withBase = await runScript(TASK_START_SH, {
+        PORT: port,
+        OPENCODE_SERVER_PASSWORD: "pw-123",
+        TASK: JSON.stringify(spec),
+        DIRECTORY: repo,
+      });
+      expect(JSON.parse(withBase)).toEqual({ id: "ses_new", title: "", base: git("rev-parse", "HEAD") });
     } finally {
       server.close();
     }
@@ -444,7 +507,7 @@ describe.skipIf(!hasPython || process.platform === "win32")("task scripts agains
       const out = await runScript(TASK_STATUS_SH, {
         PORT: port,
         OPENCODE_SERVER_PASSWORD: "pw-123",
-        IDS: "ses_run ses_ask ses_bad ses_gone",
+        IDS: "ses_run ses_ask ses_bad ses_gone ses_form",
       });
       const s = JSON.parse(out);
       expect(s.active).toEqual(["ses_run"]);
@@ -456,6 +519,9 @@ describe.skipIf(!hasPython || process.platform === "win32")("task scripts agains
         last: "Result: fixed",
       });
       expect(s.sessions.ses_ask.permissions).toBe(1);
+      expect(s.sessions.ses_ask.question).toBe("Permission: allow bash on rm -rf build?");
+      expect(s.sessions.ses_form.question).toBe("Which database?; Database (Postgres, D1)");
+      expect(s.sessions.ses_run.question).toBeUndefined();
       expect(s.sessions.ses_bad).toMatchObject({ outcome: "failed", reason: "rate limited" });
       expect(s.sessions.ses_gone).toEqual({ found: false });
 
