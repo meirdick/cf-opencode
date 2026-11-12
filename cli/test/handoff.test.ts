@@ -98,7 +98,7 @@ describe("taskPrompt", () => {
     const text = taskPrompt("  Fix the login form.\n", "feat");
     expect(text.startsWith("Fix the login form.\n\n---\n")).toBe(true);
     expect(text).toContain("`origin/feat`");
-    expect(text).toContain("- Commit the work.");
+    expect(text).toContain("- If you changed files, commit the work.");
     expect(text).toContain("- Push the branch to origin.");
     expect(text).toContain("open a pull request");
     expect(text).toMatch(/one line: `Result: .*`\.$/);
@@ -171,6 +171,15 @@ describe.skipIf(process.platform === "win32")("runTask", () => {
     expect(lines[0]).toBe("! the workspace will not see: branch feat is not pushed (no upstream)");
     expect(calls.connect?.id).toBe("other");
     expect(r.warning).toBe(lines[0]);
+  });
+
+  it("sends the schema with the task, and puts it in the prompt", async () => {
+    const { work } = repo();
+    const { calls, deps: d } = deps();
+    const schema = { type: "object", required: ["ok"] };
+    await runTask({ ...base, task: "do it", dir: work, schema }, d);
+    expect(calls.start?.body.schema).toEqual(schema);
+    expect(String(calls.start?.body.text)).toContain('"required": [\n    "ok"\n  ]');
   });
 
   it("refuses an empty task", async () => {

@@ -7,6 +7,7 @@ import { execFileSync } from "node:child_process";
 import type { ControlClient, RemoteTask } from "./api.js";
 import type { ConnectInput, ConnectResult } from "./connect.js";
 import { CliError } from "./errors.js";
+import { schemaInstruction } from "./schema.js";
 
 export interface Preflight {
   /** False when the directory is not a git checkout: there is nothing to check. */
@@ -83,7 +84,7 @@ export function checkPreflight(p: Preflight, allowDirty: boolean): string | unde
  * The fixed text after each task. The remote agent has not seen the local conversation, and nobody watches
  * it, so it must leave the work where the user can find it: a pushed branch and a pull request.
  */
-export function taskPrompt(task: string, branch?: string): string {
+export function taskPrompt(task: string, branch?: string, schema?: unknown): string {
   const start = branch
     ? [
         `- Start from branch \`${branch}\` as it is on origin: run \`git fetch origin\`, check out \`${branch}\`, and fast-forward it to \`origin/${branch}\`.`,
@@ -95,10 +96,11 @@ export function taskPrompt(task: string, branch?: string): string {
     "---",
     "This task was handed off with cf-opencode run. Nobody watches this session. When you finish:",
     ...start,
-    "- Commit the work. If you are on the default branch, first make a new branch for it.",
+    "- If you changed files, commit the work. If you are on the default branch, first make a new branch for it. A task with nothing to commit (research, a question) needs no commit.",
     "- Push the branch to origin.",
     "- If `gh auth status` succeeds, open a pull request for the branch, or update the open one.",
     "- End your last message with one line: `Result: <what changed>; branch <name>; pull request <URL or none>`.",
+    ...(schema === undefined ? [] : schemaInstruction(schema)),
   ].join("\n");
 }
 
@@ -110,6 +112,8 @@ export interface RunInput {
   id?: string;
   title?: string;
   model?: string;
+  /** JSON Schema subset the last message must end with (readSchema). */
+  schema?: unknown;
   allowDirty?: boolean;
   /** The local checkout. Default: the current directory. */
   dir?: string;
@@ -144,9 +148,10 @@ export async function runTask(input: RunInput, deps: RunDeps): Promise<RunResult
   });
   const id = woke.workspace.id;
   const { task } = await deps.client(input.url, input.token).startTask(id, {
-    text: taskPrompt(input.task, p.branch),
+    text: taskPrompt(input.task, p.branch, input.schema),
     ...(input.title ? { title: input.title } : {}),
     ...(input.model ? { model: input.model } : {}),
+    ...(input.schema !== undefined ? { schema: input.schema } : {}),
   });
   return { workspace: id, task, ...(warning ? { warning } : {}) };
 }
@@ -158,6 +163,7 @@ export function renderStarted(r: RunResult): string {
     `Started ${r.task.id} in ${r.workspace}: ${r.task.title}`,
     `Status: cf-opencode tasks ${ref}`,
     `Wait:   cf-opencode tasks ${ref} --wait`,
+    `Follow: cf-opencode tasks ${ref} --follow`,
     `Open:   cf-opencode connect ${r.workspace} --session ${r.task.id}`,
   ].join("\n");
 }

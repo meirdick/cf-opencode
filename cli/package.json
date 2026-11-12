@@ -11,6 +11,7 @@
     "bin",
     "dist",
     "templates",
+    "skill",
     "README.md",
     "LICENSE",
     "NOTICE"

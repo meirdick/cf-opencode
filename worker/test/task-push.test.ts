@@ -298,6 +298,8 @@ describe("notifyUrl push", () => {
     expect(sent.headers["x-cf-opencode-event"]).toBe("task");
     const key = createHmac("sha256", "control").update(NOTIFY_KEY_LABEL).digest("hex");
     expect(await notifyKey("control")).toBe(key);
+    // The same vector is in cli/test/task-result.test.ts: `cf-opencode notify-key` prints this key.
+    expect(key).toBe("a2a940c5d7f3460159b47cfff72480f41a289ec4f4f367d0cb00c0a9dbe14e93");
     expect(sent.headers["x-cf-opencode-signature"]).toBe(
       `sha256=${createHmac("sha256", key).update(sent.body).digest("hex")}`,
     );
