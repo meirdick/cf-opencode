@@ -7,6 +7,14 @@
 - `cf-opencode-fetch` in the workspace: a page as Markdown, links, HTML, a screenshot or a PDF, through the
   Browser Run binding.
 - The image has the Python `websocket` module, for the browser session's Chrome DevTools Protocol.
+- `cf-opencode preview <workspace> <port>` opens a dev server that runs in the workspace, in your browser, behind
+  the workspace password. A one-time sign-in link gives the browser a cookie for that workspace and port; the
+  password is never in a URL. A preview does not wake a paused workspace, and it counts as use for the idle pause.
+- `cf-opencode preview … --public` makes a public URL with an unguessable token, off until you ask; `--stop`
+  removes it and `--list` lists them. Only the control token can make one.
+- `cf-opencode-preview <port>` in the workspace prints the preview URL and checks that the port listens on 0.0.0.0.
+- The workspace's remote browser opens a dev server as `http://p<port>.preview.internal/`, with no public URL:
+  `cf-opencode-fetch` reads it, and `cf-opencode-browse --preview <port>` opens a session that can reach it.
 
 ## 0.1.0 (2026-11-12)
 

@@ -1,0 +1,89 @@
+---
+title: Preview a dev server
+description: Open a dev server that runs in a workspace, in your browser or in the agent's browser, with no public URL.
+sidebar:
+  order: 4
+---
+
+The agent can start a dev server in the workspace, for example on port 3000. You open it on your machine through the Worker. The Worker asks for the workspace password, so the dev server is not public.
+
+## Open a preview
+
+1. Make sure that the workspace is awake. Run `cf-opencode connect my-repo` if it is paused.
+2. Start the dev server on `0.0.0.0`, not on `127.0.0.1`. For Vite, add `--host 0.0.0.0`.
+3. On your machine, run:
+
+   ```sh
+   cf-opencode preview my-repo 3000
+   ```
+
+The command prints the preview URL, such as `https://cf-opencode.example.workers.dev/preview/my-repo/3000/`. Then it opens the URL in your browser. You do not type a password.
+
+| Flag | Effect |
+| --- | --- |
+| `--no-open` | Print a sign-in link. Do not open the browser. |
+| `--json` | Print one JSON document with `url` and `link`. |
+
+## How the browser signs in
+
+The password is not in the URL. The CLI sends the password in a header and gets a sign-in link from the Worker. The link works one time, for 2 minutes. The browser opens the link, and the Worker gives it a cookie.
+
+The cookie works for one workspace and one port. It stops after 8 hours. To sign in again, run `cf-opencode preview` again.
+
+## From inside the workspace
+
+The agent runs:
+
+```sh
+cf-opencode-preview 3000
+```
+
+The command prints the preview URL for you. It also checks that a server listens on port 3000 on `0.0.0.0`. If no server listens, it prints a `Failed:` line with the fix.
+
+## The agent's own browser
+
+The remote browser of the workspace opens the dev server at `http://p3000.preview.internal/`. This address works only in that browser. It is not on the Internet.
+
+```sh
+cf-opencode-fetch http://p3000.preview.internal/
+cf-opencode-fetch --screenshot home.png http://p3000.preview.internal/
+cf-opencode-browse --preview 3000
+```
+
+`cf-opencode-fetch http://localhost:3000/` does the same as the first command. A browser session from `cf-opencode-browse --preview` can open up to 4 ports. Browser Run sends the requests for these addresses to the Worker, and the Worker sends them to the port. These addresses use HTTP only. Hot reload does not connect there.
+
+## Public URL
+
+A public URL needs no password. Use it to show the dev server to another person.
+
+```sh
+cf-opencode preview my-repo 3000 --public
+```
+
+The command prints a URL such as `https://cf-opencode.example.workers.dev/public/my-repo/<token>/`. Anyone with the URL can open port 3000 of the workspace while the workspace is awake.
+
+| Command | Effect |
+| --- | --- |
+| `cf-opencode preview my-repo --list` | List the public URLs of the workspace. |
+| `cf-opencode preview my-repo 3000 --stop` | Remove the public URL of port 3000. |
+| `cf-opencode preview my-repo --stop` | Remove all public URLs of the workspace. |
+
+There is no public URL until you run `--public`. These commands need the control token. The agent in the workspace does not have the control token, so it cannot make a public URL.
+
+## Limits
+
+- A preview does not wake a paused workspace. A dev server stops when the workspace pauses. Run `cf-opencode connect`, then start the dev server again.
+- A request through a preview counts as use. An open preview that loads pages keeps the workspace awake.
+- The preview is under the path `/preview/<workspace>/<port>/`. A page that loads an absolute path, such as `/assets/app.js`, asks for a path outside the preview. The Worker sends most of these requests back to the preview. Hot reload can fail to connect. Reload the page by hand, or set the base path of the dev server. For Vite, add `--base /preview/<workspace>/<port>/`.
+- All previews use the same origin as the Worker. A page in one preview can read another preview that the same browser is signed in to. Do not open code that you do not trust in that browser.
+
+## Errors
+
+| Error | Fix |
+| --- | --- |
+| `<workspace> is paused` | Run `cf-opencode connect <workspace>`, start the dev server, then run `cf-opencode preview` again. |
+| `nothing answers on port <port>` | Start the dev server on `0.0.0.0`. |
+| `port <port> listens on 127.0.0.1 only` | Start the dev server with `--host 0.0.0.0`. |
+| `the sign-in link was used or is older than 2 minutes` | Run `cf-opencode preview <workspace> <port>` again. |
+| `bad port` | Use the port of the dev server, from 1024 to 65535. Port 4096 is OpenCode. |
+| `this Worker has no preview route` | Run `cf-opencode upgrade`. |
