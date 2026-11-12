@@ -317,6 +317,8 @@ describe("SendMessage", () => {
     const r = (await handleRpc(rpc("SendMessage", { message: message() }), "1.0", d)) as any;
     expect(r.result.task.status.state).toBe("TASK_STATE_WORKING");
     expect(d.slept.reduce((a, b) => a + b, 0)).toBeLessThanOrEqual(BLOCKING_WAIT_MS);
+    // A blocking SendMessage holds one Worker request open: at most 5 minutes, then GetTask polls.
+    expect(BLOCKING_WAIT_MS).toBe(5 * 60_000);
   });
 
   it("refuses parts that are not text, follow-ups, push config and a foreign contextId", async () => {

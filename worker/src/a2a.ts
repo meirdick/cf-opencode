@@ -19,8 +19,12 @@ export const A2A_RPC_PATH = "/a2a";
 export const A2A_VERSION = "1.0";
 /** The task text is capped at 32 000 characters; UTF-8 may need four bytes for one. Same as /v1 tasks. */
 export const MAX_A2A_BODY = 160 * 1024;
-/** §3.2.2: a blocking SendMessage waits for the task to leave working. It gives up after this. */
-export const BLOCKING_WAIT_MS = 60 * 60_000;
+/**
+ * §3.2.2: a blocking SendMessage waits for the task to leave working. It gives up after this and returns the task
+ * as it is (often still working): one Worker request is not held open for a coding task's hours. Clients poll
+ * GetTask, or send returnImmediately.
+ */
+export const BLOCKING_WAIT_MS = 5 * 60_000;
 export const POLL_MS = 10_000;
 
 const WORKSPACE_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
