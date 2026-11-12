@@ -209,7 +209,7 @@ export async function notifyKeyCommand(args: ParsedArgs, install: Install): Prom
   else {
     out(key);
     err(
-      "Secret: give it only to the receiver of notifyUrl. It checks x-cf-opencode-signature: sha256=<hex HMAC-SHA256 of the body>.",
+      "Secret: give it only to the receiver of the notify URL. It checks x-cf-opencode-signature: sha256=<hex HMAC-SHA256 of the body>.",
     );
   }
   return 0;

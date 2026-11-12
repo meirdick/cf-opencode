@@ -13,6 +13,7 @@ import {
   expiresSoon,
   gitToken,
   listWorkspaces,
+  notifyUrl,
   renderChecks,
   renderList,
   uninstall,
@@ -208,9 +209,37 @@ const COMMANDS: Record<string, Command> = {
   "notify-key": {
     group: "Set up",
     usage: "notify-key",
-    summary: "Print the key that signs the POSTs to notifyUrl, for the receiver. A secret.",
+    summary: "Print the key that signs the POSTs to the notify URL, for the receiver. A secret.",
     flags: {},
     run: (args) => notifyKeyCommand(args, requireInstall(args)),
+  },
+  "notify-url": {
+    group: "Set up",
+    usage: "notify-url [--remove]",
+    summary: "Set where the Worker POSTs task results and notes. The URL is a Worker secret.",
+    details: [
+      "Reads the URL from stdin, or asks for it on a terminal without echo. Never an argument:",
+      "a webhook URL often holds its own secret.",
+      '  printf %s "$WEBHOOK_URL" | cf-opencode notify-url',
+      "https only, no user or password in it, a public host name. Running workspaces use it at once.",
+      "--remove             delete it from the Worker",
+      "--token-file <path>  Cloudflare API token file (default: wrangler login or CLOUDFLARE_API_TOKEN)",
+    ],
+    flags: { remove: { type: "boolean" }, "token-file": { type: "string" } },
+    run: async (args) => {
+      const ui = makeUi(flagBool(args, "json"));
+      const remove = flagBool(args, "remove");
+      const tokenFile = flagString(args, "token-file");
+      await notifyUrl({
+        remove,
+        run: runProcess,
+        ui,
+        ...(remove ? {} : { url: await readSecret("Notify URL (input hidden): ") }),
+        ...(tokenFile ? { apiToken: readFileSync(tokenFile, "utf8").trim() } : {}),
+      });
+      ui.result({ ok: true, removed: remove });
+      return 0;
+    },
   },
   rebuild: {
     group: "Workspaces",

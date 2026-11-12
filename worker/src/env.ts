@@ -14,6 +14,11 @@ export interface Env {
   OPENAI_API_KEY?: string;
   /** GitHub token for git and gh in workspaces. Added on egress to github.com; never in the container. */
   GITHUB_TOKEN?: string;
+  /**
+   * https URL the Worker POSTs a handed-off task's result to, and the notes of cf-opencode-notify. A secret, not
+   * a setting: a webhook URL often holds its own secret. Set with `cf-opencode notify-url`; read at send time.
+   */
+  NOTIFY_URL?: string;
   /** Workers AI and AI Gateway. Models bill to the account; no provider key exists. */
   AI?: Ai;
   /** Browser Run. Sessions bill to the account; no token exists. */

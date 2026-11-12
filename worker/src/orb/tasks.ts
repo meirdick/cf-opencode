@@ -21,7 +21,7 @@ export interface Commit {
   subject: string;
 }
 
-/** A delivery to notifyUrl that has not succeeded yet (task-notify.ts). */
+/** A delivery to the notify URL that has not succeeded yet (task-notify.ts). */
 export interface PendingNotify {
   /** The state the delivery reports. */
   state: TaskState;
@@ -297,7 +297,7 @@ export function parseTaskStatus(stdout: string): StatusOut | undefined {
 
 /**
  * The task left running, or moved between two end states. Mark it unseen for the inbox, and queue one
- * delivery to notifyUrl when one is set. A newer change replaces a delivery still waiting for a retry.
+ * delivery to the notify URL (NOTIFY_URL) when one is set. A newer change replaces a delivery still waiting for a retry.
  */
 export function markEnded(t: TaskRecord, now: number, notify: boolean): TaskRecord {
   const next: TaskRecord = { ...t, unseen: true };
@@ -464,7 +464,7 @@ export async function captureTasks(ctx: Ctx, o: CaptureOptions = {}): Promise<Ta
     // a concurrent read cannot mark the same change twice.
     const current = (await ctx.kv.get<Saved>(TASKS_KEY)) ?? before;
     let tasks = applyStatus(current.tasks, status, ctx.clock.now(), {
-      notify: Boolean(ctx.config.notifyUrl),
+      notify: Boolean(ctx.env.NOTIFY_URL),
     });
     if (facts) tasks = applyFacts(tasks, facts, factIds);
     const at = iso(ctx.clock.now());
@@ -524,7 +524,7 @@ export async function stopTasks(ctx: Ctx): Promise<void> {
   const after = await ctx.kv.get<Saved>(TASKS_KEY);
   if (!after?.tasks.some((t) => t.state === "running")) return;
   const now = ctx.clock.now();
-  const notify = Boolean(ctx.config.notifyUrl);
+  const notify = Boolean(ctx.env.NOTIFY_URL);
   const tasks = after.tasks.map((t) =>
     t.state !== "running"
       ? t

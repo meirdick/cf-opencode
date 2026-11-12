@@ -11,6 +11,7 @@ import {
   type WorkspaceLocal,
 } from "./config.js";
 import { CliError, toFailedLine } from "./errors.js";
+import { checkNotifyUrl } from "./notify-key.js";
 import { fmtAge, table, type Ui } from "./ui.js";
 import { lastErrorLine, lookupWorker, makeWrangler, type Runner } from "./wrangler.js";
 
@@ -171,6 +172,15 @@ export async function doctor(o: {
           "github",
           "no token on the Worker: public repositories only, no push",
           "gh auth token | cf-opencode git-token",
+        );
+      // Whether the secret is set, never its value. Optional, so no fix line.
+      if (s.bindings.notify !== undefined)
+        add(
+          "ok",
+          "notify",
+          s.bindings.notify
+            ? "notify URL set: task results and notes are posted"
+            : "no notify URL (optional: cf-opencode notify-url)",
         );
     }
   } catch (e) {
@@ -378,4 +388,55 @@ export async function gitToken(o: {
   );
   o.ui.step("  A running workspace picks it up on its next cf-opencode connect.");
   return login ? { login } : {};
+}
+
+// ---------- notify-url ----------
+
+/**
+ * Store (or with remove, delete) the NOTIFY_URL Worker secret: where the Worker POSTs a task's result and the
+ * workspace's notes. A secret, not a setting, because a webhook URL often holds its own secret. The value reaches
+ * wrangler on stdin, never in argv, and is never printed.
+ */
+export async function notifyUrl(o: {
+  url?: string;
+  remove: boolean;
+  run: Runner;
+  ui: Ui;
+  apiToken?: string;
+}): Promise<void> {
+  const install = readInstall();
+  if (!install) throw new CliError("no install on this machine", "cf-opencode init");
+  const w = makeWrangler(o.run, {
+    ...(install.accountId ? { accountId: install.accountId } : {}),
+    ...(o.apiToken ? { apiToken: o.apiToken } : {}),
+  });
+  if (o.remove) {
+    const r = await w.run(["secret", "delete", "NOTIFY_URL", "--name", install.name], {
+      timeoutMs: 120_000,
+      env: { CI: "1" },
+    });
+    if (r.code !== 0)
+      throw new CliError(
+        `could not delete the secret: ${lastErrorLine(`${r.stdout}\n${r.stderr}`)}`,
+        "run npx wrangler login, then retry",
+      );
+    o.ui.step(`✓ removed NOTIFY_URL from ${install.name}; the Worker sends no more results or notes`);
+    return;
+  }
+  const url = o.url?.trim();
+  if (!url) throw new CliError("no URL given", 'pipe one in: printf %s "$URL" | cf-opencode notify-url');
+  // The URL is a secret: the error names the rule, never the value.
+  const bad = checkNotifyUrl(url);
+  if (bad) throw new CliError(`the URL ${bad}`, "give an https URL of your receiver");
+  const r = await w.run(["secret", "put", "NOTIFY_URL", "--name", install.name], {
+    input: url,
+    timeoutMs: 120_000,
+  });
+  if (r.code !== 0)
+    throw new CliError(
+      `could not store the secret: ${lastErrorLine(`${r.stdout}\n${r.stderr}`)}`,
+      "run npx wrangler login, then retry",
+    );
+  o.ui.step(`✓ NOTIFY_URL stored on ${install.name}`);
+  o.ui.step("  The Worker signs each POST; give the receiver the key from cf-opencode notify-key.");
 }
