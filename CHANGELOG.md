@@ -2,6 +2,8 @@
 
 ## 0.2.0 (2026-11-12)
 
+Everything in 0.1.1, and:
+
 - `cf-opencode mcp`: an MCP server over stdio with the tools `handoff_task`, `get_task`, `wait_task` and
   `list_tasks`. A local agent (Claude Code, OpenCode, any MCP client) hands off a task and gets the task record as
   structured content: `get_task` and `wait_task` return the result record in `result`. It speaks MCP 2026-07-28 and answers `initialize` for 2025-11-25 and 2025-06-18 clients.
@@ -11,11 +13,6 @@
   it when it is paused; `GetTask`, `CancelTask` and `ListTasks` read and stop tasks. A blocking `SendMessage`
   waits 5 minutes at most. `GetTask` builds the task from the result record. Streaming and push notifications
   are not supported.
-- `cf-opencode-search` in the workspace: web search through the account's AI binding and AI Gateway, with no
-  key. Setting `searchProvider` (default `exa`).
-- `cf-opencode-fetch` in the workspace: a page as Markdown, links, HTML, a screenshot or a PDF, through the
-  Browser Run binding.
-- The image has the Python `websocket` module, for the browser session's Chrome DevTools Protocol.
 - `cf-opencode run "<task>"`: hand a task to OpenCode in the workspace of the checkout, and return. The task
   runs as a new session in the workspace. A preflight fails on changes that are not committed or pushed
   (`--allow-dirty` skips it). Flags: `--title`, `--model`, `--wait`, `--json`.
@@ -69,30 +66,6 @@
 
 ### Security
 
-- A visitor to the Worker URL without the control token gets one bare `401 Unauthorized` for every path. The
-  answer no longer names the product, the secret or the route.
-- The Worker checks the workspace password itself before it calls a workspace's Durable Object. A request
-  to `/oc`, `/browse`, `/shell` or `/ssh` with no password or a wrong one is a 401 that costs one Worker
-  request; before, it created a Durable Object for any id it named. Passwords are derived from the control
-  token, so the check needs no state. The control API refuses a spawn with any other password.
-- Every refused password gets the same 401 body, from the Worker and from the Durable Object. It names no
-  workspace, and a deleted workspace answers 410 only to the holder of its password.
-- `/shell`, `/ssh` and `/browse` refuse a request whose `Origin` is another site, so a web page cannot use
-  Basic credentials a browser cached for the Worker. Clients that send no `Origin` (the CLI, ssh, curl) and
-  the Worker's own origin still work.
-- The browser relay `/browse/<workspace>/<session>` serves only sessions that workspace opened. Before, any
-  workspace's password reached any browser session on the account.
-- `authorized_keys` in a workspace is no longer append-only. A cf-opencode block holds the CLI keys that
-  connected in the last 30 days; each SSH connect rewrites it, as the workspace user, not root. Keys an
-  earlier release appended (comment `cf-opencode`) are removed; lines you wrote stay.
-- `ssh` and `ssh-config` accept only an https Worker origin for `--url` (http only for localhost), and quote
-  every part of the ssh `ProxyCommand`. Before, a `--url` with a `"` ran shell on this machine.
-- The image no longer pipes the OpenCode installer script to bash. It downloads the linux x64 release asset
-  the installer uses and checks it against a pinned SHA-256 (`OPENCODE_SHA256`); a mismatch fails the build.
-- README "Trust" and the security page say what the agent account can do (it is root in its container, and
-  holds the workspace password) and what protects you instead. `sudo` is unchanged.
-- With `lockdown: true`, `cf-opencode-fetch` is refused. It loaded any URL through Browser Run, which got
-  around lockdown's "no general internet".
 
 - Previews: the Worker checks the workspace password, the preview cookie, the sign-in ticket and the public
   token itself before it calls a Durable Object. Before, an anonymous request to `/preview/<id>/…`,
@@ -120,6 +93,42 @@
   nested deep enough to throw is a `structuredError` instead of stopping every task read of the workspace.
   The Worker cuts the failure reason, the summary and each changed file name, since the agent can answer for
   the scripts that read them.
+
+## 0.1.1 (2026-11-12)
+
+- `cf-opencode-search` in the workspace: web search through the account's AI binding and AI Gateway, with no
+  key. Setting `searchProvider` (default `exa`).
+- `cf-opencode-fetch` in the workspace: a page as Markdown, links, HTML, a screenshot or a PDF, through the
+  Browser Run binding.
+- The image has the Python `websocket` module, for the browser session's Chrome DevTools Protocol.
+
+### Security
+
+- A visitor to the Worker URL without the control token gets one bare `401 Unauthorized` for every path. The
+  answer no longer names the product, the secret or the route.
+- The Worker checks the workspace password itself before it calls a workspace's Durable Object. A request
+  to `/oc`, `/browse`, `/shell` or `/ssh` with no password or a wrong one is a 401 that costs one Worker
+  request; before, it created a Durable Object for any id it named. Passwords are derived from the control
+  token, so the check needs no state. The control API refuses a spawn with any other password.
+- Every refused password gets the same 401 body, from the Worker and from the Durable Object. It names no
+  workspace, and a deleted workspace answers 410 only to the holder of its password.
+- `/shell`, `/ssh` and `/browse` refuse a request whose `Origin` is another site, so a web page cannot use
+  Basic credentials a browser cached for the Worker. Clients that send no `Origin` (the CLI, ssh, curl) and
+  the Worker's own origin still work.
+- The browser relay `/browse/<workspace>/<session>` serves only sessions that workspace opened. Before, any
+  workspace's password reached any browser session on the account.
+- `authorized_keys` in a workspace is no longer append-only. A cf-opencode block holds the CLI keys that
+  connected in the last 30 days; each SSH connect rewrites it, as the workspace user, not root. Keys an
+  earlier release appended (comment `cf-opencode`) are removed; lines you wrote stay.
+- `ssh` and `ssh-config` accept only an https Worker origin for `--url` (http only for localhost), and quote
+  every part of the ssh `ProxyCommand`. Before, a `--url` with a `"` ran shell on this machine.
+- The image no longer pipes the OpenCode installer script to bash. It downloads the linux x64 release asset
+  the installer uses and checks it against a pinned SHA-256 (`OPENCODE_SHA256`); a mismatch fails the build.
+- README "Trust" and the security page say what the agent account can do (it is root in its container, and
+  holds the workspace password) and what protects you instead. `sudo` is unchanged.
+- With `lockdown: true`, `cf-opencode-fetch` is refused. It loaded any URL through Browser Run, which got
+  around lockdown's "no general internet".
+
 - Two `connect`s in flight with different inputs no longer share one op. The op journal hashed a field the
   API never sends, so the second caller could attach to the first one's spawn and get its password.
 
