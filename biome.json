@@ -5,6 +5,7 @@
       "worker/**",
       "cli/**",
       "plugin/**",
+      "!**/.claude",
       "!**/node_modules",
       "!**/dist",
       "!cli/templates",
