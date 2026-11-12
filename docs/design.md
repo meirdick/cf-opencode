@@ -412,3 +412,4 @@ a container on the current image in a second Durable Object, snapshots it, and
 makes that the workspace's disk. Disks record the image they came from, so
 `status` can say when one is out of date. System packages are not carried; that
 is the line between "your files" and "the image".
+Live test of task handoff, 2026-11-12.
