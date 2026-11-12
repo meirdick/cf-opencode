@@ -48,6 +48,22 @@ Security:
 - The `run --schema` check uses own keys only, and a deeply nested `json` block is a `structuredError`. The Worker cuts the failure reason, the summary and each changed file name.
 - Two `connect` calls with different inputs no longer share one op.
 
+## 0.1.1 (2026-11-12)
+
+- `cf-opencode-search` in the workspace: web search through the AI binding and AI Gateway of the account. No key. The setting `searchProvider` selects the provider. The default is `exa`.
+- `cf-opencode-fetch` in the workspace: a page as Markdown, links, HTML, a screenshot or a PDF, through the Browser Run binding.
+- The image has the Python `websocket` module.
+
+### Security
+
+- The Worker checks the workspace password before it calls a Durable Object. A request with no password or a wrong password gets one 401.
+- A request without the control token gets a bare `401 Unauthorized` on every path.
+- The image build checks the OpenCode release file against a pinned SHA-256.
+- A browser session is bound to the workspace that opened it.
+- `authorized_keys` holds the keys seen in the last 30 days, in a managed block.
+- `/shell`, `/ssh` and `/browse` refuse a page on another site.
+- With `lockdown` on, `cf-opencode-fetch` is refused.
+
 ## 0.1.0 (2026-11-12)
 
 First release. It has one package, `cf-opencode`: the CLI. It carries the Worker source and the workspace image. It deploys them to your Cloudflare account with `cf-opencode init`.
