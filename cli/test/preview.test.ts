@@ -71,6 +71,20 @@ describe("cf-opencode preview", () => {
     expect(r.opened[0]).not.toContain(PASSWORD);
   });
 
+  it("opens only a link on this Worker's preview path with plain characters", async () => {
+    // On Windows the opener is `cmd /c start`, which reads & | < > ^ % as commands.
+    for (const link of [
+      "https://evil.example/preview/demo/3000/?cf_opencode_ticket=1",
+      `${WORKER}/preview/demo/3000/?x=1&calc`,
+      `${WORKER}/preview/demo/3000/?x=%PATH%`,
+      `${WORKER}/oc/demo/`,
+    ]) {
+      const r = run({}, { link });
+      await expect(r.done, link).rejects.toThrow(/^Failed: the Worker sent a sign-in link/);
+      expect(r.opened).toEqual([]);
+    }
+  });
+
   it("--no-open prints the sign-in link instead of opening it", async () => {
     const r = run({ open: false });
     await r.done;
