@@ -1,0 +1,63 @@
+---
+title: Install as an agent or in CI
+description: Run init without a terminal with --yes, --json, CLOUDFLARE_API_TOKEN and --token-file, and verify with doctor.
+sidebar:
+  order: 7
+---
+
+This page is for a coding agent or a CI job that installs cf-opencode for a user. Everything runs in the user's Cloudflare account.
+
+Never print a token or pass it as a command argument.
+
+## Steps
+
+1. Check the machine. These must succeed: Node 22 or newer, `docker info`, and `docker buildx version`.
+2. Get credentials. Use one of these:
+   - The user ran `npx wrangler login` on this machine.
+   - The user gave an API token with Workers Scripts Write and Workers Containers Write. Put it in `CLOUDFLARE_API_TOKEN`, or in a mode-600 file for `--token-file`.
+
+   Ask for one of these if neither exists. Never ask for the token in chat.
+3. Install the CLI. From a checkout:
+
+   ```sh
+   npm ci && npm pack -w cli && npm install -g ./cf-opencode-*.tgz
+   ```
+
+   Or use `npx cf-opencode`.
+4. Run init:
+
+   ```sh
+   cf-opencode init --yes --json
+   ```
+
+   Add `--account <id>` if the login sees several accounts. You can set `CLOUDFLARE_ACCOUNT_ID` instead.
+5. Verify:
+
+   ```sh
+   cf-opencode doctor
+   ```
+
+   It must exit 0. Every line is a check mark or a `!`.
+6. Tell the user the Worker URL and the next step: `cf-opencode connect` from a git checkout.
+
+## Output
+
+With `--json`, progress goes to stderr. stdout is one JSON document. On success it has `ok: true`, the Worker `url`, and `next`. On failure, it has `ok: false` and an `error` line.
+
+A failure is one or more `Failed: <cause> — fix: <action>` lines. Do the fix. Then run the same command again. Reruns are safe and keep the control token.
+
+`--yes` stops all prompts. `--json` and a non-terminal stdin imply it.
+
+## An existing Worker
+
+If `init` reports a Worker with the same name that this machine did not deploy, ask the user. Pass `--adopt` only with their consent. `--adopt` replaces the control token of that Worker. `--name <other>` makes a separate install.
+
+## GitHub
+
+`init` gives workspaces the `gh` login of the machine, if there is one. In CI (`CI` or `GITHUB_ACTIONS` set), it does not use a `gh` login without a terminal.
+
+Pass `--no-github` if the user did not agree. `cf-opencode git-token` sets it later.
+
+## Models and browsing
+
+Models and browsing use the AI and Browser Run bindings of the account. You need no model key and no browser token.

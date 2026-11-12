@@ -1,0 +1,23 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.6.6/schema.json",
+  "files": {
+    "includes": [
+      "worker/**",
+      "cli/**",
+      "plugin/**",
+      "!**/node_modules",
+      "!**/dist",
+      "!cli/templates",
+      "!**/.wrangler",
+      "!**/*.md"
+    ]
+  },
+  "formatter": { "indentStyle": "space", "indentWidth": 2, "lineWidth": 110 },
+  "linter": { "rules": { "preset": "recommended", "suspicious": { "noExplicitAny": "off" } } },
+  "overrides": [
+    {
+      "includes": ["**/test/**"],
+      "linter": { "rules": { "style": { "noNonNullAssertion": "off" } } }
+    }
+  ]
+}

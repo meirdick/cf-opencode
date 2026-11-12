@@ -1,0 +1,17 @@
+# Changelog
+
+## 0.1.0 (2026-11-12)
+
+First release. One package, `cf-opencode`: the CLI. It carries the Worker source and the workspace image,
+and deploys them to your Cloudflare account with `cf-opencode init`.
+
+What works:
+
+- Workspaces on Cloudflare Containers that pause to a snapshot when idle and restore on connect.
+- Models through the account's AI binding and AI Gateway. Browsing through the Browser Run binding. No keys.
+- `shell`, `ssh` and `ssh-config` over the Worker. No open port.
+- GitHub access with a token that stays in the Worker. `init` sets it up once from the machine's `gh` login.
+- `connect --continue` and `--session` open a session in the workspace. `sessions` lists them across workspaces.
+- `rebuild` moves a workspace to the deployed image. Snapshots refresh before they expire.
+
+Known limits are in the README, section Limits.

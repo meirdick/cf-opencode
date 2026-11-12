@@ -1,0 +1,13 @@
+{
+  "name": "@cf-opencode/worker",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "scripts": {
+    "typecheck": "tsc -p .",
+    "dev": "wrangler dev"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6"
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "name": "@cf-opencode/plugin",
+  "version": "0.1.0",
+  "private": true,
+  "description": "OpenCode plugin: a cf-opencode workspace type on the experimental workspace API, and a /cf-connect command for OpenCode 2.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/meirdick/cf-opencode.git",
+    "directory": "plugin"
+  },
+  "homepage": "https://github.com/meirdick/cf-opencode#plugin",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "typecheck": "tsc -p .",
+    "build": "tsc -p tsconfig.build.json",
+    "prepack": "node ../cli/scripts/sync-templates.mjs --plugin && tsc -p tsconfig.build.json"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6"
+  },
+  "peerDependencies": {
+    "@opencode-ai/plugin": ">=1.16.0"
+  },
+  "peerDependenciesMeta": {
+    "@opencode-ai/plugin": {
+      "optional": true
+    }
+  }
+}

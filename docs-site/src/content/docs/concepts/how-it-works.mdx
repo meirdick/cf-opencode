@@ -1,0 +1,92 @@
+---
+title: How it works
+description: The Worker, the Durable Object per workspace, the container, snapshots, idle pause and the warm period.
+sidebar:
+  order: 1
+---
+
+cf-opencode has no hosted part. Everything runs in your Cloudflare account.
+
+## The parts
+
+```text
+local OpenCode  --basic auth-->  Worker /oc/<id>/...  -->  container :4096 (opencode serve)
+cf-opencode     --bearer------>  Worker /v1/...       -->  WorkspaceSession Durable Object
+```
+
+| Part | Job |
+| --- | --- |
+| Worker | The only public part. It checks credentials and routes requests. |
+| `WorkspaceSession` Durable Object | One per workspace. It owns the container, the snapshot handle and an alarm. |
+| Registry Durable Object | Keeps the index of snapshots and counts running workspaces. |
+| Container | Runs the workspace image and `opencode serve` on port 4096. |
+
+The alarm of each Durable Object keeps the workspace awake while it is in use. It pauses the workspace when it is idle.
+
+## Workspace life cycle
+
+A workspace is in one of these states.
+
+| State | Meaning |
+| --- | --- |
+| `none` | The workspace never started. |
+| `starting` | The container is starting. |
+| `awake` | The container runs. |
+| `pausing` | The disk is being saved. |
+| `warm` | The disk is saved. The container still runs until the warm period ends. |
+| `paused` | The container is stopped. The snapshot is valid. |
+| `paused-stale` | The container stopped without a fresh snapshot. The snapshot handle can be old. |
+| `lost` | The container stopped while the Worker expected it to run. |
+| `deleted` | You deleted the workspace. |
+
+`cf-opencode list` shows `running` for an awake container and `warm` for a warm one.
+
+## Snapshots
+
+A pause saves the whole disk of the container as a snapshot. A connect restores it. You get your installed packages, your uncommitted work and your OpenCode sessions back. Processes do not survive a pause. A dev server that the agent started is gone. The work it finished is not.
+
+Three facts about snapshots:
+
+- A snapshot restores only onto the image it came from. After `cf-opencode upgrade`, a restored workspace keeps the tools of its old image. `cf-opencode rebuild` moves it. See [Upgrade and rebuild](/guides/upgrade-and-rebuild/).
+- Cloudflare drops a snapshot 30 days after its creation or last restore. The Worker refreshes a paused snapshot 3 days before that. See [Limits and costs](/limits/).
+- Cloudflare has no API to delete a snapshot. `cf-opencode delete` makes the Worker forget the snapshot. Cloudflare drops the data later.
+
+The CLI names the project snapshot of a workspace `snap-<workspace>`.
+
+## Idle pause
+
+The Worker pauses a workspace `idlePauseMinutes` after its last use. The default is 20 minutes. These count as use:
+
+- A request through the Worker, such as the OpenCode client, `shell` or `ssh`.
+- An OpenCode session that is running. The Worker asks the workspace's OpenCode.
+- Output on a terminal in the workspace: a tmux pane, a herdr pane, an SSH session or an OpenCode terminal.
+
+A session that waits for a permission or an answer needs you. It is not work, so it does not keep the workspace awake.
+
+The idle time runs from the last use. A task that ends after two hours causes a pause 20 minutes after it ends. A stored use never pauses a fresh wake. The idle clock starts no earlier than the wake.
+
+`maxAwakeHours` (default 12) is a cost guard. A workspace that is awake that long pauses even while the agent works.
+
+## Warm period
+
+After an idle pause, the container does not stop at once. The disk is saved first. Then the container and `opencode serve` keep running for `warmMinutes` (default 10). A connect in that time reuses the running container. When the warm period ends, the Worker stops the container.
+
+`cf-opencode pause <workspace>` is different. If the workspace was connected from this machine, the pause stops the container at once. Compute billing for the workspace stops with the container.
+
+## Connect
+
+`cf-opencode connect` does these steps:
+
+1. It derives the workspace password from the control token and writes it to a file in `~/.cf-opencode/workspaces/`.
+2. It sends a `spawn` operation to the Worker with the repository, the branch and your git name and email.
+3. The Worker restores the best disk it has: a warm container, the workspace snapshot, the project snapshot, or the bare image.
+4. The Worker clones the repository if the disk has none, and starts `opencode serve`.
+5. The CLI starts your local OpenCode against `https://<worker>/oc/<workspace>`.
+
+The Worker restarts a workspace's Durable Object on each deploy. If a deploy interrupts a connect, the CLI tries once more.
+
+## Where the repository comes from
+
+`connect` reads the `origin` remote of your checkout. An SSH remote such as `git@github.com:you/app.git` becomes its HTTPS URL, because a workspace has no SSH key. The workspace clones over HTTPS. The Worker adds the GitHub token on the way out. See [Security and trust](/concepts/security/).
+
+`connect` also copies your git `user.name` and `user.email` into the workspace for commits.

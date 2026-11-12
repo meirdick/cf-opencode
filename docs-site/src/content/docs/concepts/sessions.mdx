@@ -1,0 +1,62 @@
+---
+title: Sessions
+description: OpenCode sessions live in the workspace server. List them with cf-opencode sessions and reopen them with --continue or --session.
+sidebar:
+  order: 4
+---
+
+An OpenCode session lives in the server that ran it. For cf-opencode, that server is `opencode serve` in the workspace. Your local OpenCode only shows it.
+
+## What this means
+
+- `/sessions` in OpenCode lists the sessions of one workspace. Local sessions are a separate list.
+- When you quit OpenCode, it prints `Continue  opencode -s ses_…`. That command starts a local session. It does not open the workspace session.
+- The session history is on the workspace disk. A pause and a connect keep it.
+
+`connect` prints the right commands when OpenCode exits:
+
+```text
+This session is in the workspace. To continue it: cf-opencode connect my-repo --continue
+```
+
+## Reopen a session
+
+Open the last session of the workspace:
+
+```sh
+cf-opencode connect my-repo --continue
+```
+
+Open a session by ID. Use the `ses_…` ID from OpenCode or from `cf-opencode sessions`:
+
+```sh
+cf-opencode connect my-repo --session ses_abc123
+```
+
+`-c` is short for `--continue`. `-s` is short for `--session`.
+
+## List sessions across workspaces
+
+```sh
+cf-opencode sessions
+```
+
+The command shows the sessions of every workspace this machine connected to, newest first. Pass a workspace to list one:
+
+```sh
+cf-opencode sessions my-repo
+```
+
+The output has the columns `WORKSPACE`, `UPDATED`, `SESSION` and `TITLE`.
+
+`sessions` wakes nothing:
+
+- A running workspace answers live.
+- A paused workspace answers with the list saved at its last pause. The output names it, for example `Not running, list from the last pause`.
+- A workspace that never paused has no saved list yet.
+
+The list holds at most 50 sessions per workspace. `cf-opencode delete` removes the saved list.
+
+## Two clients at once
+
+Two machines with the control token can connect to the same workspace and the same session at once. See [A second machine](/guides/second-machine/).

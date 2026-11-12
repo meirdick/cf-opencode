@@ -1,0 +1,44 @@
+---
+title: Browsing
+description: Give a workspace a browser through the Worker's Browser Run binding with browse and cf-opencode-browse.
+sidebar:
+  order: 3
+---
+
+A workspace browses through Browser Run. The Worker has a Browser Run binding. You create no token. Browser sessions bill to the account that owns the Worker.
+
+The container never reaches Browser Run itself. It asks the Worker for a session. The Worker relays the browser protocol (CDP) frames.
+
+## From your machine
+
+```sh
+cf-opencode browse my-repo
+```
+
+The command opens a session and prints a websocket URL on your Worker. If the session has a live view, it prints `live: <url>` on stderr.
+
+Connect a CDP client to the websocket URL. Use Basic authentication with the user `opencode` and the workspace password.
+
+`browse` needs the local password file. Run `cf-opencode connect my-repo` first.
+
+## From inside the workspace
+
+The command `cf-opencode-browse` does the same. It reads the password from `OPENCODE_SERVER_PASSWORD`. OpenCode's tools have that variable, so the agent can open a browser from its shell tool.
+
+```sh
+cf-opencode-browse
+```
+
+The command prints the websocket URL. Use the header `Authorization: Basic base64(opencode:$OPENCODE_SERVER_PASSWORD)`.
+
+## Billing and time limit
+
+A browser session bills per browser hour on your Cloudflare account. A session closes after 10 minutes without activity. See the [Browser Run pricing](https://developers.cloudflare.com/browser-run/) for current rates.
+
+## Errors
+
+| Error | Fix |
+| --- | --- |
+| `this Worker has no Browser Run binding` | Run `cf-opencode init` again to redeploy. |
+| `no local password for <workspace>` | Run `cf-opencode connect <workspace>`. |
+| `browser session … is gone` | Open a new session with `cf-opencode browse`. |

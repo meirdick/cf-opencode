@@ -1,0 +1,131 @@
+---
+title: Troubleshooting
+description: The Failed lines that cf-opencode prints, what each one means, and the fix.
+sidebar:
+  order: 20
+---
+
+Every error is one line:
+
+```text
+Failed: <cause> — fix: <action>
+```
+
+The action is a command or one thing to change. A retry of the same command is safe. The tables list the cause. The line also prints the fix.
+
+Two commands help with most problems:
+
+- `cf-opencode doctor` checks this machine, the install and the Worker. It starts nothing.
+- `cf-opencode logs <workspace>` prints the redacted `opencode serve` log.
+
+## init and upgrade
+
+`init` checks everything first and prints every problem at once.
+
+| Cause | What to do |
+| --- | --- |
+| `Node … is too old; cf-opencode needs Node 22 or later` | Install Node 22 or newer. Run `init` again. |
+| `bad Worker name …` | Use lowercase letters, digits and `-`, up to 63 characters. |
+| `Docker is not running (wrangler builds the workspace image locally)` | Start Docker. Check `docker info`. Run `init` again. |
+| `Docker has no buildx plugin …` | Install buildx. On Debian or Ubuntu, run `apt install docker-buildx-plugin`. Check `docker buildx version`. |
+| `wrangler is not logged in to Cloudflare` | Run `npx wrangler login`, or set `CLOUDFLARE_API_TOKEN`. Run `init` again. |
+| `Cloudflare rejected the API token` | Create a token with Workers Scripts Write and Workers Containers Write. Run `init` again. |
+| `account … is not one this login can see` | Pass an ID that `npx wrangler whoami` lists. |
+| `this login lists no Cloudflare accounts` | Pass `--account <id>`, or log in with an account that has Workers Paid. |
+| `this login has N Cloudflare accounts` | Pass `--account <id>` or set `CLOUDFLARE_ACCOUNT_ID`. On a terminal, `init` asks you to pick one. |
+| `Containers need the Workers Paid plan on this account` | Upgrade the account to Workers Paid. Run `init` again. |
+| `a Worker named … already exists in this account, and this machine did not deploy it` | Pass `--name <other>` for a separate install. Or pass `--adopt` to replace it. `--adopt` changes its control token. |
+| `this account has no workers.dev subdomain yet` | Open the Workers page of the dashboard once. It creates a subdomain. Run `init` again. |
+| `wrangler deploy did not finish in … minutes` | Check your connection. Run `init` again. Pushed layers stay. |
+| `wrangler deploy kept failing on a transient error …` | Run `init` again. If it repeats, read `~/.cf-opencode/deploy.log`. |
+| `wrangler deploy failed: …` | Fix the error that the line shows. Run `init` again. |
+| `wrangler deploy did not print a workers.dev URL` | Enable workers.dev for the Worker in the dashboard. Run `cf-opencode init --url <url>`. |
+| `deployed, but the control token was not stored: …` | Run `init` again. It reuses the same token. |
+| `the Worker did not accept the control token: …` | Wait a minute. Run `cf-opencode doctor`. |
+| `cannot read a token from <path>` | Write the API token to that file, mode 600. Run `init` again. |
+| `not a workers.dev URL: …` | Pass the URL that `init` printed. |
+| `no control token for that Worker` | Copy `~/.cf-opencode/control-token` from the machine that ran `init`. Or set `CF_OPENCODE_CONTROL_TOKEN`. |
+| `nothing to upgrade on this machine` | Run `cf-opencode init`. |
+
+On a first run that failed after it created the Worker, `~/.cf-opencode/deploying.json` lets the rerun finish without `--adopt`.
+
+## GitHub
+
+| Cause | What to do |
+| --- | --- |
+| `no GitHub token on the Worker: a private repository will not clone, and push will fail` | Run `gh auth token \| cf-opencode git-token`. |
+| `GitHub rejected that token` | Create a new token. Run `cf-opencode git-token` again. |
+| `no token given` | Pipe a token in, or run `cf-opencode git-token` on a terminal. |
+| `could not store the secret: …` | Run `npx wrangler login`. Run `git-token` again. |
+| `repo prepare failed: …` | Check the git URL. For a private GitHub repository, run `cf-opencode git-token`. |
+
+## connect and workspaces
+
+| Cause | What to do |
+| --- | --- |
+| `no Worker URL` | Run `cf-opencode init`, or pass `--url`. |
+| `no control token` | Run `cf-opencode init`. It writes `~/.cf-opencode/control-token`. |
+| `OpenCode is not installed here` | Install OpenCode 2: `curl -fsSL https://opencode.ai/v2/install \| bash`. |
+| `cannot reach <url> …` | Run `cf-opencode doctor`. Check the URL. |
+| `missing or wrong bearer token` | The control token on this machine differs from the Worker. Copy the right token, or run `init`. |
+| `N/M workspaces already running` | Pause an idle workspace with `cf-opencode pause <workspace>`. Or raise `maxRunning` in `~/.cf-opencode/config.json` and run `cf-opencode upgrade`. |
+| `spawn did not finish in 4 min 30 s` | Retry. Check `cf-opencode status <workspace>`. |
+| `container was not ready in time` | Retry. The first start on a new host pulls the image and is slow. |
+| `container failed to start: …` | Run `cf-opencode logs <workspace>`. |
+| `snapshot not found` | The disk snapshot is gone. Run `cf-opencode delete <workspace>`, then `cf-opencode connect`. The workspace starts from the image. |
+| `opencode serve did not start: …` | Run `cf-opencode logs <workspace>`. |
+| `opencode did not answer /api/info in … s` | Run `cf-opencode logs <workspace>`. |
+| `control plane restarted during …` | Wait. The connect retries. If it repeats, run `cf-opencode logs <workspace>`. |
+| `wrong workspace password` | Run `cf-opencode connect <workspace>`, then retry. |
+
+A deploy restarts the Durable Object of a workspace. If that interrupts a connect, the CLI prints `the Worker restarted (a deploy); trying once more`.
+
+## Shell, SSH and browse
+
+| Cause | What to do |
+| --- | --- |
+| `no local password for <workspace>` | Run `cf-opencode connect <workspace>`. |
+| `the workspace refused the password for <workspace>` | Run `cf-opencode connect <workspace>`. |
+| `<workspace> was deleted` | Start a new workspace with `cf-opencode connect`. |
+| `<workspace> did not wake (<status>)` | Run `cf-opencode logs <workspace>`. |
+| `the shell websocket was refused (<code>)` | Run `cf-opencode logs <workspace>`. |
+| `the ssh websocket was refused (<code>)` | Run `cf-opencode logs <workspace>`. |
+| `shell needs an interactive terminal` | Use `cf-opencode ssh <workspace> -- <command>` in a script. |
+| `ssh is not installed here` | Install OpenSSH. |
+| `ssh-keygen failed` | Install OpenSSH (`ssh` and `ssh-keygen`). |
+| `this Worker has no Browser Run binding` | Run `cf-opencode init` to redeploy. |
+| `Browser Run refused a session (…)` | Retry `cf-opencode browse`. |
+| `browser session … refused the connection (<status>)` or `… is gone (…)` | Open a new session with `cf-opencode browse`. |
+
+If `ssh` says the host key changed, remove the line for `cf-opencode-<workspace>` from `~/.cf-opencode/ssh/known_hosts`.
+
+## Pause, rebuild and delete
+
+| Cause | What to do |
+| --- | --- |
+| `snapshot failed after N attempts (…)` | Retry the pause. Check `cf-opencode status <workspace>`. |
+| `project snapshot … not saved (…); workspace left running` | Retry the pause. Check `cf-opencode status <workspace>`. |
+| `this workspace has no disk to carry` | Run `cf-opencode connect <workspace>`. It boots the new image. |
+| `the old disk did not start (…)`, `tar on the old disk exited …`, `rebuild failed: …` | Retry. The old disk is unchanged. |
+| `the new image did not start (…)`, `unpacking on the new image exited …` | Retry. |
+| `no image in this deploy` | Run `cf-opencode upgrade`. |
+| `no such workspace` | Run `cf-opencode connect`. |
+
+## Configuration
+
+| Cause | What to do |
+| --- | --- |
+| `config.json is not JSON` or `must hold one JSON object` | The settings file is wrong. Correct `~/.cf-opencode/config.json`, or delete it to use the defaults. Then run `cf-opencode upgrade`. |
+| `<key> must be an integer from <min> to <max>` | Use a value in that range. See [Configuration](/reference/configuration/). |
+| `alarmSeconds … must be shorter than inactivityTimeoutMinutes` | Lower `alarmSeconds`, or raise `inactivityTimeoutMinutes`. |
+| `instance … is not a container size` | Use `standard-1`, `standard-2`, `standard-3` or `standard-4`. |
+
+## Install state
+
+| Cause | What to do |
+| --- | --- |
+| `no install on this machine` | Run `cf-opencode init`. |
+| `wrangler could not list containers: …` | Run `npx wrangler login`. Run `uninstall` again. |
+| `N delete(s) failed` | Run `cf-opencode uninstall --yes` again. It skips deleted items. |
+| `the Worker sources are missing from this install` | Reinstall `cf-opencode`, or run `npm run build -w cli` in a checkout. |
+| `unknown command …` | Run `cf-opencode --help`. |

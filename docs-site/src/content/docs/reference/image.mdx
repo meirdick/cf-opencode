@@ -1,0 +1,51 @@
+---
+title: The workspace image
+description: What the workspace image contains, and what it does not contain.
+sidebar:
+  order: 4
+---
+
+The workspace image is small on purpose. It is Debian bookworm-slim with a few tools. The base image digest, the `tini` version and the OpenCode version are pinned. A snapshot restores only onto the image it came from.
+
+## Installed
+
+| Item | Notes |
+| --- | --- |
+| OpenCode 2.2.7 | Installed from the official installer. `opencode` on the PATH adds the model config, then runs the real binary. |
+| `git` | |
+| `gh` | The GitHub CLI. It reads `GH_TOKEN`, which holds a placeholder. |
+| `python3` | |
+| `curl` | |
+| `ripgrep` | The command `rg`. |
+| `jq` | |
+| `unzip` | |
+| `less` | |
+| `tmux` | `cf-opencode shell` uses it. |
+| `openssh-server` | `sshd` runs per connection with `sshd -i`. It never listens. |
+| `sudo` | `user` has passwordless `sudo`. |
+| `tini` | PID 1. |
+| `bash`, `procps`, `ca-certificates`, `libnss-myhostname` | Base tools. |
+| `cf-opencode-browse` | The command that opens a browser session. See [Browsing](/guides/browsing/). |
+
+## Not installed
+
+The image has no Node and no compilers. It has no other language toolchain.
+
+Ask the agent to install what the project needs. The `user` account has passwordless `sudo`:
+
+```sh
+sudo apt-get update && sudo apt-get install -y build-essential
+```
+
+The snapshot keeps installed packages. `rebuild` does not carry packages outside `/home/user`. See [Upgrade and rebuild](/guides/upgrade-and-rebuild/).
+
+## Users and paths
+
+- `user` (uid 1000) runs OpenCode, the shell and the SSH login.
+- The home folder is `/home/user`. The default project path is `/home/user/project`.
+- The container starts as root. The entrypoint trusts the egress CA, then the Worker starts `opencode serve` as `user`.
+- `opencode serve` listens on port 4096.
+
+## Size
+
+The default container has 2 vCPU, 6 GiB of memory and a 20 GB disk. You can change it with `instance`. See [Configuration](/reference/configuration/).

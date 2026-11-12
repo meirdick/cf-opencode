@@ -1,0 +1,12 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  // Static site for cf-opencode. Assets only: no Worker script, no binding.
+  // Landing page at /, user docs at /docs/ (staged by scripts/stage.mjs).
+  "name": "cf-opencode-site",
+  "compatibility_date": "2026-10-30",
+  "workers_dev": true,
+  "assets": {
+    "directory": "./.deploy",
+    "not_found_handling": "404-page"
+  }
+}

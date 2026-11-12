@@ -1,0 +1,18 @@
+cf-opencode
+Copyright 2026 Meir Dick
+
+The control plane (worker/src/core, worker/src/orb, worker/src/registry.ts) is
+forked from cf-orbs, Copyright 2026 Meir Dick, Apache-2.0:
+https://github.com/meirdick/cf-orbs
+
+cf-orbs includes patterns adapted from cloudflare/sandbox-sdk (Apache-2.0,
+https://github.com/cloudflare/sandbox-sdk): the setsid + boot_id background
+process guard, the per-object exclusive operation queue, and the auto-save
+alarm loop.
+
+The plugin shape follows e2b-dev/opencode-e2b (Apache-2.0,
+https://github.com/e2b-dev/opencode-e2b). No E2B code is copied.
+
+cf-opencode is a community project. It is not affiliated with Cloudflare, Inc.,
+Sourcegraph, Inc. (Amp), or the OpenCode project. "Cloudflare", "Amp", and
+"OpenCode" are trademarks of their respective owners.

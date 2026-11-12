@@ -1,0 +1,22 @@
+{
+  "name": "cf-opencode-monorepo",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "worker",
+    "cli",
+    "plugin"
+  ],
+  "scripts": {
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "vitest run",
+    "lint": "biome check ."
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.3.0",
+    "@cloudflare/workers-types": "5.20261030.1",
+    "typescript": "^5.9.0",
+    "vitest": "^5.1.0",
+    "wrangler": "4.156.0"
+  }
+}

@@ -1,0 +1,74 @@
+---
+title: Configuration
+description: The settings of the Worker, their defaults and valid ranges, and the settings file that changes them.
+sidebar:
+  order: 2
+---
+
+The Worker reads its settings from the variable `CF_OPENCODE_CONFIG`, a JSON object. A missing key takes its default. You do not edit that variable. You write a settings file, and the CLI applies it.
+
+## Change a setting
+
+1. Write the keys you want to change in `~/.cf-opencode/config.json`, as one JSON object.
+2. Run `cf-opencode upgrade`.
+
+```json
+{
+  "model": "cloudflare-workers-ai/@cf/zai-org/glm-5.3",
+  "idlePauseMinutes": 30,
+  "instance": { "memoryMib": 8192 }
+}
+```
+
+`init` and `upgrade` print the keys they read from the file. A key in the file replaces the default. `instance` merges key by key, so the example keeps the default `vcpu` and `diskMb`. Delete the file and run `upgrade` to go back to the defaults.
+
+The CLI stops before the deploy when the file is not one JSON object. A value out of range passes the deploy; the Worker then returns a `Failed:` line that names the key. Correct the file, then run `cf-opencode upgrade` again.
+
+## Keys
+
+| Key | Default | Valid values | Meaning |
+| --- | --- | --- | --- |
+| `instance` | 2 vCPU, 6144 MiB memory, 20000 MB disk | `lite`, `standard-1` to `standard-4`, or `{ "vcpu", "memoryMib", "diskMb" }` with `vcpu` 1 to 4 | The container size. One size for the whole install. |
+| `maxRunning` | `10` | Integer, 1 to 100 | The most workspaces that run at once. |
+| `maxAwakeHours` | `12` | Integer, 1 to 168 | A workspace that is awake this long pauses, even while it works. |
+| `idlePauseMinutes` | `20` | Integer, 1 to 1440 | Idle time before the Worker pauses a workspace. |
+| `warmMinutes` | `10` | Integer, 0 to 1440 | After an idle pause, the container keeps running this long. `0` stops it at once. |
+| `snapshotRefreshDays` | `3` | Integer, 0 to 29 | Days before expiry when the Worker refreshes a paused snapshot. `0` lets unused workspaces expire. |
+| `inactivityTimeoutMinutes` | `15` | Integer, 1 to 1440 | The platform inactivity timeout of the container. |
+| `alarmSeconds` | `60` | Integer, 10 to 3600 | The interval of the keep-alive alarm. It must be less than `inactivityTimeoutMinutes` in seconds. |
+| `serverPort` | `4096` | Integer, 1 to 65535 | The port of `opencode serve` in the container. |
+| `checkpointMinutes` | `0` | Integer, 0 to 1440 | When above 0, the Worker saves a snapshot without stopping, once per window of work this long. `0` turns it off. |
+| `projectSnapshotRefresh` | `"off"` | `"off"` or `"on-change"` | `"on-change"` lets the Worker mark an out-of-date project snapshot stale and stop using it. It does this at most once per project in 24 hours. `"off"` never does. |
+| `lockdown` | `false` | `true` or `false` | `true` turns general internet off. See [Security and trust](/concepts/security/). |
+| `ai` | `true` | `true` or `false` | Route models through the AI binding. See [Models](/concepts/models/). |
+| `aiGateway` | `"default"` | A gateway name: lowercase letters, digits, `_` and `-`, up to 64 characters | The AI Gateway for model requests. |
+| `model` | `"cloudflare-workers-ai/@cf/zai-org/glm-5.3"` | `provider/model`, or `""` | The default OpenCode model. An empty value lets OpenCode choose. |
+| `images` | `{}` | An object of image references | Extra image references mapped to image keys. For advanced use. |
+
+The file `worker/wrangler.jsonc` ships with these values: the default `instance`, `maxRunning` 10, `maxAwakeHours` 12, `warmMinutes` 10, `inactivityTimeoutMinutes` 15, `alarmSeconds` 60, `serverPort` 4096, `idlePauseMinutes` 20 and `projectSnapshotRefresh` `"off"`.
+
+## Example
+
+```json
+{
+  "instance": { "vcpu": 2, "memoryMib": 6144, "diskMb": 20000 },
+  "idlePauseMinutes": 30,
+  "maxRunning": 5,
+  "model": "cloudflare-workers-ai/@cf/zai-org/glm-5.3"
+}
+```
+
+## Worker secrets and bindings
+
+These are not part of `CF_OPENCODE_CONFIG`.
+
+| Name | Type | Set by |
+| --- | --- | --- |
+| `CONTROL_TOKEN` | Secret | `init` |
+| `GITHUB_TOKEN` | Secret | `init` or `cf-opencode git-token` |
+| `ANTHROPIC_API_KEY` | Secret | You, optional |
+| `OPENAI_API_KEY` | Secret | You, optional |
+| `AI` | Binding, Workers AI | `wrangler.jsonc` |
+| `BROWSER` | Binding, Browser Run | `wrangler.jsonc` |
+| `WORKSPACE` | Durable Object, class `WorkspaceSession` | `wrangler.jsonc` |
+| `REGISTRY` | Durable Object, class `Registry` | `wrangler.jsonc` |

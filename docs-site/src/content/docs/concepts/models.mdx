@@ -1,0 +1,61 @@
+---
+title: Models
+description: How a workspace reaches models through the Worker AI binding, the two OpenCode providers and the default model.
+sidebar:
+  order: 2
+---
+
+A workspace needs no model key. The Worker has an AI binding. Your account pays for model use.
+
+## How a request flows
+
+OpenCode in the workspace uses its two built-in Cloudflare providers. Their base URL is `http://ai.cf-opencode.internal/v1`. The platform intercepts that host and hands each request to the Worker. The Worker runs the request with `env.AI.run()` through your AI Gateway.
+
+The API key in the workspace is the placeholder `cf-opencode-egress`. The binding needs no key.
+
+## The two providers
+
+| OpenCode provider | Models | Billed to |
+| --- | --- | --- |
+| `cloudflare-workers-ai` | Workers AI models (`@cf/...`) | Workers Paid usage |
+| `cloudflare-ai-gateway` | Anthropic, OpenAI, Google and others | AI Gateway credits (Unified Billing) |
+
+Third-party models need credits on your account. In the dashboard, open AI, then AI Gateway, then Credits.
+
+## Default model
+
+The default model is `cloudflare-workers-ai/@cf/zai-org/glm-5.3`.
+
+- Pick another model in OpenCode with `/models`.
+- Or set `model` in `~/.cf-opencode/config.json` and run `cf-opencode upgrade`. See [Configuration](/reference/configuration/). The value has the form `provider/model`. An empty value lets OpenCode choose.
+
+## AI Gateway
+
+The Worker routes requests through the gateway that `aiGateway` names. The default name is `default`. Cloudflare creates `default` on first use. Gateway logs, caching and rate limits apply.
+
+Set `ai` to `false` to turn off the AI binding route. OpenCode then keeps only its own providers.
+
+## OpenCode started by hand
+
+OpenCode that you start inside the workspace uses the same providers. This covers `cf-opencode shell`, `ssh`, and tmux or herdr panes. The command `opencode` in the workspace reads the model config that the Worker wrote on the last wake.
+
+```sh
+opencode run -m cloudflare-workers-ai/@cf/zai-org/glm-5.3 "say hello"
+```
+
+## Your own provider keys
+
+You can also use your own provider account. Set its key as a Worker secret. The Worker supports `ANTHROPIC_API_KEY` and `OPENAI_API_KEY`:
+
+```sh
+npx wrangler secret put ANTHROPIC_API_KEY --name cf-opencode
+npx wrangler secret put OPENAI_API_KEY --name cf-opencode
+```
+
+`cf-opencode` is the default Worker name. Use your name if you ran `init --name`.
+
+The workspace calls the provider with a placeholder. The Worker swaps in the real key. Neither the disk nor a snapshot holds it.
+
+<Aside type="caution" title="Do not log in to a provider inside a workspace">
+  A provider login from inside the workspace (OpenCode `/connect`) writes the credential to the workspace disk. It is then in every later snapshot. Use the Cloudflare providers or a Worker secret instead.
+</Aside>

@@ -1,0 +1,11 @@
+{
+  "name": "cf-opencode-site",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:docs": "npm --prefix ../docs-site run build",
+    "stage": "node scripts/stage.mjs",
+    "dev": "npm run build:docs && npm run stage && wrangler dev",
+    "deploy": "npm run build:docs && npm run stage && wrangler deploy"
+  }
+}

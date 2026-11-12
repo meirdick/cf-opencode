@@ -1,0 +1,44 @@
+---
+title: Files on your machine
+description: The files and folders that cf-opencode keeps in ~/.cf-opencode, and which of them are secret.
+sidebar:
+  order: 3
+---
+
+The CLI keeps its state in `~/.cf-opencode`. Files that hold a secret have mode 600.
+
+| Path | Secret | Content |
+| --- | --- | --- |
+| `~/.cf-opencode/install.json` | No | The Worker URL, the Worker name and the account ID. Mode 600. |
+| `~/.cf-opencode/config.json` | No | Your settings. You write it; `init` and `upgrade` apply it. See [Configuration](/reference/configuration/). |
+| `~/.cf-opencode/control-token` | Yes | The control token. Mode 600. |
+| `~/.cf-opencode/workspaces/<workspace>.json` | No | The local record of a workspace: URL, directory, repository, branch and snapshot ID. Mode 600. |
+| `~/.cf-opencode/workspaces/<workspace>.password` | Yes | The workspace password. Mode 600. |
+| `~/.cf-opencode/ssh/id_ed25519` | Yes | The SSH private key. The CLI makes it once. |
+| `~/.cf-opencode/ssh/id_ed25519.pub` | No | The public key. The CLI installs it in workspaces. |
+| `~/.cf-opencode/ssh/known_hosts` | No | The SSH host keys of workspaces. |
+| `~/.cf-opencode/deploy/` | No | The copy of the Worker and image sources that `init` deploys. `init` replaces it on each run. |
+| `~/.cf-opencode/deploy.log` | No | The full wrangler output of the last deploy. Mode 600. |
+| `~/.cf-opencode/deploying.json` | No | Exists only after a first `init` that failed. It lets the rerun continue without `--adopt`. |
+
+## What the CLI does with them
+
+- `init` writes `control-token`, `install.json` and the deploy files.
+- `connect` writes the workspace files and the password file.
+- `list` and `sessions` read the workspace files. They show the workspaces that this machine connected to.
+- `delete` removes the two files of that workspace and its line in `known_hosts`.
+- `uninstall --yes` removes `install.json`. It keeps the rest.
+
+To remove all state, delete the folder `~/.cf-opencode`.
+
+## Inside a workspace
+
+The Worker writes these files in `/home/user` of the workspace:
+
+| Path | Content |
+| --- | --- |
+| `~/.cf-opencode-url` | The Worker URL. `cf-opencode-browse` reads it. |
+| `~/.cf-opencode-workspace` | The workspace ID. `cf-opencode-browse` reads it. |
+| `~/.cf-opencode/opencode-config.json` | The OpenCode model config. It holds a placeholder, not a key. |
+
+The project is at `/home/user/project`, unless you pass `--dir`.

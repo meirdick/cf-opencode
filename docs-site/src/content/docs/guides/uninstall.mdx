@@ -1,0 +1,46 @@
+---
+title: Uninstall
+description: Remove the Worker, its container app and image tags with uninstall, and clean up local files.
+sidebar:
+  order: 6
+---
+
+## Dry run
+
+```sh
+cf-opencode uninstall
+```
+
+Without `--yes`, `uninstall` only lists what it would delete:
+
+- The Worker and its Durable Objects.
+- The container app of the Worker.
+- The image tags under the container app name.
+
+## Delete
+
+```sh
+cf-opencode uninstall --yes
+```
+
+The command deletes those resources. If a delete fails, it prints each failure. Rerun the same command. It skips what it already deleted.
+
+Pass `--token-file <path>` if you use a Cloudflare API token file.
+
+## What remains
+
+- Cloudflare has no API to delete a snapshot. Cloudflare keeps snapshot data up to 30 days after the last restore.
+- `uninstall` removes `~/.cf-opencode/install.json`. It keeps the other files in `~/.cf-opencode`, such as the control token and the workspace passwords. Delete the folder to remove them. See [Files on your machine](/reference/files/).
+- The GitHub token and any provider keys were Worker secrets. They go with the Worker.
+
+## Delete one workspace
+
+To remove one workspace only, use `delete`:
+
+```sh
+cf-opencode delete my-repo
+```
+
+`delete` destroys the container. It makes the Worker forget the workspace disk and the project snapshot. The next `connect` for that workspace starts from the image and clones again. It also removes the local files of that workspace and its SSH host key line.
+
+Cloudflare drops the old snapshot data after 30 days.

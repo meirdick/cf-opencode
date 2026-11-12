@@ -1,0 +1,137 @@
+---
+title: Quickstart
+description: Install cf-opencode into your Cloudflare account, open a first workspace, and come back to it later.
+sidebar:
+  order: 1
+---
+
+You end with a Worker in your Cloudflare account and a first workspace for one of your repositories. The first deploy builds the workspace image. It takes a few minutes.
+
+## Requirements
+
+| You need | How to check |
+| --- | --- |
+| Node 22 or newer | `node --version` |
+| Docker, running, with the buildx plugin | `docker info` and `docker buildx version` |
+| A Cloudflare account on the Workers Paid plan | `init` checks this. The plan is under Workers & Pages, Plans, in the Cloudflare dashboard |
+| OpenCode 2 on this machine | `opencode --version` |
+
+Docker Desktop includes buildx. On Debian or Ubuntu, run `apt install docker-buildx-plugin`. Wrangler builds the workspace image on your machine on each deploy.
+
+Install OpenCode 2 with this command:
+
+```sh
+curl -fsSL https://opencode.ai/v2/install | bash
+```
+
+You need no model key and no Browser Run token. Models and browsing use bindings on your Worker.
+
+## Install
+
+Run `init` from any directory.
+
+<Tabs>
+  <TabItem label="From npm">
+    ```sh
+    npm install -g cf-opencode
+    cf-opencode init
+    ```
+    The package `cf-opencode` is on npm. It carries the Worker source and the workspace image. You do not need a checkout.
+
+    If npm cannot write to its global folder, do not install. Put `npx` before each command on this page instead, for example `npx cf-opencode init`.
+  </TabItem>
+  <TabItem label="From a checkout">
+    ```sh
+    git clone https://github.com/meirdick/cf-opencode
+    cd cf-opencode
+    npm ci && npm pack -w cli
+    npm install -g ./cf-opencode-*.tgz
+    cf-opencode init
+    ```
+  </TabItem>
+</Tabs>
+
+## What init does
+
+`init` checks everything before it changes anything. It prints every problem at once, one `Failed: … — fix: …` line each. See [Troubleshooting](/troubleshooting/).
+
+<Steps>
+  <Step title="Check the machine and the account">
+    `init` checks Node, Docker and buildx, the Cloudflare login, the account and Workers Paid. It also checks if a Worker with the same name exists that this machine did not deploy.
+
+    On a terminal with no login, `init` offers `wrangler login` in your browser. If the login sees several accounts, it asks which one to use.
+  </Step>
+  <Step title="Deploy">
+    `init` builds the workspace image and deploys the Worker `cf-opencode`. The log is in `~/.cf-opencode/deploy.log`. `init` retries a failed image push twice.
+  </Step>
+  <Step title="Store the control token">
+    `init` makes a control token and stores it in `~/.cf-opencode/control-token` and on the Worker. It waits until the Worker accepts the token. A rerun keeps the same token.
+  </Step>
+  <Step title="Set up GitHub">
+    `init` sets up GitHub once, so private repositories, `git push` and `gh` work in every workspace.
+
+    - If `gh` is logged in on this machine, `init` offers to use that login. On a terminal it asks first. With `--yes` it uses the login without asking.
+    - If `gh` is not logged in, `init` asks you to paste a token. Press Enter to skip.
+    - `--no-github` skips this step. You can run `cf-opencode git-token` later.
+
+    The token becomes a Worker secret. It never enters a workspace. See [GitHub and private repositories](/guides/github/).
+  </Step>
+</Steps>
+
+At the end, `init` prints the Worker URL and the next command:
+
+```text
+Ready: https://cf-opencode.example.workers.dev
+
+Next, from any git checkout:
+  cf-opencode connect
+```
+
+## Connect
+
+Go to a git checkout and run `connect`:
+
+```sh
+cd my-project
+cf-opencode connect
+```
+
+The workspace ID comes from the directory name: lowercase, with each other character changed to `-`. The directory `My App` gives the workspace `my-app`. The first connect clones the `origin` remote into the workspace, checks out your branch, and starts OpenCode there. Your local OpenCode opens against the workspace.
+
+A directory with no `origin` remote gets an empty workspace: nothing is cloned.
+
+If your branch is not pushed, the workspace starts on the default branch and creates your branch from it. Push the branch first to bring your commits.
+
+Later connects restore the snapshot. Installed packages and uncommitted work are still there.
+
+## Close the laptop
+
+The agent runs in the workspace. Give it a task and close the laptop. The task continues.
+
+The workspace stays awake while an OpenCode session runs, a terminal prints output, or a request arrives through the Worker. After `idlePauseMinutes` (default 20) with none of these, the workspace saves its disk and stops. See [How it works](/concepts/how-it-works/).
+
+## Come back
+
+When you quit OpenCode, it prints a line such as `Continue  opencode -s ses_…`. Do not use that command. It starts a local session. The session lives in the workspace.
+
+Reopen the last session of the workspace:
+
+```sh
+cf-opencode connect --continue
+```
+
+Open a session by ID:
+
+```sh
+cf-opencode connect --session ses_abc123
+```
+
+To list sessions across all your workspaces, run `cf-opencode sessions`. It wakes nothing. See [Sessions](/concepts/sessions/).
+
+## Check the install
+
+```sh
+cf-opencode doctor
+```
+
+`doctor` checks Node, OpenCode, ssh, the control token, the Worker and its bindings. It starts no workspace.

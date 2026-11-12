@@ -1,0 +1,54 @@
+---
+title: Limits and costs
+description: What a workspace cannot do, how snapshots expire, and what cf-opencode costs in your Cloudflare account.
+sidebar:
+  order: 21
+---
+
+## Limits
+
+- **Processes do not survive a pause.** A paused workspace keeps its disk, not its processes. `opencode serve` starts again on resume. A dev server or a tmux session that you started does not.
+- **A restore keeps the old tools.** A snapshot is the whole disk. A restore keeps the tools of the image it first booted, even after `cf-opencode upgrade`. `cf-opencode status <workspace>` says when the image is older. `cf-opencode rebuild <workspace>` moves it. `rebuild` does not carry packages that you installed outside `/home/user`. It stops a running agent.
+- **A redeploy reaches a running workspace late.** The control code of a running workspace changes after its container next stops. Pause the workspace to move it sooner.
+- **One container size per install.** The default is 2 vCPU, 6 GiB of memory and a 20 GB disk. Change it with `instance`.
+- **A limit on running workspaces.** `maxRunning` is 10 by default. A connect past the limit fails with `N/M workspaces already running`.
+- **The image has no Node and no compilers.** See [The workspace image](/reference/image/).
+- **Local OpenCode must be version 2** for `connect`.
+- **Sessions list.** `cf-opencode sessions` shows at most 50 sessions per workspace.
+- **A deploy needs Docker.** Wrangler builds the image on your machine on each deploy.
+
+## Snapshot expiry
+
+Cloudflare drops a snapshot 30 days after its creation or its last restore.
+
+Three days before that, the Worker restores a paused snapshot for a few seconds. It has no internet access and starts nothing. This begins a new 30 days. A workspace that you leave for months keeps its disk.
+
+`snapshotRefreshDays` sets the lead time. Set it to `0` to let unused workspaces expire.
+
+`cf-opencode list` marks a snapshot that is less than two days from expiry with `!`. That means the refresh fails or is off. A `connect` saves it and starts a new 30 days.
+
+A deleted workspace has no pointer to its old snapshot. Cloudflare drops the data after 30 days. There is no snapshot delete API.
+
+## Costs
+
+Everything is billed to your Cloudflare account. cf-opencode has no fee.
+
+| Item | Billed as |
+| --- | --- |
+| The Worker and Durable Objects | Workers Paid usage |
+| Containers | Compute while a container runs, including the warm period after an idle pause |
+| Workers AI models (`@cf/...`) | Workers Paid usage |
+| Third-party models through AI Gateway | AI Gateway credits (Unified Billing) |
+| Browser sessions | Per browser hour, through Browser Run |
+
+For current prices, see the Cloudflare pricing pages for [Containers](https://developers.cloudflare.com/containers/pricing/), [Workers AI](https://developers.cloudflare.com/workers-ai/platform/pricing/) and [Browser Run](https://developers.cloudflare.com/browser-run/).
+
+How to keep costs low:
+
+- An idle workspace stops after `idlePauseMinutes` plus `warmMinutes`. Lower these to stop sooner.
+- `maxAwakeHours` stops a workspace that is awake too long, even while it works.
+- Run `cf-opencode pause <workspace>` to stop a workspace now.
+- A browser session closes after 10 minutes without activity.
+- Run `cf-opencode uninstall --yes` to delete the Worker, the container application and the images. Snapshot data stays up to 30 days; Cloudflare has no API to delete it. Files in `~/.cf-opencode` stay, except `install.json`.
+
+Containers need the Workers Paid plan.

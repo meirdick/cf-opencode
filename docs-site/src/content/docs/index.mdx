@@ -1,0 +1,44 @@
+---
+title: cf-opencode
+description: Run OpenCode workspaces on Cloudflare Containers, in your own Cloudflare account.
+sidebar:
+  order: 0
+---
+
+cf-opencode runs OpenCode in a cloud workspace. You deploy it into your own Cloudflare account. No hosted service is involved.
+
+A workspace is a container with your repository, your tools and an OpenCode server. Your local OpenCode connects to it.
+
+## What you get
+
+- **Work that continues without your laptop.** The agent runs in the workspace. Close the lid and the task goes on.
+- **No cost while idle.** An idle workspace saves its disk to a snapshot and stops. The next connect restores it.
+- **No model keys.** Models come from your account through the Workers AI and AI Gateway bindings.
+- **Private repositories.** The GitHub token stays in the Worker. It never enters the workspace.
+- **Shell, SSH and browser access.** You can open a terminal, use `ssh`, or give the agent a browser.
+
+## How you use it
+
+Install once:
+
+```sh
+npx cf-opencode init
+```
+
+Then, from any git checkout:
+
+```sh
+npx cf-opencode connect
+```
+
+`connect` wakes or creates the workspace for that checkout. It then opens your local OpenCode against it.
+
+## Where to go next
+
+- [Quickstart](/quickstart/) installs cf-opencode and opens a first workspace.
+- [How it works](/concepts/how-it-works/) explains the parts and the workspace life cycle.
+- [CLI reference](/reference/cli/) lists every command and flag.
+- [Troubleshooting](/troubleshooting/) explains the `Failed:` errors.
+- [Limits and costs](/limits/) lists what a workspace cannot do and what it costs.
+
+The control plane is a fork of the cf-orbs project. The source is at [github.com/meirdick/cf-opencode](https://github.com/meirdick/cf-opencode).

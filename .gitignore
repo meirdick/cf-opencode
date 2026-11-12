@@ -1,0 +1,16 @@
+.wrangler/
+node_modules/
+dist/
+.dev.vars
+*.local
+.secrets.json
+*.secrets.*
+.cf-opencode/
+.claude/
+cli/templates/
+cli/README.md
+cli/LICENSE
+cli/NOTICE
+plugin/LICENSE
+plugin/NOTICE
+.deploy/

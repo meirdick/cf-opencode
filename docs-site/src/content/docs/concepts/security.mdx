@@ -1,0 +1,68 @@
+---
+title: Security and trust
+description: The control token, the workspace password, why secrets never enter a workspace, egress interception and lockdown.
+sidebar:
+  order: 3
+---
+
+The Worker URL is on the internet. Two secrets protect it.
+
+## Control token
+
+The control token protects the control API at `/v1`. `init` makes it and stores it in two places:
+
+- `~/.cf-opencode/control-token`, mode 600.
+- The Worker secret `CONTROL_TOKEN`.
+
+The CLI sends it as a bearer token. It never travels as a command argument. A rerun of `init` keeps it. `init --adopt` replaces the control token of an existing Worker.
+
+Anyone with the control token can manage every workspace and derive every workspace password. Treat it like a password.
+
+## Workspace password
+
+Each workspace has its own password. It protects `/oc/<workspace>`, `/shell/<workspace>`, `/ssh/<workspace>` and `/browse/<workspace>`.
+
+The CLI derives the password from the control token and the workspace ID with HMAC-SHA256. Because it is derived, every machine with the control token gets the same password. The Worker can compute it too. Nobody stores it on the Worker.
+
+The CLI writes it to `~/.cf-opencode/workspaces/<workspace>.password`, mode 600. OpenCode reads it from `OPENCODE_SERVER_PASSWORD`. The username is always `opencode`. The password is not in any URL. The CLI never prints it.
+
+The workspace's Durable Object checks the password itself, in constant time, before it wakes anything. A wrong password gets a 401 and wakes nothing.
+
+## Secrets never enter the container
+
+A provider key or the GitHub token is a Worker secret. The workspace holds only a placeholder, `cf-opencode-egress`.
+
+The platform intercepts requests from the container to these hosts. The Worker removes the container's own credential headers and adds the real credential:
+
+| Host | Worker secret |
+| --- | --- |
+| `api.anthropic.com` | `ANTHROPIC_API_KEY` |
+| `api.openai.com` | `OPENAI_API_KEY` |
+| `github.com` | `GITHUB_TOKEN` |
+| `api.github.com` | `GITHUB_TOKEN` |
+
+A route whose secret is not set is refused. The Worker does not forward the placeholder.
+
+The disk, the environment and every snapshot hold only the placeholder. A snapshot cannot leak a key.
+
+The GitHub token is added to every request from the workspace to `github.com` and `api.github.com`. Its reach is the reach of the workspace. Give it only the repositories you need. See [GitHub and private repositories](/guides/github/).
+
+## Internet access
+
+A workspace has general internet access, so it can clone repositories and install packages. Provider hosts stay intercepted. This internet access does not let a key leak, because no key is in the container.
+
+## Lockdown
+
+Set `lockdown` to `true` in `~/.cf-opencode/config.json`, then run `cf-opencode upgrade`, to turn general internet off. Only provider hosts whose secret is set stay reachable. `lockdown` is `false` by default. See [Configuration](/reference/configuration/).
+
+Interception of provider hosts is on either way. You cannot configure it.
+
+## Logs
+
+The container redacts `opencode serve` logs before they leave it. `cf-opencode logs` shows the redacted log.
+
+## What you must protect
+
+- `~/.cf-opencode/control-token` and `~/.cf-opencode/workspaces/*.password`.
+- Your Cloudflare API token, if you use one. It comes from `CLOUDFLARE_API_TOKEN` or `--token-file`, never from an argument.
+- The workspace disk. It holds your code, and it is in every snapshot.

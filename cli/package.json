@@ -1,0 +1,38 @@
+{
+  "name": "cf-opencode",
+  "version": "0.1.0",
+  "description": "OpenCode workspaces on Cloudflare Containers, in your own account. One command to connect.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "bin": {
+    "cf-opencode": "bin/cf-opencode.js"
+  },
+  "files": [
+    "bin",
+    "dist",
+    "templates",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/meirdick/cf-opencode.git",
+    "directory": "cli"
+  },
+  "homepage": "https://github.com/meirdick/cf-opencode#readme",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "typecheck": "tsc -p .",
+    "build": "node scripts/sync-templates.mjs && tsc -p tsconfig.build.json",
+    "prepack": "node scripts/sync-templates.mjs && tsc -p tsconfig.build.json"
+  },
+  "dependencies": {
+    "wrangler": "4.156.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6"
+  }
+}

@@ -1,0 +1,70 @@
+---
+title: GitHub and private repositories
+description: Give workspaces GitHub access with init or git-token, and narrow it with a fine-grained token.
+sidebar:
+  order: 1
+---
+
+A workspace clones private repositories, pushes and runs `gh` only if the Worker has a GitHub token. Public repositories clone without one.
+
+## Set it up with init
+
+`cf-opencode init` sets up GitHub once. See [Quickstart](/quickstart/).
+
+| Case | What `init` does |
+| --- | --- |
+| `gh` is logged in on this machine | It offers to use that login. With `--yes`, it uses it without asking. |
+| `gh` is not logged in | On a terminal, it asks you to paste a token. Press Enter to skip. Without a terminal, it skips and prints a hint. |
+| A token is already on the Worker | It prints that and changes nothing. |
+| You pass `--no-github` | It skips the step. |
+
+`init` never fails because of the GitHub step. A problem becomes one `!` line with the command to run later.
+
+In CI, `init` does not use a `gh` login without a terminal, because a CI job token is short-lived. It prints `GitHub not set up in CI`.
+
+## Set it up later with git-token
+
+```sh
+gh auth token | cf-opencode git-token
+```
+
+Or run `cf-opencode git-token` alone and paste the token. The input is hidden. The command never takes the token as an argument.
+
+The command checks the token with `api.github.com`, and then stores it as the Worker secret `GITHUB_TOKEN`. A running workspace uses a changed token on its next `connect`.
+
+`cf-opencode git-token --remove` deletes the secret from the Worker.
+
+`cf-opencode doctor` shows if the Worker has a token.
+
+## Use a narrow token
+
+The `gh` login reaches everything you can reach. Every request from a workspace to `github.com` and `api.github.com` carries the token. Replace it with a fine-grained token to give the agent less.
+
+1. In GitHub, create a fine-grained personal access token.
+2. Select only the repositories you work on.
+3. Give it the permission Contents: read and write.
+4. Add Pull requests: read and write if you use `gh pr`.
+5. Store it:
+
+   ```sh
+   cf-opencode git-token
+   ```
+
+## How it works
+
+The Worker adds the token on the way out. `git clone`, `pull`, `push` and `gh` work. The disk, the environment and every snapshot hold only a placeholder. See [Security and trust](/concepts/security/).
+
+## Check that it works
+
+`connect` warns before a clone when the Worker has no token and the repository is on GitHub:
+
+```text
+! no GitHub token on the Worker: a private repository will not clone, and push will fail — fix: gh auth token | cf-opencode git-token
+```
+
+## Repository and branch rules
+
+- `connect` clones the `origin` remote of your checkout. An SSH remote becomes its HTTPS URL.
+- `connect` checks out the branch you are on.
+- If that branch is not on the remote, the workspace clones the default branch and creates your branch from it. Push the branch first to bring your commits.
+- A workspace that already has the repository fetches `origin` and keeps its checkout.

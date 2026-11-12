@@ -1,0 +1,246 @@
+---
+title: CLI reference
+description: Every cf-opencode command and flag, with the default values and the output formats.
+sidebar:
+  order: 1
+---
+
+```text
+cf-opencode <command> [options]
+```
+
+Run `cf-opencode --help` for the command list. Run `cf-opencode <command> --help` for the options of one command.
+
+In the tables, `<workspace>` is a workspace ID. `connect` makes the ID from the name of the directory. A workspace ID has letters, digits, `_` and `-`, starts with a letter or digit, and has at most 128 characters.
+
+## Global options
+
+| Option | Meaning |
+| --- | --- |
+| `--url <url>` | The Worker URL. The default is `~/.cf-opencode/install.json`, or `CF_OPENCODE_URL`. |
+| `--json` | Print one JSON document on stdout. Progress stays on stderr. |
+| `-h`, `--help` | Show help for the command. |
+| `-v`, `--version` | Print the CLI version. |
+
+With `--json`, an error from a command is `{"ok":false,"error":"Failed: … — fix: …"}` on stdout. Without it, the error is on stderr. An unknown command or a bad flag is always on stderr.
+
+The exit code is 0 on success, 1 on failure and 2 on a usage error such as an unknown command or flag.
+
+## Set up
+
+### init
+
+```text
+cf-opencode init
+```
+
+Check this machine and your Cloudflare account, deploy the Worker and the workspace image, and save the install. See [Quickstart](/quickstart/).
+
+| Flag | Meaning |
+| --- | --- |
+| `--account <id>` | The account to use, when the login sees more than one. You can set `CLOUDFLARE_ACCOUNT_ID` instead. |
+| `--name <name>` | The Worker name. The default is `cf-opencode`. Use lowercase letters, digits and `-`, up to 63 characters. |
+| `--token-file <path>` | A file with a Cloudflare API token. The default is `CLOUDFLARE_API_TOKEN`, then the `wrangler login`. |
+| `--adopt` | Replace a Worker of that name that this machine did not deploy. This changes its control token. |
+| `--url <url>` | Deploy nothing. Use a Worker that another machine deployed. It needs the control token. See [A second machine](/guides/second-machine/). |
+| `--yes`, `-y` | Never prompt. `--json` and a non-terminal stdin also imply it. |
+| `--no-github` | Do not set up GitHub now. |
+
+### upgrade
+
+```text
+cf-opencode upgrade
+```
+
+Redeploy the Worker and the image from this CLI version. The control token stays.
+
+| Flag | Meaning |
+| --- | --- |
+| `--token-file <path>` | A file with a Cloudflare API token. |
+| `--yes`, `-y` | Never prompt. |
+| `--no-github` | Accepted. Skips the GitHub step. |
+
+`upgrade` fails with `nothing to upgrade on this machine` if no install is saved.
+
+### uninstall
+
+```text
+cf-opencode uninstall [--yes]
+```
+
+List the Worker, its container app and its image tags. With `--yes`, delete them. See [Uninstall](/guides/uninstall/).
+
+| Flag | Meaning |
+| --- | --- |
+| `--yes`, `-y` | Delete. Without it, the command is a dry run. |
+| `--token-file <path>` | A file with a Cloudflare API token. |
+
+### git-token
+
+```text
+cf-opencode git-token [--remove]
+```
+
+Let workspaces use GitHub. The command reads the token from stdin, or asks for it on a terminal without echo. It never takes the token as an argument. See [GitHub and private repositories](/guides/github/).
+
+| Flag | Meaning |
+| --- | --- |
+| `--remove` | Delete the token from the Worker. |
+| `--token-file <path>` | A file with a Cloudflare API token. The default is the `wrangler login` or `CLOUDFLARE_API_TOKEN`. |
+
+### doctor
+
+```text
+cf-opencode doctor
+```
+
+Check Node, OpenCode, ssh, the saved install, the control token, the Worker and its bindings. `doctor` never starts a workspace. It checks:
+
+- `node`: version 22 or newer.
+- `opencode`: installed, and version 2.
+- `ssh`: a client exists. Only `ssh`, `ssh-config` and herdr need it.
+- `install` and `control token`: both exist.
+- `worker`: the Worker accepts the control token and its API version equals the CLI version.
+- `models`, `browse` and `github`: the AI binding, the Browser Run binding and the GitHub token.
+
+Each line starts with `✓`, `!` or `✗`. The exit code is 1 if any line is `✗`.
+
+## Workspaces
+
+### connect
+
+```text
+cf-opencode connect [workspace]
+```
+
+Wake or create a workspace and open it in your local OpenCode. Without an ID, `connect` makes one from the name of the current directory: lowercase, with each other character changed to `-`.
+
+| Flag | Meaning |
+| --- | --- |
+| `--dir <path>` | The project directory inside the workspace. The default is `/home/user/project`. |
+| `--repo <url>` | The git remote to clone when the workspace has no snapshot yet. The default is the `origin` remote of the current directory. |
+| `--branch <name>` | The branch to check out. The default is the current branch. |
+| `--no-attach` | Do not open OpenCode. Print one JSON object with the workspace and its server URL. |
+| `--continue`, `-c` | Open the last session of the workspace. |
+| `--session <id>`, `-s <id>` | Open that session. Use the `ses_…` ID. |
+| `--url <url>` | The Worker URL. |
+
+With `--no-attach` or `--json`, stdout is `{"ok":true,"workspace":"…","url":"…","username":"opencode"}`.
+
+### sessions
+
+```text
+cf-opencode sessions [workspace]
+```
+
+List OpenCode sessions across your workspaces, newest first. The command wakes nothing. See [Sessions](/concepts/sessions/).
+
+### list
+
+```text
+cf-opencode list
+```
+
+List the workspaces this machine connected to. The columns are `WORKSPACE`, `STATE`, `SINCE`, `SNAPSHOT EXPIRES` and `REPO`. A `!` after an expiry means the snapshot expires in less than 2 days.
+
+### status
+
+```text
+cf-opencode status [workspace]
+```
+
+Show one workspace, or the install when you give no ID. For a workspace it shows the state, directory, awake time or stop time, whether the image is older than the deployed one, and the snapshot expiry.
+
+### logs
+
+```text
+cf-opencode logs <workspace>
+```
+
+Print the redacted `opencode serve` log.
+
+| Flag | Meaning |
+| --- | --- |
+| `--lines <n>` | The number of lines. The default is 100. |
+
+### pause
+
+```text
+cf-opencode pause <workspace>
+```
+
+Save the disk and stop the workspace. If this machine connected to the workspace, the container stops at once.
+
+### delete
+
+```text
+cf-opencode delete <workspace>
+```
+
+Destroy the workspace. The Worker forgets its disk snapshot and its project snapshot. The next `connect` starts from the image. Cloudflare drops the old snapshot data on its own. The command also removes the local files for the workspace.
+
+### rebuild
+
+```text
+cf-opencode rebuild <workspace>
+```
+
+Move a workspace onto the deployed image. It keeps `/home/user`. It stops the agent. See [Upgrade and rebuild](/guides/upgrade-and-rebuild/).
+
+## Terminal
+
+### shell
+
+```text
+cf-opencode shell <workspace>
+```
+
+Open a terminal in the workspace, inside tmux. Closing it does not stop what runs there.
+
+| Flag | Meaning |
+| --- | --- |
+| `--session <name>` | The tmux session to attach or create. The default is `main`. |
+
+### ssh
+
+```text
+cf-opencode ssh <workspace> [-- ssh args]
+```
+
+SSH into the workspace as `user`, over the Worker. It needs the system `ssh`.
+
+### ssh-config
+
+```text
+cf-opencode ssh-config <workspace>
+```
+
+Print a `~/.ssh/config` Host block. The host name is `cf-opencode-<workspace>`. See [Shell and SSH](/guides/shell-and-ssh/).
+
+### ssh-proxy
+
+```text
+cf-opencode ssh-proxy <workspace>
+```
+
+The `ProxyCommand` that `ssh` and `ssh-config` use. You do not run it yourself.
+
+## Browser
+
+### browse
+
+```text
+cf-opencode browse <workspace>
+```
+
+Open a Browser Run session for a workspace. Print its websocket address. See [Browsing](/guides/browsing/).
+
+## Environment variables
+
+| Variable | Used for |
+| --- | --- |
+| `CF_OPENCODE_URL` | The Worker URL, when `--url` is not set. |
+| `CF_OPENCODE_CONTROL_TOKEN` | The control token, when `~/.cf-opencode/control-token` does not exist. |
+| `CLOUDFLARE_API_TOKEN` | A Cloudflare API token for `init`, `upgrade`, `uninstall` and `git-token`. |
+| `CLOUDFLARE_ACCOUNT_ID` | The account for `init`. |
+| `CF_OPENCODE_CONFIG` | Not read by the CLI. It is a Worker variable. See [Configuration](/reference/configuration/). |

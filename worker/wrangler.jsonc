@@ -1,0 +1,29 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "cf-opencode",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-30",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+  // Cloudflare primitives, no keys: models bill to the account (Workers AI, AI Gateway),
+  // browser sessions bill to the account (Browser Run).
+  "ai": { "binding": "AI" },
+  "browser": { "binding": "BROWSER" },
+  "containers": [
+    {
+      "class_name": "WorkspaceSession",
+      "scheduling_policy": "durable_object",
+      "images": { "orb": { "dockerfile": "../image/Dockerfile" } }
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      { "name": "WORKSPACE", "class_name": "WorkspaceSession" },
+      { "name": "REGISTRY", "class_name": "Registry" }
+    ]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["WorkspaceSession", "Registry"] }],
+  "vars": {
+    "CF_OPENCODE_CONFIG": "{\"instance\":{\"vcpu\":2,\"memoryMib\":6144,\"diskMb\":20000},\"maxRunning\":10,\"maxAwakeHours\":12,\"warmMinutes\":10,\"inactivityTimeoutMinutes\":15,\"alarmSeconds\":60,\"serverPort\":4096,\"idlePauseMinutes\":20,\"projectSnapshotRefresh\":\"off\"}"
+  }
+}

@@ -1,0 +1,61 @@
+---
+title: Upgrade and rebuild
+description: Redeploy the Worker and image with upgrade, and move a workspace onto the new image with rebuild.
+sidebar:
+  order: 5
+---
+
+An upgrade changes the Worker and the image. An existing workspace disk keeps the tools of the image it first booted. `rebuild` moves it.
+
+## Upgrade
+
+Install the new CLI version, then run:
+
+```sh
+cf-opencode upgrade
+```
+
+`upgrade` redeploys the Worker and the image from the installed CLI version. It keeps the control token and the Worker name. It uses the account that `init` saved. It also runs the GitHub step, which changes nothing if the Worker already has a token.
+
+Flags: `--token-file <path>` and `--yes`. See [CLI reference](/reference/cli/).
+
+If a deploy interrupts a connect, the CLI retries the connect once.
+
+A redeploy reaches the control code of a running workspace after its container next stops. Pause the workspace to move it sooner.
+
+## Check a workspace
+
+```sh
+cf-opencode status my-repo
+```
+
+When the workspace disk is older than the deployed image, `status` prints:
+
+```text
+Image      older than the deployed one — cf-opencode rebuild my-repo moves it
+```
+
+Disks saved before this feature report their image as unknown. Rebuild them once after an upgrade.
+
+## Rebuild
+
+```sh
+cf-opencode rebuild my-repo
+```
+
+`rebuild` copies `/home/user` and the SSH host keys from the old disk into a container on the current image. It saves that container as the disk of the workspace.
+
+What it keeps:
+
+- The project, dotfiles, caches and `~/.local`.
+- The SSH host keys.
+
+What it does not keep:
+
+- Packages that you installed outside `/home/user`, for example with `apt-get`.
+
+`rebuild` stops a running agent. If the rebuild fails, the old disk stays unchanged. Retry the command.
+
+## Change the configuration
+
+To change a setting, write it in `~/.cf-opencode/config.json` and run `cf-opencode upgrade`. See [Configuration](/reference/configuration/).

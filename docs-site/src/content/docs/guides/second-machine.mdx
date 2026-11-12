@@ -1,0 +1,41 @@
+---
+title: A second machine
+description: Use the same Worker and workspaces from another laptop with init --url and a copy of the control token.
+sidebar:
+  order: 4
+---
+
+Every machine with the control token gets the same workspace passwords. A second laptop can use the same Worker and the same workspaces.
+
+## Steps
+
+<Steps>
+  <Step title="Copy the control token">
+    Copy `~/.cf-opencode/control-token` from the first machine to the same path on the second machine. Keep file mode 600.
+
+    You can set `CF_OPENCODE_CONTROL_TOKEN` instead of the file.
+  </Step>
+  <Step title="Record the Worker">
+    On the second machine, run `init` with the Worker URL:
+
+    ```sh
+    cf-opencode init --url https://cf-opencode.example.workers.dev
+    ```
+
+    This deploys nothing. It checks that the Worker accepts the control token and saves the URL.
+  </Step>
+  <Step title="Connect">
+    ```sh
+    cf-opencode connect my-repo
+    ```
+  </Step>
+</Steps>
+
+Both machines now work on the same workspace and the same session at the same time.
+
+## Notes
+
+- `init --url` accepts only a `workers.dev` URL.
+- With `--url`, `init` does not set up GitHub. It reports `no GitHub token on the Worker` only if the Worker has none. Use `cf-opencode git-token` on a machine with a Cloudflare login.
+- Commands that change the deploy (`upgrade`, `uninstall`, `git-token`) need a Cloudflare login on that machine. `init --url` does not record an account.
+- A workspace made before password derivation moves to it on its next `connect`. OpenCode restarts once.

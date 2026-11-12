@@ -1,0 +1,71 @@
+---
+title: Shell and SSH
+description: Open a terminal in a workspace with shell, use ssh and scp, and connect herdr with ssh-config.
+sidebar:
+  order: 2
+---
+
+You can reach a workspace without OpenCode. All access goes through the Worker. The workspace opens no port.
+
+You need the workspace password file. `cf-opencode connect` writes it. Run `connect` once before you use these commands.
+
+## Shell
+
+```sh
+cf-opencode shell my-repo
+```
+
+`shell` attaches your terminal to the tmux session `main` in the workspace. Use `--session <name>` for another session. The command needs an interactive terminal.
+
+The tmux server runs in the container. If you close the laptop or lose the network, you only detach. The agent and your other programs keep running. Run the same command to reattach.
+
+To detach on purpose, press `ctrl-b d`.
+
+While a tmux pane prints output, the idle pause counts the workspace as in use, even with nobody attached.
+
+## SSH
+
+```sh
+cf-opencode ssh my-repo
+```
+
+This is ordinary SSH to `user` in the workspace. It needs the system `ssh`. The bytes travel over a websocket through the Worker to `sshd -i` in the container. No port is open, and nothing listens.
+
+Run a command instead of a shell. Put it after `--`:
+
+```sh
+cf-opencode ssh my-repo -- git status
+```
+
+## ssh-config and herdr
+
+Some tools expect a machine name. `ssh-config` prints a Host block for `~/.ssh/config`:
+
+```sh
+cf-opencode ssh-config my-repo >> ~/.ssh/config
+ssh cf-opencode-my-repo
+scp file.txt cf-opencode-my-repo:
+```
+
+The host name is `cf-opencode-<workspace>`. No other setup is needed.
+
+To use herdr, add the workspace as a machine, then run herdr:
+
+```sh
+herdr machine add cf-opencode-my-repo
+```
+
+herdr installs itself in `~/.local/bin` in the workspace on the first `machine add`. Its server, panes and agents keep running when your client disconnects. A pane that prints output keeps the workspace awake. When every pane is quiet for `idlePauseMinutes`, the workspace pauses. A new connection wakes it.
+
+## Keys and host keys
+
+- The CLI makes one SSH key, `~/.cf-opencode/ssh/id_ed25519`, without a passphrase. It installs the public key in the workspace on each connection.
+- The workspace makes its host key on the first SSH connection and keeps it on its disk.
+- The CLI keeps known hosts in `~/.cf-opencode/ssh/known_hosts`.
+- A workspace that boots fresh from the image gets a new host key. `connect` and `delete` remove the old line for that workspace when the boot is from the bare image. If `ssh` still reports a changed host key, remove the line for `cf-opencode-<workspace>` from that file.
+
+## The user account
+
+Shell, SSH, OpenCode and the clone all run as `user` (uid 1000). One owner holds every file in `/home/user`. `user` has passwordless `sudo`, so you can run `sudo apt-get install`.
+
+Packages that you install with `apt-get` are on the disk. A snapshot keeps them. `rebuild` does not carry them. See [Upgrade and rebuild](/guides/upgrade-and-rebuild/).
