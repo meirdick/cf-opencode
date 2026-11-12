@@ -135,6 +135,38 @@ cf-opencode sessions [workspace]
 
 List OpenCode sessions across your workspaces, newest first. The command wakes nothing. See [Sessions](/concepts/sessions/).
 
+### run
+
+```text
+cf-opencode run "<task>" [workspace]
+```
+
+Give a task to OpenCode in the workspace of the current checkout, and return. The task runs as a new session in the workspace. `run` fails when the branch is not pushed or files have changes that are not committed. See [Hand off a task](/guides/hand-off-a-task/).
+
+| Flag | Meaning |
+| --- | --- |
+| `--title <text>` | The session title. The default comes from the task. |
+| `--model <provider/model>` | The model of the session. The default is the model of the workspace. |
+| `--allow-dirty` | Start anyway. Print what the workspace will not see. |
+| `--wait` | Wait until the task is `done`, `failed` or `waiting`. |
+| `--timeout <minutes>` | How long `--wait` waits. The default is 60. |
+
+With `--json`, stdout is `{"ok":true,"workspace":"…","session":"ses_…","title":"…","state":"running"}`. With `--wait`, the exit code is 0 for `done`, 1 for `failed`, 2 for `waiting` and 3 for a timeout.
+
+### tasks
+
+```text
+cf-opencode tasks [workspace | session]
+```
+
+List the tasks that `run` started, newest first. The columns are `WORKSPACE`, `SESSION`, `STATE`, `AGE` and `TITLE`. With a `ses_…` ID, show one task and its last message. The command wakes nothing.
+
+| Flag | Meaning |
+| --- | --- |
+| `--workspace <id>` | The workspace of the task. The default is the workspace that has the task. |
+| `--wait` | With a session ID: wait until the task is not `running`. The exit codes are the same as for `run --wait`. |
+| `--timeout <minutes>` | How long `--wait` waits. The default is 60. |
+
 ### list
 
 ```text

@@ -7,6 +7,11 @@
 - `cf-opencode-fetch` in the workspace: a page as Markdown, links, HTML, a screenshot or a PDF, through the
   Browser Run binding.
 - The image has the Python `websocket` module, for the browser session's Chrome DevTools Protocol.
+- `cf-opencode run "<task>"`: hand a task to OpenCode in the workspace of the checkout, and return. The task
+  runs as a new session in the workspace. A preflight fails on changes that are not committed or pushed
+  (`--allow-dirty` skips it). Flags: `--title`, `--model`, `--wait`, `--json`.
+- `cf-opencode tasks`: handed-off tasks across workspaces, with state `running`, `done`, `failed` or
+  `waiting`. `tasks <ses_…>` shows one task and its last message; `--wait` waits for it. Wakes nothing.
 
 ## 0.1.0 (2026-11-12)
 

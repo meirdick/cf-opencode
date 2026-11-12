@@ -1,0 +1,165 @@
+---
+title: Hand off a task
+description: Give a task to OpenCode in a workspace with cf-opencode run, close the laptop, and check the result with cf-opencode tasks.
+sidebar:
+  order: 8
+---
+
+`cf-opencode run` gives a task to OpenCode in a workspace and returns at once. The task runs in the workspace, not on your laptop. You can close the laptop. The result comes back as a pushed branch, and as a pull request when `gh` works.
+
+A local agent, such as Claude Code or OpenCode, can use the same commands from its shell tool.
+
+## Before you start
+
+1. Connect the checkout once: `cf-opencode connect`. See the [quick start](/quickstart/).
+2. Set up GitHub, so the agent can push. See [GitHub](/guides/github/).
+3. Commit your changes and push the branch. The workspace clones from the Git remote. It does not see local files.
+
+## Start a task
+
+From the git checkout:
+
+```sh
+cf-opencode run "Add a health check route at /health with a test" --title "Health check"
+```
+
+The output gives the session ID and the next commands:
+
+```text
+Started ses_4f2a… in my-app: Health check
+Status: cf-opencode tasks ses_4f2a… --workspace my-app
+Wait:   cf-opencode tasks ses_4f2a… --workspace my-app --wait
+Open:   cf-opencode connect my-app --session ses_4f2a…
+```
+
+`run` does these steps:
+
+1. It checks the checkout. See [The preflight](#the-preflight).
+2. It wakes the workspace, as `cf-opencode connect --no-attach` does.
+3. It starts a new OpenCode session in the workspace, with your task as the first message.
+4. It prints the session ID and returns. It does not wait.
+
+The session runs in `opencode serve` in the workspace. The workspace stays awake while the agent works. It pauses `idlePauseMinutes` after the agent stops. See [Idle pause](/concepts/how-it-works/#idle-pause).
+
+## Write the task
+
+The agent did not see your local conversation. Put everything it needs in the task:
+
+- the goal,
+- the branch to start from, if it is not the current one,
+- the limits, for example "do not change the public API",
+- how to prove that the change works, for example "run `npm test`".
+
+`run` adds a fixed instruction to each task. It tells the agent to:
+
+1. start from your current branch as it is on `origin`,
+2. commit the work, on a new branch if it is on the default branch,
+3. push the branch,
+4. open a pull request if `gh auth status` succeeds,
+5. end with one line: `Result: <what changed>; branch <name>; pull request <URL or none>`.
+
+## The preflight
+
+`run` fails before it wakes anything when one of these is true:
+
+- The branch has no upstream. Push it with `git push -u origin <branch>`.
+- The branch has commits that are not pushed.
+- Files have changes that are not committed, or git does not track them.
+
+The error is one line, for example:
+
+```text
+Failed: 1 commit on feat not pushed to origin/feat; the workspace clones from the Git remote and would not see this — fix: commit and git push, or pass --allow-dirty
+```
+
+`--allow-dirty` starts the task anyway. It prints what the workspace will not see. A directory that is not a git checkout has no preflight.
+
+The preflight does not fetch. It compares with the upstream as your machine last saw it.
+
+## Check a task
+
+List the tasks of all your workspaces, newest first:
+
+```sh
+cf-opencode tasks
+```
+
+```text
+WORKSPACE  SESSION     STATE    AGE     TITLE
+my-app     ses_4f2a…   running  3m ago  Health check
+my-app     ses_19c0…   done     2h ago  Fix the login form
+```
+
+A task has one of these states:
+
+| State | Meaning |
+| --- | --- |
+| `running` | The agent works. |
+| `done` | The agent finished its turn. |
+| `failed` | The turn stopped with an error, was interrupted, or did not start. |
+| `waiting` | The agent asks a question or asks for a permission. |
+
+Show one task, with its last message:
+
+```sh
+cf-opencode tasks ses_4f2a…
+```
+
+If the same session ID is in two workspaces, add `--workspace <id>`.
+
+`tasks` wakes nothing. A running workspace answers with the current states. A paused workspace answers with the states that it saved when it paused.
+
+## Wait for a task
+
+```sh
+cf-opencode tasks ses_4f2a… --wait
+```
+
+`--wait` asks the Worker every 10 seconds. It returns when the task is not `running` any more. The exit code tells the result:
+
+| Exit code | Meaning |
+| --- | --- |
+| 0 | `done` |
+| 1 | `failed` |
+| 2 | `waiting` |
+| 3 | The wait timed out. The task can still run. |
+
+The default timeout is 60 minutes. Change it with `--timeout <minutes>`. `cf-opencode run --wait` starts a task and waits for it.
+
+If the workspace stops while the task runs, `--wait` fails with one line. Open the session to see what happened: `cf-opencode connect <workspace> --session <ses_…>`.
+
+## Answer a waiting task
+
+A task in `waiting` needs you. Open its session in your local OpenCode and answer:
+
+```sh
+cf-opencode connect my-app --session ses_4f2a…
+```
+
+A waiting task does not keep the workspace awake. The workspace pauses after `idlePauseMinutes`. `connect` wakes it again with the question still open.
+
+## Choose a model
+
+`--model <provider/model>` sets the model of the new session. For example:
+
+```sh
+cf-opencode run "Update the README for the new flag" --model cloudflare-workers-ai/@cf/zai-org/glm-5.3
+```
+
+Without `--model`, the session uses the default model of the workspace. See [Models](/concepts/models/).
+
+## Output for agents
+
+`--json` makes stdout one JSON document. Progress goes to stderr.
+
+- `run --json`: `{"ok":true,"workspace":"…","session":"ses_…","title":"…","state":"running"}`.
+- `tasks --json`: the task list and, for each workspace, where its list came from.
+- `tasks <ses_…> --json`: the task, `live`, and the time of the last read.
+
+A failure is one line, `Failed: <cause> — fix: <action>`. With `--json` it is `{"ok":false,"error":"…"}`.
+
+## Limits
+
+- One workspace runs all the tasks of a checkout. Two tasks at the same time share the same files.
+- `run` never sends local files. Uncommitted work stays on your laptop.
+- A pause stops processes. A task that still runs when the workspace pauses, for example at `maxAwakeHours`, stops.

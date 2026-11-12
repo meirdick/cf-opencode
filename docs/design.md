@@ -190,6 +190,23 @@ listing sessions wakes nothing. `connect --continue` and `--session` open a
 session in the workspace; OpenCode's own exit hint (`opencode -s …`) would start
 a local one.
 
+## Handed-off tasks
+
+`cf-opencode run` starts a session through the Worker, not through a local
+client: the Durable Object execs a script in the container that calls
+`POST /api/session`, then `POST /api/session/{id}/prompt`, on 127.0.0.1 with
+the derived password. The prompt call admits the input and returns, so the
+session runs in `opencode serve` and outlives the command. The preflight runs
+before any wake, because the workspace clones from the remote and never gets
+local files.
+
+The Durable Object keeps the task list (`tasks`), as it keeps `sessions`, and
+saves the states before each pause, so `tasks` wakes nothing. The state is a
+pure function of what OpenCode says (`taskState` in `worker/src/orb/tasks.ts`):
+an open permission or form is `waiting`, an active session is `running`, then
+the session outcome decides `done` or `failed`. `--wait` polls one short GET; it
+never holds a request open while an agent works.
+
 ## The agent knows the machine
 
 The serve script writes `~/.config/opencode/AGENTS.md` on each wake: `sudo

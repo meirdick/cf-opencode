@@ -136,6 +136,36 @@ client lists one workspace, and local sessions are a separate list.
 answers live; a paused one answers with the list saved at its last pause, so
 nothing is woken.
 
+### Hand off a task
+
+`cf-opencode run` gives a task to OpenCode in the workspace and returns. You
+do not attach a client, and the task goes on with the laptop closed:
+
+```sh
+cf-opencode run "Add a health check route with a test" --title "Health check"
+```
+
+```
+Started ses_4f2a… in my-app: Health check
+Status: cf-opencode tasks ses_4f2a… --workspace my-app
+Wait:   cf-opencode tasks ses_4f2a… --workspace my-app --wait
+Open:   cf-opencode connect my-app --session ses_4f2a…
+```
+
+The workspace clones from the Git remote, so `run` first checks the checkout:
+it fails when the branch is not pushed, or when files have changes that are
+not committed. `--allow-dirty` starts anyway and says what the workspace will
+not see. `run` adds a fixed instruction to each task: commit, push the branch,
+open a pull request when `gh` works, and end with a `Result:` line.
+
+`cf-opencode tasks` lists the tasks across workspaces, with their state:
+`running`, `done`, `failed`, or `waiting` (the agent asks a question or a
+permission; answer it with `cf-opencode connect <id> --session <ses_…>`).
+`cf-opencode tasks <ses_…>` shows one task and its last message. `--wait`
+returns when the task stops running, with exit code 0 done, 1 failed, 2
+waiting, 3 timed out (`--timeout`, default 60 minutes). Like `sessions`, it
+wakes nothing: a paused workspace answers with the states saved at its pause.
+
 Other commands:
 
 | Command | What it does |
@@ -144,6 +174,8 @@ Other commands:
 | `cf-opencode connect [id] --continue` | Same, and open the workspace's last session |
 | `cf-opencode connect [id] --session <ses_…>` | Same, and open that session |
 | `cf-opencode sessions [id]` | OpenCode sessions across your workspaces, newest first. Wakes nothing |
+| `cf-opencode run "<task>" [id]` | Hand a task to OpenCode in the workspace and return. It runs with the laptop closed |
+| `cf-opencode tasks [id \| ses_…]` | Handed-off tasks and their state, or one task. `--wait` waits for one. Wakes nothing |
 | `cf-opencode list` | Workspaces this machine connected to, with state and snapshot expiry |
 | `cf-opencode connect --no-attach` | Same, but print the server URL instead |
 | `cf-opencode status [id]` | Workspace state, or the install |
