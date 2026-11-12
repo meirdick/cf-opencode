@@ -10,5 +10,4 @@ Rules for the page:
 
 - Every claim must be true for the released version. Check it against the README and the source.
 - No number that was not measured. The day timeline is labelled as an example.
-- `index.html` has `noindex` until launch.
 - Fonts are self-hosted (SIL Open Font License, see `public/fonts/`). The CSP allows no other origin and no inline style or script.
