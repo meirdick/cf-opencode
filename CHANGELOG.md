@@ -38,6 +38,8 @@
   notify-key`. Retries after 1, 5 and 30 minutes, also while the workspace is paused. `tasks <ses_…>` shows
   the outcome.
 - `cf-opencode-notify "<text>"` in the workspace posts a note to `notifyUrl` through the Worker.
+- `cf-opencode init` installs the handoff skill for Claude Code and OpenCode when their config folder exists
+  on the machine. It asks first on a terminal; `--no-skill` skips it. A file that differs is left alone.
 - `cf-opencode skill` prints the handoff skill for agents; `--install --claude`, `--opencode` or `--dir` copies
   it into a skills folder, and never replaces a file that differs without `--force`.
 - `cf-opencode preview [workspace] <port...>` opens a dev server that runs in the workspace at

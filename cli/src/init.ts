@@ -20,6 +20,7 @@ import {
 } from "./config.js";
 import { CliError } from "./errors.js";
 import { type GithubOutcome, setupGithub } from "./github.js";
+import { setupSkill } from "./skill.js";
 import { ask, readSecret, type Ui } from "./ui.js";
 import {
   type Account,
@@ -52,6 +53,8 @@ export interface InitOptions {
   nonInteractive?: boolean;
   /** Leave GitHub for later (`cf-opencode git-token`). */
   noGithub?: boolean;
+  /** Do not install the handoff skill for the agents on this machine. */
+  noSkill?: boolean;
 }
 
 export interface InitResult {
@@ -334,6 +337,12 @@ export async function init(o: InitOptions, deps: InitDeps): Promise<InitResult> 
   const github = await setupGithub(
     { url, control, interactive, ...(o.noGithub ? { skip: true } : {}), ...(apiToken ? { apiToken } : {}) },
     githubDeps,
+  );
+
+  // 8. The handoff skill, for the agents on this machine.
+  await setupSkill(
+    { interactive, ...(o.noSkill ? { skip: true } : {}) },
+    { step: (l) => ui.step(l), ask: askFn },
   );
   return { url, name, accountId: account.id, tokenPath: controlTokenPath(), deployed: true, version, github };
 }

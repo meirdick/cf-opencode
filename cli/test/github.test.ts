@@ -114,3 +114,46 @@ describe("setupGithub", () => {
     }
   });
 });
+
+describe("setupSkill (init)", () => {
+  it("installs for the agents that exist on the machine, asks once, and never replaces a file that differs", async () => {
+    const { setupSkill } = await import("../src/skill.js");
+    const { existsSync, readFileSync } = await import("node:fs");
+    const home = mkdtempSync(join(tmpdir(), "cfoc-skill-"));
+    const source = join(home, "SKILL.md");
+    writeFileSync(source, "skill v1\n");
+    const lines: string[] = [];
+    const asked: string[] = [];
+    const deps = { step: (l: string) => lines.push(l), ask: async (q: string) => (asked.push(q), "") };
+
+    // No agent folder: nothing to do, nothing printed, nothing asked.
+    expect(await setupSkill({ interactive: true, home, source }, deps)).toEqual([]);
+    expect(lines).toEqual([]);
+    expect(asked).toEqual([]);
+
+    mkdirSync(join(home, ".claude"));
+    mkdirSync(join(home, ".config", "opencode"), { recursive: true });
+    const done = await setupSkill({ interactive: true, home, source }, deps);
+    expect(asked).toHaveLength(1);
+    expect(done).toEqual([
+      join(home, ".claude", "skills", "cf-opencode-handoff", "SKILL.md"),
+      join(home, ".config", "opencode", "skills", "cf-opencode-handoff", "SKILL.md"),
+    ]);
+    expect(readFileSync(done[0] as string, "utf8")).toBe("skill v1\n");
+
+    // The user edited theirs: an upgrade leaves it and says how to replace it.
+    writeFileSync(done[0] as string, "mine\n");
+    lines.length = 0;
+    await setupSkill({ interactive: false, home, source }, deps);
+    expect(readFileSync(done[0] as string, "utf8")).toBe("mine\n");
+    expect(lines.join("\n")).toMatch(/Claude Code not installed.*differs/);
+    expect(lines.join("\n")).toMatch(/OpenCode is current/);
+
+    lines.length = 0;
+    const other = mkdtempSync(join(tmpdir(), "cfoc-skill2-"));
+    mkdirSync(join(other, ".claude"));
+    expect(await setupSkill({ interactive: false, skip: true, home: other, source }, deps)).toEqual([]);
+    expect(existsSync(join(other, ".claude", "skills"))).toBe(false);
+    expect(lines[0]).toMatch(/--no-skill/);
+  });
+});

@@ -238,6 +238,7 @@ const COMMANDS: Record<string, Command> = {
       "                     (needs its control token in ~/.cf-opencode/control-token or CF_OPENCODE_CONTROL_TOKEN)",
       "--yes                never prompt (also implied by --json and a non-terminal stdin)",
       "--no-github          do not set up GitHub now (later: cf-opencode git-token)",
+      "--no-skill           do not install the handoff skill for Claude Code and OpenCode on this machine",
       "GitHub: init gives workspaces this machine's gh login, or asks for a token once, so private",
       "repositories, push and gh work. The token is a Worker secret; it never enters a workspace.",
       "Needs Node 22+, Docker running, and an account on Workers Paid.",
@@ -249,6 +250,7 @@ const COMMANDS: Record<string, Command> = {
       adopt: { type: "boolean" },
       yes: { type: "boolean", short: "y" },
       "no-github": { type: "boolean" },
+      "no-skill": { type: "boolean" },
     },
     run: (args) => initCommand(args),
   },
@@ -261,6 +263,7 @@ const COMMANDS: Record<string, Command> = {
       "token-file": { type: "string" },
       yes: { type: "boolean", short: "y" },
       "no-github": { type: "boolean" },
+      "no-skill": { type: "boolean" },
     },
     run: (args) => initCommand(args, true),
   },
@@ -668,6 +671,7 @@ async function initCommand(args: ParsedArgs, upgrade = false): Promise<number> {
     adopt: flagBool(args, "adopt"),
     nonInteractive: flagBool(args, "yes") || flagBool(args, "json"),
     noGithub: flagBool(args, "no-github"),
+    noSkill: flagBool(args, "no-skill"),
   };
   const result = await init(o, { run: runProcess, ui });
   ui.result({ ok: true, ...result, next: "cf-opencode connect" });

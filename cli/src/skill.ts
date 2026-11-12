@@ -57,3 +57,58 @@ export function skillTarget(o: { claude?: boolean; opencode?: boolean; dir?: str
   if (o.opencode) return { kind: "opencode" };
   return { kind: "dir", dir: o.dir as string };
 }
+
+/** The agents on this machine that read skills: one whose config folder exists. */
+export function detectedTargets(home = homedir()): { name: string; target: SkillTarget }[] {
+  const out: { name: string; target: SkillTarget }[] = [];
+  if (existsSync(join(home, ".claude"))) out.push({ name: "Claude Code", target: { kind: "claude" } });
+  if (existsSync(join(home, ".config", "opencode")))
+    out.push({ name: "OpenCode", target: { kind: "opencode" } });
+  return out;
+}
+
+/**
+ * The skill step of init: give the agents on this machine the handoff skill, so "run this in the cloud"
+ * works with no other setup. It never fails the install, and never replaces a file that differs.
+ */
+export async function setupSkill(
+  o: { interactive: boolean; skip?: boolean; home?: string; source?: string },
+  deps: { step: (line: string) => void; ask: (q: string) => Promise<string> },
+): Promise<string[]> {
+  const later = "later: cf-opencode skill --install --claude (or --opencode)";
+  if (o.skip) {
+    deps.step(`! handoff skill not installed (--no-skill); ${later}`);
+    return [];
+  }
+  const targets = detectedTargets(o.home);
+  if (targets.length === 0) return [];
+  const names = targets.map((t) => t.name).join(" and ");
+  if (o.interactive) {
+    const a = await deps.ask(
+      `Install the handoff skill for ${names}? It tells the agent how to hand a task to a workspace. [Y/n] `,
+    );
+    if (/^n/i.test(a.trim())) {
+      deps.step(`! handoff skill not installed; ${later}`);
+      return [];
+    }
+  }
+  const done: string[] = [];
+  for (const t of targets) {
+    try {
+      const r = installSkill(t.target, {
+        ...(o.home ? { home: o.home } : {}),
+        ...(o.source ? { source: o.source } : {}),
+      });
+      done.push(r.path);
+      deps.step(
+        r.action === "unchanged"
+          ? `✓ Handoff skill for ${t.name} is current`
+          : `✓ Handoff skill for ${t.name} installed: ${r.path}`,
+      );
+    } catch (e) {
+      const why = (e instanceof Error ? e.message : String(e)).replace(/^Failed: /, "");
+      deps.step(`! handoff skill for ${t.name} not installed: ${why}`);
+    }
+  }
+  return done;
+}
