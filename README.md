@@ -313,12 +313,31 @@ for `/v1`, and a per-workspace password for `/oc/<id>`, `/shell/<id>`,
 `/ssh/<id>` and `/browse/<id>`. Neither is logged. The password is not in the
 URL.
 
-The workspace's Durable Object checks that password itself, in constant time,
-against the hash the last `connect` stored, before it wakes anything. Only the
-control plane, with its bearer token, can set a password. Before this check, the
-Worker passed any password through: a request to a paused workspace with a made-up
-password woke it and started OpenCode with that password, which handed the
-workspace to whoever sent it, and `/browse` opened billed sessions for anyone.
+The password is derived from the control token, so the Worker checks it first,
+in constant time and with no state: no password or a wrong one is a 401 that
+reaches no Durable Object, so an anonymous request costs one Worker request and
+names no workspace. The workspace's Durable Object then checks it again against
+the hash the last `connect` stored, before it wakes anything. Only the control
+plane, with its bearer token, can set a password, and it accepts only the
+derived one. There is no lockout: the password is 256 bits, and a lockout keyed
+on a guessable workspace name would let anyone lock you out. `/shell`, `/ssh`
+and `/browse` also refuse a request from a web page on another site. A browser
+session is served only to the workspace that opened it.
+
+The agent in the workspace runs as `user`, which has passwordless `sudo`, so a
+prompt-injected agent is root in its container and can change anything on its
+disk and in its snapshots. That is on purpose: the agent installs what a
+project needs with `apt-get`, and a narrower rule such as "sudo apt-get only"
+is not a boundary, because package scripts run as root and a package can come
+from any source the agent adds. The agent also holds the workspace password
+(`OPENCODE_SERVER_PASSWORD`, which `cf-opencode-browse` uses), so it can reach
+its own workspace's routes from outside. What protects you is elsewhere: no
+model key, GitHub token or control token ever enters the container (the Worker
+adds them on egress), so there is none to steal; the GitHub token reaches only
+the repositories you gave it; `lockdown: true` turns general internet off; and a
+workspace is disposable: `cf-opencode delete` throws the disk away, and the next
+`connect` clones again. Treat the workspace disk like a CI runner's: review what
+the agent pushes, and do not put secrets on it.
 
 ## Web search
 

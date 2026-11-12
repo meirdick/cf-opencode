@@ -28,6 +28,8 @@
   every part of the ssh `ProxyCommand`. Before, a `--url` with a `"` ran shell on this machine.
 - The image no longer pipes the OpenCode installer script to bash. It downloads the linux x64 release asset
   the installer uses and checks it against a pinned SHA-256 (`OPENCODE_SHA256`); a mismatch fails the build.
+- README "Trust" and the security page say what the agent account can do (it is root in its container, and
+  holds the workspace password) and what protects you instead. `sudo` is unchanged.
 - With `lockdown: true`, `cf-opencode-fetch` is refused. It loaded any URL through Browser Run, which got
   around lockdown's "no general internet".
 

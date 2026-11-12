@@ -154,6 +154,53 @@ restarted opencode serve and locked the first one out. The Worker computes it
 too, which is how the alarm asks the workspace whether an agent is busy. It is
 still never stored.
 
+## The Worker checks the password first
+
+Because passwords are derived, the Worker computes the expected one for the id in
+the path and compares in constant time before it calls the workspace's Durable
+Object (`worker/src/gate.ts`). An anonymous request, or one with a wrong password,
+is one uniform 401 and never creates a Durable Object. The Durable Object still
+checks the stored hash, and only it wakes. The control API refuses a spawn with a
+password that is not derived, since no client could reach that workspace.
+
+No lockout and no rate limit on failures. The password is 256 bits, so guessing
+is not the threat; a hold keyed on the workspace id (a checkout's name) would let
+anyone lock the owner out, and it would need a state write per failure, the cost
+this check removes. Volume is Cloudflare's DDoS protection's job.
+
+`/shell`, `/ssh` and `/browse` refuse a request with an `Origin` other than the
+Worker's own: a browser can attach cached Basic credentials to a cross-site
+websocket. `/oc` does not, because OpenCode's web and desktop clients may call it
+from another origin.
+
+## The agent is root in its container
+
+`user` has passwordless `sudo`, so a prompt-injected agent is root on its own
+disk. Restricting `sudo` to `apt-get` would not change that: package scripts run
+as root, and the agent can add any package source. The agent also has the
+workspace password in `OPENCODE_SERVER_PASSWORD`. The design does not rely on the
+container being clean. It relies on these:
+
+- No secret enters the container. Models use the AI binding; provider keys and
+  the GitHub token are added by the Worker on egress; the control token stays on
+  the user's machines and in the Worker.
+- The GitHub token's scope is the workspace's reach, so it should be fine-grained.
+- `lockdown: true` turns general internet off, `/page` included.
+- A workspace is disposable. `delete` drops the disk; `connect` clones again.
+
+Root-run scripts never write in `/home/user`, which the agent owns: a symlink
+there could point a root write at a system file. `authorized_keys` is written as
+`user`.
+
+## SSH keys
+
+Each machine's CLI key goes to the Durable Object on every SSH connect, with the
+time. The connect rewrites one marked block in `authorized_keys` with the keys
+seen in the last 30 days, so two machines both work and an old one drops out.
+This is hygiene, not the gate: sshd listens nowhere, and `/ssh` needs the
+password. Changing the control token changes every password; that is what shuts
+out a former holder.
+
 ## GitHub through egress
 
 Private repositories are the normal case, so `init` sets GitHub up once: it
