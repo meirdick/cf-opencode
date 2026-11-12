@@ -17,12 +17,17 @@ export interface SessionsResult {
   workspaces: { id: string; live: boolean; at?: string; error?: string }[];
 }
 
+const WORKSPACE_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
+
 export function localWorkspaceIds(): string[] {
   try {
-    return readdirSync(join(stateDir(), "workspaces"))
-      .filter((f) => f.endsWith(".json"))
-      .map((f) => f.slice(0, -5))
-      .filter((id) => Boolean(readWorkspace(id)));
+    return (
+      readdirSync(join(stateDir(), "workspaces"))
+        .filter((f) => f.endsWith(".json"))
+        .map((f) => f.slice(0, -5))
+        // A file name is not trusted: only a workspace id goes on to a URL, a completion or a terminal.
+        .filter((id) => WORKSPACE_ID_RE.test(id) && Boolean(readWorkspace(id)))
+    );
   } catch {
     return [];
   }

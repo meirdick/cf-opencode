@@ -31,8 +31,15 @@ export function completeWords(
   else if (cmd.name === "completion") pool = [...SHELLS];
   else if (cmd.workspace && before.filter((w) => !w.startsWith("-")).length === 1) pool = workspaces();
   else pool = [];
-  return [...new Set(pool)].filter((w) => w.startsWith(current)).sort();
+  return [...new Set(pool)].filter((w) => SAFE_WORD.test(w) && w.startsWith(current)).sort();
 }
+
+/**
+ * The only words offered. bash inserts a COMPREPLY word on the command line as it is, unquoted, and the
+ * script's $(…) also globs it; so a workspace file named `$(cmd).json` would put shell on the line. Commands,
+ * flags and workspace ids all fit this.
+ */
+const SAFE_WORD = /^[A-Za-z0-9][A-Za-z0-9_-]*$|^--?[A-Za-z0-9][A-Za-z0-9-]*$/;
 
 export function completionScript(shell: string): string {
   if (shell === "bash")
