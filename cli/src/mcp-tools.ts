@@ -8,6 +8,7 @@ import { type ConnectInput, type ConnectResult, connect, httpsRemote, workspaceI
 import { CliError } from "./errors.js";
 import { preflight, renderStarted, runTask } from "./handoff.js";
 import { localWorkspaceIds } from "./sessions.js";
+import { resultOf } from "./task-result.js";
 import {
   findTask,
   listTasks,
@@ -97,8 +98,33 @@ const TASK_SCHEMA = {
   additionalProperties: true,
 } as const;
 
+/** The result record (worker/src/orb/task-result.ts), the same object `tasks <ses_…> --json` prints. */
+const RESULT_SCHEMA = {
+  type: "object",
+  description:
+    "The task's result record: state, summary, and the facts git read in the workspace (branch, commits, changedFiles, pullRequest), the question of a waiting task, the error of a failed one, and structured when run --schema was used. Built from task when the Worker sends none.",
+  properties: {
+    id: { type: "string" },
+    workspace: { type: "string" },
+    state: { type: "string" },
+    title: { type: "string" },
+    summary: { type: "string", description: "The end of the last assistant message with text." },
+    branch: { type: "string" },
+    commits: { type: "array", items: { type: "object" } },
+    pullRequest: { type: "string" },
+    changedFiles: { type: "array", items: { type: "string" } },
+    question: { type: "string" },
+    error: { type: "string" },
+    started: { type: "string", description: "ISO 8601." },
+    updated: { type: "string", description: "ISO 8601." },
+  },
+  required: ["id", "workspace", "state", "title", "summary", "started", "updated"],
+  additionalProperties: true,
+} as const;
+
 const VIEW_PROPERTIES = {
   workspace: { type: "string", description: "The workspace id." },
+  result: RESULT_SCHEMA,
   task: TASK_SCHEMA,
   live: {
     type: "boolean",
@@ -187,7 +213,11 @@ export const TOOL_DEFS: ToolDef[] = [
       required: ["session"],
       additionalProperties: false,
     },
-    outputSchema: { type: "object", properties: VIEW_PROPERTIES, required: ["workspace", "task", "live"] },
+    outputSchema: {
+      type: "object",
+      properties: VIEW_PROPERTIES,
+      required: ["workspace", "result", "task", "live"],
+    },
     annotations: { readOnlyHint: true, openWorldHint: true },
   },
   {
@@ -219,7 +249,7 @@ export const TOOL_DEFS: ToolDef[] = [
         ...VIEW_PROPERTIES,
         timedOut: { type: "boolean", description: "True when the task still ran at the timeout." },
       },
-      required: ["workspace", "task", "live", "timedOut"],
+      required: ["workspace", "result", "task", "live", "timedOut"],
     },
     annotations: { readOnlyHint: true, openWorldHint: true },
   },
@@ -286,6 +316,15 @@ function workspaceOf(args: Record<string, unknown>): string | undefined {
   return w;
 }
 
+/**
+ * One task for a model: the result record the Worker built (`result`), or the part of it the task record gives
+ * (resultOf) from a Worker before 0.2; then the task record as it came.
+ */
+function view(v: TaskView): Record<string, unknown> {
+  const { result: _, ...rest } = v;
+  return { ...rest, result: resultOf(v.workspace, v), task: { ...v.task } };
+}
+
 /** Text first for a reader; then the same data as JSON, as the MCP spec asks for structured content. */
 function both(text: string, structured: Record<string, unknown>): ToolOutput {
   return { structured, text: `${text}\n\n${JSON.stringify(structured)}` };
@@ -327,7 +366,7 @@ export function taskTools(backend: TaskBackend): McpTool[] {
       def: def("get_task"),
       run: async (args) => {
         const v = await backend.get(sessionOf(args), workspaceOf(args));
-        return both(renderTask(v), { ...v, task: { ...v.task } });
+        return both(renderTask(v), view(v));
       },
     },
     {
@@ -345,7 +384,7 @@ export function taskTools(backend: TaskBackend): McpTool[] {
         const head = v.timedOut
           ? `Still running after ${raw} s. Call wait_task again, or check later with get_task.\n`
           : "";
-        return both(`${head}${renderTask(v)}`, { ...v, task: { ...v.task } });
+        return both(`${head}${renderTask(v)}`, { ...view(v), timedOut: v.timedOut });
       },
     },
     {

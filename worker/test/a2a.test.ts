@@ -20,6 +20,7 @@ import type { OpRecord, WorkspaceRecord } from "../src/core/types";
 import type { Env } from "../src/env";
 import { runSpawn } from "../src/orb/spawn";
 import { cancelTask, TASK_INTERRUPT_SH } from "../src/orb/task-cancel";
+import type { TaskResult } from "../src/orb/task-result";
 import { type WakeDeps, wakeAndStart } from "../src/orb/task-wake";
 import type { TaskInput, TaskRecord } from "../src/orb/tasks";
 import { makeOrbCtx } from "./fake-registry";
@@ -30,7 +31,7 @@ const auth = { authorization: `Bearer ${TOKEN}`, "a2a-version": "1.0", "content-
 const task = (over: Partial<TaskRecord> & Record<string, unknown> = {}): TaskRecord =>
   ({ id: "ses_1", title: "Fix login", started: 1_700_000_000_000, state: "running", ...over }) as TaskRecord;
 
-type Stub = Partial<Pick<WorkspaceSessionApi, "startTaskAwake" | "tasks" | "cancelTask">>;
+type Stub = Partial<Pick<WorkspaceSessionApi, "startTaskAwake" | "tasks" | "cancelTask" | "task">>;
 
 function env(stub: Stub, a2a = true): { env: Env; names: string[] } {
   const names: string[] = [];
@@ -319,6 +320,48 @@ describe("SendMessage", () => {
     expect(d.slept.reduce((a, b) => a + b, 0)).toBeLessThanOrEqual(BLOCKING_WAIT_MS);
     // A blocking SendMessage holds one Worker request open: at most 5 minutes, then GetTask polls.
     expect(BLOCKING_WAIT_MS).toBe(5 * 60_000);
+  });
+
+  it("GetTask and the end of a blocking SendMessage build from the result record when there is one", async () => {
+    const record = task({ state: "done", last: "old text", updated: 1_700_000_100_000 });
+    const resultRecord: TaskResult = {
+      id: "ses_1",
+      workspace: "app",
+      state: "done",
+      title: "Fix login",
+      summary: "Result: fixed; branch fix-login; pull request none",
+      branch: "fix-login",
+      commits: [{ sha: "b".repeat(40), subject: "Fix login" }],
+      structured: { ok: true },
+      started: "2023-11-14T22:13:20.000Z",
+      updated: "2023-11-14T22:15:00.000Z",
+    };
+    const stub = {
+      startTaskAwake: async () => ({ ok: true as const, task: task() }),
+      tasks: async () => ({ tasks: [record], live: true }),
+      task: async () => ({ task: record, result: resultRecord, live: true }),
+    };
+    const got = (await handleRpc(rpc("GetTask", { id: "app:ses_1" }), "1.0", deps(stub))) as any;
+    const sent = (await handleRpc(rpc("SendMessage", { message: message() }), "1.0", deps(stub))) as any;
+    for (const t of [got.result, sent.result.task]) {
+      expect(t.status.state).toBe("TASK_STATE_COMPLETED");
+      expect(t.status.timestamp).toBe("2023-11-14T22:15:00.000Z");
+      expect(t.artifacts[0].parts[0].text).toBe(resultRecord.summary);
+      expect(t.artifacts.map((a: { artifactId: string }) => a.artifactId)).toEqual([
+        "result",
+        "changes",
+        "structured",
+      ]);
+      expect(t.metadata.task).toEqual(resultRecord);
+    }
+    // A Durable Object from before the result record: the saved task record, as before.
+    const old = (await handleRpc(
+      rpc("GetTask", { id: "app:ses_1" }),
+      "1.0",
+      deps({ ...stub, task: undefined } as never),
+    )) as any;
+    expect(old.result.artifacts[0].parts[0].text).toBe("old text");
+    expect(old.result.status.timestamp).toBe(new Date(1_700_000_100_000).toISOString());
   });
 
   it("refuses parts that are not text, follow-ups, push config and a foreign contextId", async () => {
