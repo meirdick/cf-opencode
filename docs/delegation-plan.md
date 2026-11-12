@@ -94,6 +94,35 @@ agent). This list is from knowledge of those tools, not from a new survey.
 4. The remote browser (`cf-opencode-browse`, `cf-opencode-fetch`) can open the dev server by an internal hostname, with no public URL, so the agent can check its own frontend work.
 5. A request to a preview counts as use for the idle pause.
 
+### 8. WIP handoff: `--wip` and `--upload` (proposed, not in 0.2.0)
+
+The preflight keeps a handoff a pure git contract: unpushed or uncommitted work
+does not reach the workspace. E2B's box mode is the one competitor that carries
+uncommitted work into the remote (plus `.git`); Railway refuses it explicitly
+("does not upload your repository files"). Closing the gap extends the promise
+to "close the laptop, the work goes on — even the work you have not committed."
+
+1. `run --wip` (git-native, the default mechanism): a dirty tree commits its
+   tracked changes (`git add -u`, not untracked) to a throwaway branch
+   `cf-opencode/wip/<workspace>-<treehash>` and pushes from the local machine
+   with the user's own credentials; the task starts with `--branch` on it. The
+   tree hash in the name makes a rerun idempotent. Untracked files stay behind —
+   that keeps a not-gitignored secret out; `--include-untracked` prints a file
+   list before it commits anything. The result returns as a normal task branch
+   or PR; the WIP commit is squashed on merge and the wip branch deleted when it
+   lands. No new transport, no new trust surface: the workspace still sees only
+   what is on the remote.
+2. `run --wip --upload` (opt-in, later): stream the tree, gitignore-respecting,
+   into the container over the existing Workers-RPC tar path (`rebuild` already
+   streams `/home/user`) and apply it over the clone before the task starts.
+   Only for what `--wip` cannot do: a read-only remote (no push permission) or
+   ignored, derived files the agent needs. It prints the file list: it is the
+   one path a real `.env` can ride in on, so it is loud, never a default. Needs
+   chunking and a size limit (E2B measures about 30 s for a 150 MB tree, once).
+
+The default stays refuse-or-tell (`--allow-dirty`); `--wip` is an explicit opt-in,
+not a change to the preflight.
+
 ## Open questions
 
 1. Does the OpenCode 2 server API accept `--auto` for a session started over HTTP? If not, `run` starts the session with `opencode run --auto` in the workspace, detached.

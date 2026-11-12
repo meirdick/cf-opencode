@@ -44,7 +44,11 @@ function fakeRun(o: { workerExists?: boolean; deploys?: RunResult[]; loggedIn?: 
   return { calls, run };
 }
 
-const healthy = (async () => new Response(JSON.stringify({ ok: true, version: "0.1.0" }))) as typeof fetch;
+// The version of the sources the tests deploy, as the Worker would report it after the deploy.
+const DEPLOYED = (
+  JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version: string }
+).version;
+const healthy = (async () => new Response(JSON.stringify({ ok: true, version: DEPLOYED }))) as typeof fetch;
 
 describe("preflight", () => {
   const base: Probes = {
@@ -313,5 +317,26 @@ describe("settings file", () => {
     expect(() => readSettings(join(dir, "bad.json"))).toThrow(/is not JSON.*fix:/);
     writeFileSync(join(dir, "list.json"), "[1]");
     expect(() => readSettings(join(dir, "list.json"))).toThrow(/one JSON object/);
+  });
+});
+
+describe("init after a deploy", () => {
+  it("waits for the deployed version, and reports the old one only when it never changes", async () => {
+    let n = 0;
+    const slow = (async () =>
+      new Response(JSON.stringify({ ok: true, version: ++n < 3 ? "0.0.9" : DEPLOYED }))) as typeof fetch;
+    const lines: string[] = [];
+    const ui: Ui = { json: false, step: (l) => lines.push(l), out: () => {}, result: () => {} };
+    const r = await init({ nonInteractive: true }, { run: fakeRun().run, ui, env: {}, fetch: slow });
+    expect(r.version).toBe(DEPLOYED);
+    expect(n).toBeGreaterThanOrEqual(3);
+    expect(lines.join("\n")).toContain(`Worker healthy (API ${DEPLOYED})`);
+
+    const stuck = (async () => new Response(JSON.stringify({ ok: true, version: "0.0.9" }))) as typeof fetch;
+    const old = await init(
+      { nonInteractive: true },
+      { run: fakeRun({ workerExists: true }).run, ui: quiet, env: {}, fetch: stuck, versionMs: 0 },
+    );
+    expect(old.version).toBe("0.0.9");
   });
 });

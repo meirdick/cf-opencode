@@ -7,6 +7,12 @@ sidebar:
 
 The full history is in [CHANGELOG.md](https://github.com/meirdick/cf-opencode/blob/main/CHANGELOG.md) in the repository.
 
+## 0.2.1 (2026-11-12)
+
+- A workspace that was running when you set the notify URL now sends task results to it. Before, it sent them only after its next restart.
+- `changedFiles` in the result of a task lists the files of the commits of the task and its uncommitted changes. It does not list files that changed in the remote.
+- `init` and `upgrade` wait for the deployed version before they print the "Worker healthy" line.
+
 ## 0.2.0 (2026-11-12)
 
 Hand off tasks, preview dev servers, copy skills, and a tighter Worker.

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.1 (2026-11-12)
+
+- A workspace that was running when `cf-opencode notify-url` set the notify URL now sends task results to it.
+  Before, it sent them only after its next restart.
+- `changedFiles` in a task's result lists the files of the task's own commits and its uncommitted changes. It
+  no longer lists files that changed upstream when the workspace first caught up with the remote.
+- `init` and `upgrade` wait for the deployed version before they print "Worker healthy", so the line shows
+  the new version.
+
 ## 0.2.0 (2026-11-12)
 
 Everything in 0.1.1, and:

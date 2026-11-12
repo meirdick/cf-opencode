@@ -329,7 +329,22 @@ export class WorkspaceSession extends DurableObject<Env> implements WorkspaceSes
       config: this.config,
       registry: this.registry(),
       env: this.env as unknown as Record<string, string | undefined>,
+      notifyUrl: () => this.freshNotifyUrl(),
     };
+  }
+
+  /** Ask a fresh entrypoint: it runs with the env of the newest deploy, this object with the env it started with. */
+  private async freshNotifyUrl(): Promise<string | undefined> {
+    const exports = (
+      this as unknown as {
+        ctx: {
+          exports: {
+            AiEgress(opts: { props: { gateway: string } }): { notifyUrl(): Promise<string | undefined> };
+          };
+        };
+      }
+    ).ctx.exports;
+    return exports.AiEgress({ props: { gateway: this.config.aiGateway } }).notifyUrl();
   }
 
   private async arm(ms: number): Promise<void> {

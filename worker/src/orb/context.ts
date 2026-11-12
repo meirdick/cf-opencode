@@ -7,6 +7,11 @@ export interface OrbContext {
   workspaceId: string;
   orbId: string;
   container: ContainerPort;
+  /**
+   * The notify URL as the newest deploy has it. A Durable Object keeps the env it started with, so a
+   * workspace that runs when `cf-opencode notify-url` sets the secret would never see it. Absent: use env.
+   */
+  notifyUrl?: () => Promise<string | undefined>;
   kv: KV; // DO storage; keys: "orb" (OrbRecord), "op:<opId>" (OpRecord), "ops:inflight" (opId[])
   clock: Clock;
   config: ProviderConfig;

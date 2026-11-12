@@ -12,6 +12,7 @@ import type { OrbContext } from "./context";
 import { iso, loadOrb, redactWith } from "./journal";
 import { sh } from "./spawn";
 import { type Handoff, handoffBlock, parseHandoff } from "./task-context";
+import { currentNotifyUrl } from "./task-notify";
 import type { TaskResult } from "./task-result";
 import { TASK_GIT_SH, TASK_START_SH, TASK_STATUS_SH } from "./task-scripts";
 
@@ -108,7 +109,7 @@ const MAX_LAST_CHARS = 16_000;
 const MAX_REASON_CHARS = 1000;
 const SESSION_ID_RE = /^ses[A-Za-z0-9_-]{1,100}$/;
 
-type Ctx = Pick<OrbContext, "container" | "kv" | "clock" | "config" | "env" | "workspaceId">;
+type Ctx = Pick<OrbContext, "container" | "kv" | "clock" | "config" | "env" | "workspaceId" | "notifyUrl">;
 type Saved = { tasks: TaskRecord[]; at?: string };
 
 /** What OpenCode says about one session. */
@@ -479,12 +480,12 @@ export async function captureTasks(ctx: Ctx, o: CaptureOptions = {}): Promise<Ta
           o.gh === true || ending.length > 0,
         )
       : undefined;
+    // Asked before the read below, which must have no await after it.
+    const notify = Boolean(await currentNotifyUrl(ctx));
     // Read again: a task started while the scripts ran must not be lost. No await from here to the put, so
     // a concurrent read cannot mark the same change twice.
     const current = (await ctx.kv.get<Saved>(TASKS_KEY)) ?? before;
-    let tasks = applyStatus(current.tasks, status, ctx.clock.now(), {
-      notify: Boolean(ctx.env.NOTIFY_URL),
-    });
+    let tasks = applyStatus(current.tasks, status, ctx.clock.now(), { notify });
     if (facts) tasks = applyFacts(tasks, facts, factIds);
     const at = iso(ctx.clock.now());
     await ctx.kv.put(TASKS_KEY, { tasks, at });
@@ -540,10 +541,10 @@ export async function stopTasks(ctx: Ctx): Promise<void> {
   const running = saved?.tasks.filter((t) => t.state === "running").map((t) => t.id) ?? [];
   if (running.length === 0) return;
   await captureTasks(ctx, { facts: running, gh: true }).catch(() => undefined);
+  const notify = Boolean(await currentNotifyUrl(ctx));
   const after = await ctx.kv.get<Saved>(TASKS_KEY);
   if (!after?.tasks.some((t) => t.state === "running")) return;
   const now = ctx.clock.now();
-  const notify = Boolean(ctx.env.NOTIFY_URL);
   const tasks = after.tasks.map((t) =>
     t.state !== "running"
       ? t

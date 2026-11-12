@@ -171,8 +171,13 @@ for t in json.loads(os.environ.get("TASKS") or "[]"):
         parts = line.split(" ", 2)
         if len(parts) >= 2 and parts[1].isdigit() and int(parts[1]) >= since:
             commits.append({"sha": parts[0], "subject": (parts[2] if len(parts) > 2 else "")[:200]})
-    # Committed since the start, changes not committed yet, and new files git does not ignore.
-    files = (git("diff", "--name-only", base) or "").splitlines()
+    # The files of the task's own commits, changes not committed yet, and new files git does not ignore.
+    # Not a diff from the start commit: a checkout that first catches up with origin would add every
+    # file that changed upstream.
+    files = []
+    for c in commits[:MAX_COMMITS]:
+        files += (git("show", "--name-only", "--format=", c["sha"]) or "").splitlines()
+    files += (git("diff", "--name-only", "HEAD") or "").splitlines()
     files += (git("ls-files", "--others", "--exclude-standard") or "").splitlines()
     changed = []
     for f in files:

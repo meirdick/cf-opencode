@@ -28,6 +28,14 @@ export class ProviderEgress extends WorkerEntrypoint<Env, EgressProps> {
 
 /** The platform calls this for every request the container sends to AI_HOST. */
 export class AiEgress extends WorkerEntrypoint<Env, { gateway: string; workspaceId?: string }> {
+  /**
+   * The notify URL of the newest deploy, for the workspace's Durable Object (an RPC method: a container can
+   * only fetch, so it cannot call this). The Durable Object's own env is as old as the object.
+   */
+  notifyUrl(): string | undefined {
+    return this.env.NOTIFY_URL;
+  }
+
   private async noteAllowed(workspaceId: string): Promise<boolean> {
     const stub = this.env.WORKSPACE.getByName(workspaceDoName(workspaceId)) as unknown as {
       allowNote(): Promise<boolean>;

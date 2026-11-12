@@ -78,6 +78,8 @@ export interface InitDeps {
   fetch?: typeof fetch;
   /** Health wait budget. */
   healthMs?: number;
+  /** How long a healthy Worker may still answer with the version from before the deploy. */
+  versionMs?: number;
   /** Where the Worker and image sources come from. Default: the checkout, else the package's templates. */
   sources?: string;
 }
@@ -330,7 +332,8 @@ export async function init(o: InitOptions, deps: InitDeps): Promise<InitResult> 
   ui.step(`✓ Control token stored in ${controlTokenPath()} and on the Worker`);
 
   // 6. The Worker answers with that token.
-  const version = await waitHealthy(url, control, deps);
+  // The old version can answer for some seconds after a deploy. Wait for the one that was deployed.
+  const version = await waitHealthy(url, control, deps, deployedVersion(deployDir));
   ui.step(`✓ Worker healthy (API ${version})`);
 
   // 7. GitHub, once, so the first connect from a private checkout works.
@@ -371,17 +374,35 @@ async function recordExisting(
   return { url: clean, name, tokenPath: controlTokenPath(), deployed: false, version };
 }
 
-async function waitHealthy(url: string, token: string, deps: InitDeps): Promise<string> {
+/** The API version in the sources that were deployed, or undefined when it cannot be read. */
+export function deployedVersion(deployDir: string): string | undefined {
+  try {
+    return /API_VERSION = "([^"]+)"/.exec(
+      readFileSync(join(deployDir, "worker", "src", "api.ts"), "utf8"),
+    )?.[1];
+  } catch {
+    return undefined;
+  }
+}
+
+async function waitHealthy(url: string, token: string, deps: InitDeps, expect?: string): Promise<string> {
   const until = Date.now() + (deps.healthMs ?? 90_000);
   const client = new ControlClient(url, token, deps.fetch);
   let last = "";
+  let seen: string | undefined;
+  // Once the Worker answers, give the new version this long to take over from the old one.
+  let versionUntil = Number.POSITIVE_INFINITY;
   for (;;) {
     try {
-      return (await client.health()).version;
+      seen = (await client.health()).version;
+      if (!expect || seen === expect) return seen;
+      versionUntil = Math.min(versionUntil, Date.now() + (deps.versionMs ?? 45_000));
     } catch (e) {
       last = e instanceof Error ? e.message : String(e);
     }
     // A fresh secret takes a few seconds to reach every edge; until then control routes answer 404 or 401.
+    // Healthy, but still the version from before the deploy: report what answers, do not fail the install.
+    if (seen && Date.now() > Math.min(until, versionUntil)) return seen;
     if (Date.now() > until)
       throw new CliError(
         `the Worker did not accept the control token: ${last.replace(/^Failed: /, "")}`,

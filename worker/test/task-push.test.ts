@@ -308,6 +308,34 @@ describe("task lifecycle in the Durable Object", () => {
 });
 
 describe("notify URL push", () => {
+  it("uses the notify URL of the newest deploy, not the one this object started with", async () => {
+    // The workspace started before `cf-opencode notify-url` ran: its own env has no URL.
+    const { h, io } = workspace();
+    expect(h.ctx.env.NOTIFY_URL).toBeUndefined();
+    h.ctx.notifyUrl = async () => RECEIVER;
+    await started(h);
+    io.status = {
+      active: [],
+      sessions: { ses_1: { found: true, outcome: "succeeded", last: "Result: ok" } },
+    };
+    const r = receiver([200]);
+    expect(await taskTick(h.ctx, r.fetchFn)).toBeNull();
+    expect(r.got).toHaveLength(1);
+    expect(r.got[0]?.url).toBe(RECEIVER);
+    expect((await saved(h))[0]?.notified).toMatchObject({ status: 200 });
+
+    // When the fresh read fails, the object's own env is the fallback.
+    const second = workspace({ notifyUrl: RECEIVER });
+    second.h.ctx.notifyUrl = async () => {
+      throw new Error("entrypoint not there");
+    };
+    await started(second.h);
+    second.io.status = { active: [], sessions: { ses_1: { found: true, outcome: "succeeded", last: "ok" } } };
+    const r2 = receiver([200]);
+    await taskTick(second.h.ctx, r2.fetchFn);
+    expect(r2.got).toHaveLength(1);
+  });
+
   it("POSTs the result record once, signed with the key from the control token", async () => {
     const { h, io } = workspace({ notifyUrl: RECEIVER });
     await started(h);
@@ -572,7 +600,8 @@ describe.skipIf(!hasTools || process.platform === "win32")("TASK_GIT_SH against 
     expect(out.tasks.ses_1.commits).toEqual([
       { sha: git(t0, "rev-parse", "HEAD"), subject: "Fix the login form" },
     ]);
-    expect(out.tasks.ses_1.changedFiles.sort()).toEqual(["a.txt", "new.txt", "old.txt"]);
+    // old.txt came with a commit from origin, not from the task: it is not a file the task changed.
+    expect(out.tasks.ses_1.changedFiles.sort()).toEqual(["a.txt", "new.txt"]);
     expect(out.tasks.ses_old).toBeUndefined();
     expect(out.tasks.ses_bad).toBeUndefined();
 

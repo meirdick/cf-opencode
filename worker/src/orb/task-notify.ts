@@ -26,7 +26,19 @@ export const MAX_NOTE_CHARS = 4000;
 export const NOTE_PATH = "/notify";
 
 export type FetchFn = (url: string, init: RequestInit) => Promise<Response>;
-type Ctx = Pick<OrbContext, "container" | "kv" | "clock" | "config" | "env" | "workspaceId">;
+type Ctx = Pick<OrbContext, "container" | "kv" | "clock" | "config" | "env" | "workspaceId" | "notifyUrl">;
+
+/** The notify URL in force now: asked fresh when the context can, else the one this object started with. */
+export async function currentNotifyUrl(
+  ctx: Pick<OrbContext, "env" | "notifyUrl">,
+): Promise<string | undefined> {
+  if (!ctx.notifyUrl) return ctx.env.NOTIFY_URL;
+  try {
+    return await ctx.notifyUrl();
+  } catch {
+    return ctx.env.NOTIFY_URL;
+  }
+}
 type Saved = { tasks: TaskRecord[]; at?: string };
 
 const enc = new TextEncoder();
@@ -114,7 +126,7 @@ export async function deliverDue(ctx: Ctx, fetchFn?: FetchFn): Promise<number | 
   const saved = await ctx.kv.get<Saved>(TASKS_KEY);
   const now = ctx.clock.now();
   const due = saved?.tasks.filter((t) => t.notify && t.notify.next <= now) ?? [];
-  const raw = ctx.env.NOTIFY_URL;
+  const raw = due.length ? await currentNotifyUrl(ctx) : undefined;
   const url = raw && !checkNotifyUrl(raw) ? raw : "";
   const token = ctx.env.CONTROL_TOKEN;
   const outcomes = new Map<string, { sent: PendingNotify; patch: Partial<TaskRecord> }>();
