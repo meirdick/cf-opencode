@@ -204,6 +204,8 @@ export interface ProviderConfig {
    * that, the alarm restores it briefly (no opencode, no internet) to start a new 30 days. 0: let it expire.
    */
   snapshotRefreshDays: number;
+  /** Serve the A2A Agent Card and JSON-RPC endpoint. Off by default: it is one more way to run code. */
+  a2a: boolean;
 }
 
 export const DEFAULT_CONFIG: ProviderConfig = {
@@ -225,6 +227,7 @@ export const DEFAULT_CONFIG: ProviderConfig = {
   searchProvider: "exa",
   model: "cloudflare-workers-ai/@cf/zai-org/glm-5.3",
   snapshotRefreshDays: 3,
+  a2a: false,
 };
 
 export const SNAPSHOT_TTL_MS = 30 * 24 * 3600_000;

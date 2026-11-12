@@ -2,6 +2,7 @@
 // Control routes (/v1/...) require a bearer CONTROL_TOKEN.
 // The OpenCode ingress (/oc/<id>/...) requires the per-workspace basic password, then proxies.
 // Responses never carry stack traces. Errors are one line: "Failed: <cause> — fix: <action>".
+import { A2A_RPC_PATH, a2aCardRoute, a2aRpcRoute } from "./a2a";
 import { basicPassword, timingSafeEqualStr } from "./auth";
 import { parseConfig } from "./core/config";
 import { PRUNE_DEFAULT_AGE_MS } from "./core/registry-core";
@@ -15,6 +16,7 @@ import {
 import { type Env, REGISTRY_DO_NAME, workspaceDoName } from "./env";
 import { connectCdp, relay, SESSION_ID_RE } from "./orb/browse";
 import type { SessionList } from "./orb/sessions";
+import type { CancelResult } from "./orb/task-cancel";
 import type { StartResult, TaskInput, TaskList } from "./orb/tasks";
 import { isPreviewPath, previewControl, previewFallback, previewIngress } from "./preview-ingress";
 import { tasksRoute } from "./tasks-api";
@@ -39,6 +41,10 @@ export interface WorkspaceSessionApi {
   startTask(input: TaskInput): Promise<StartResult>;
   /** Handed-off tasks: live from a running workspace, else the saved copy. Wakes nothing. */
   tasks(): Promise<TaskList>;
+  /** Start a task for A2A: wakes a paused workspace that was connected before. */
+  startTaskAwake(input: TaskInput): Promise<StartResult>;
+  /** Interrupt a task's OpenCode session. Wakes nothing. */
+  cancelTask(sessionId: string): Promise<CancelResult>;
   /** Proxy to opencode serve. Wakes a paused workspace when the password header is present. */
   proxy(req: Request): Promise<Response>;
   /** Open a Browser Run session for this workspace through the Browser Run binding. */
@@ -88,6 +94,9 @@ export async function handleApi(req: Request, env: Env): Promise<Response> {
     if (isPreviewPath(url.pathname)) return previewIngress(req, env);
     const back = previewFallback(req);
     if (back) return back;
+    // The A2A Agent Card is public by design. Off, it falls through like any unknown path.
+    const card = a2aCardRoute(req, env, API_VERSION);
+    if (card) return card;
     const denied = await checkAuth(req, env);
     if (denied) return denied;
     return await route(req, env);
@@ -120,6 +129,8 @@ async function checkAuth(req: Request, env: Env): Promise<Response | null> {
 async function route(req: Request, env: Env): Promise<Response> {
   const url = new URL(req.url);
   const parts = url.pathname.split("/").filter((p) => p !== "");
+  if (url.pathname === A2A_RPC_PATH)
+    return (await a2aRpcRoute(req, env, { sessionOf: (id) => sessionOf(env, id) })) ?? notFound(req);
   if (parts[0] !== "v1") return notFound(req);
   const [, a, b, c, ...rest] = parts;
   if (a === "workspaces" && b && c === "tasks" && rest.length <= 1)
