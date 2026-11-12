@@ -97,9 +97,18 @@ if [ ! -e "$NOTES" ] || head -n 1 "$NOTES" | grep -q "cf-opencode workspace note
   mkdir -p "$(dirname "$NOTES")"
   cat > "$NOTES" <<'CF_OPENCODE_NOTES'
 <!-- cf-opencode workspace notes. cf-opencode rewrites this file on each wake. -->
-# This machine
+# Where you are
 
-You run in a cf-opencode workspace: a Debian container on Cloudflare, owned by the user.
+You run in a cf-opencode workspace: a Debian container on Cloudflare, in the user's own Cloudflare account.
+The user made it from their machine with the cf-opencode CLI.
+
+- The project is a clone of its Git remote. You cannot see the files on the user's machine, or changes there
+  that are not pushed. What is not in the remote is not here.
+- Who is present: if the first message of this session is a "# Handoff" block, nobody is attached. Follow that
+  block. If there is none, a person is attached through OpenCode and reads your messages as you write them.
+- The user does not see this machine's screen or its ports. To show them a dev server, see "Dev server" below.
+
+# This machine
 
 - Tools: \`sudo apt-get install <package>\` works without a password. Installed packages stay on the disk.
 - GitHub: \`git clone\`, \`pull\`, \`push\` and \`gh\` work for the user's repositories. Do not ask for a token

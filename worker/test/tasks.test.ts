@@ -371,6 +371,11 @@ function stubOpenCode(password: string) {
         return send(res, 200, { data: { id: "ses_new", title: "" } });
       if (req.method === "POST" && p === "/api/session/ses_new/prompt")
         return send(res, 200, { data: { id: "msg_1" } });
+      // An OpenCode that has the synthetic call (password pw-syn), and one that does not.
+      if (req.method === "POST" && p === "/api/session/ses_new/synthetic")
+        return password === "pw-syn"
+          ? send(res, 200, { data: { id: "msg_0" } })
+          : send(res, 404, { _tag: "NotFound" });
       if (p === "/api/session/active") return send(res, 200, { data: { ses_run: { type: "running" } } });
       const m = /^\/api\/session\/(ses_\w+)(\/\w+)?$/.exec(p);
       if (!m) return send(res, 404, { _tag: "NotFound" });
@@ -453,6 +458,41 @@ function runScript(script: string, env: Record<string, string>): Promise<string>
 }
 
 describe.skipIf(!hasPython || process.platform === "win32")("task scripts against a stub OpenCode", () => {
+  it("TASK_START_SH adds the handoff context as its own message, or in front of the task when it cannot", async () => {
+    for (const [password, how] of [
+      ["pw-syn", "message"],
+      ["pw-123", "inline"],
+    ] as const) {
+      const { server, calls } = stubOpenCode(password);
+      await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+      try {
+        const spec = {
+          create: { location: { directory: "/home/user/project" } },
+          prompt: { text: "do it" },
+          context: { text: "# Handoff\n\nNobody is attached.", resume: false },
+        };
+        const out = await runScript(TASK_START_SH, {
+          PORT: String((server.address() as AddressInfo).port),
+          OPENCODE_SERVER_PASSWORD: password,
+          TASK: JSON.stringify(spec),
+        });
+        expect(JSON.parse(out)).toEqual({ id: "ses_new", title: "", context: how });
+        const prompt = calls.find((c) => c.url.endsWith("/prompt"));
+        const synthetic = calls.find((c) => c.url.endsWith("/synthetic"));
+        // The context is sent first and must not start the agent: resume false.
+        expect(JSON.parse(synthetic?.body ?? "")).toEqual(spec.context);
+        expect(calls.indexOf(synthetic as (typeof calls)[0])).toBeLessThan(
+          calls.indexOf(prompt as (typeof calls)[0]),
+        );
+        expect(JSON.parse(prompt?.body ?? "").text).toBe(
+          how === "message" ? "do it" : "# Handoff\n\nNobody is attached.\n\n---\n\ndo it",
+        );
+      } finally {
+        await new Promise((r) => server.close(r));
+      }
+    }
+  });
+
   it("TASK_START_SH creates the session, then sends the prompt", async () => {
     const { server, calls } = stubOpenCode("pw-123");
     await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
@@ -539,5 +579,49 @@ describe.skipIf(!hasPython || process.platform === "win32")("task scripts agains
     } finally {
       server.close();
     }
+  });
+});
+
+describe("handoff context", () => {
+  it("tells the session who started it, where it starts, and how to behave alone", async () => {
+    const { handoffBlock, parseHandoff } = await import("../src/orb/task-context");
+    const block = handoffBlock({
+      origin: "cli",
+      branch: "feat/x",
+      commit: "0123456789abcdef0123456789abcdef01234567",
+    });
+    expect(block.startsWith("# Handoff\n")).toBe(true);
+    expect(block).toContain("cf-opencode run");
+    expect(block).toContain("Nobody is attached");
+    expect(block).toContain("branch `feat/x` at commit `0123456789ab`");
+    expect(block).toContain("had nothing that is not pushed");
+    expect(handoffBlock({ origin: "mcp", dirty: true })).toMatch(
+      /MCP tools[\s\S]*default branch[\s\S]*cannot see them/,
+    );
+    expect(handoffBlock({ origin: "a2a" })).toContain("A2A endpoint");
+    // No host, user or path: the block is built from checked values only.
+    expect(parseHandoff({ origin: "cli", branch: "a b" })).toEqual({
+      error: "handoff.branch is not a branch name",
+    });
+    expect(parseHandoff({ origin: "cli", commit: "$(id)" })).toEqual({
+      error: "handoff.commit is not a commit id",
+    });
+    expect(parseHandoff({ origin: "root" })).toEqual({ error: "handoff.origin must be cli, mcp or a2a" });
+    expect(parseHandoff({ origin: "cli", host: "laptop" })).toEqual({
+      error: "handoff has an unknown key host",
+    });
+    expect(parseHandoff({ origin: "mcp", branch: "main", dirty: false })).toEqual({
+      handoff: { origin: "mcp", branch: "main", dirty: false },
+    });
+  });
+
+  it("is checked with the task input, and a task without it is unchanged", async () => {
+    const { parseTaskInput } = await import("../src/orb/tasks");
+    expect(parseTaskInput({ text: "do it" })).toEqual({ input: { text: "do it" } });
+    expect(parseTaskInput({ text: "do it", handoff: { origin: "cli", branch: "main" } })).toEqual({
+      input: { text: "do it", handoff: { origin: "cli", branch: "main" } },
+    });
+    const bad = parseTaskInput({ text: "do it", handoff: { origin: "x" } });
+    expect("error" in bad && bad.error).toMatch(/handoff.origin/);
   });
 });

@@ -4,12 +4,14 @@
 // so it outlives the command that started it. The Durable Object keeps the list of these sessions and the
 // state it last read. A running workspace refreshes the list; a paused one answers from the copy, which
 // is refreshed before each pause, so nothing is woken to show a task.
+
 import { workspacePassword } from "../auth";
 import { checkSchema, MAX_SCHEMA_CHARS, structuredResult } from "../core/json-subset";
 import { LAST_USE_KEY } from "./alarm";
 import type { OrbContext } from "./context";
 import { iso, loadOrb, redactWith } from "./journal";
 import { sh } from "./spawn";
+import { type Handoff, handoffBlock, parseHandoff } from "./task-context";
 import type { TaskResult } from "./task-result";
 import { TASK_GIT_SH, TASK_START_SH, TASK_STATUS_SH } from "./task-scripts";
 
@@ -89,6 +91,8 @@ export interface TaskInput {
   model?: string;
   /** JSON Schema subset for the result block. The CLI already put it in the text. */
   schema?: unknown;
+  /** Where the task came from. With it, the session gets a Handoff block before the task (task-context.ts). */
+  handoff?: Handoff;
 }
 
 export type StartResult = { ok: true; task: TaskRecord } | { ok: false; status: number; error: string };
@@ -159,7 +163,7 @@ export function modelRef(model: string): { providerID: string; id: string } | un
 export function parseTaskInput(
   body: Record<string, unknown>,
 ): { input: TaskInput } | { error: string; fix: string } {
-  const { text, title, model, schema } = body;
+  const { text, title, model, schema, handoff } = body;
   if (typeof text !== "string" || !text.trim())
     return { error: "text is empty", fix: 'send { text: "<task>" }' };
   if (text.length > MAX_TASK_CHARS)
@@ -180,6 +184,11 @@ export function parseTaskInput(
         fix: "use provider/model, for example cloudflare-workers-ai/@cf/zai-org/glm-5.3",
       };
     input.model = model;
+  }
+  if (handoff !== undefined) {
+    const h = parseHandoff(handoff);
+    if ("error" in h) return { error: h.error, fix: "send handoff: { origin, branch?, commit?, dirty? }" };
+    input.handoff = h.handoff;
   }
   if (schema !== undefined) {
     if (JSON.stringify(schema).length > MAX_SCHEMA_CHARS)
@@ -229,8 +238,11 @@ export async function startTask(ctx: Ctx, input: TaskInput): Promise<StartResult
       location: { directory },
       ...(input.title ? { title: input.title } : {}),
       ...(model ? { model } : {}),
+      ...(input.handoff ? { metadata: { "cf-opencode": { handoff: input.handoff } } } : {}),
     },
     prompt: { text: input.text },
+    // Added before the task as a message that does not start the agent. See TASK_START_SH.
+    ...(input.handoff ? { context: { text: handoffBlock(input.handoff), resume: false } } : {}),
   };
   let out: { id?: unknown; title?: unknown; base?: unknown; error?: unknown } | undefined;
   try {

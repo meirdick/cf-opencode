@@ -125,7 +125,13 @@ export class ControlClient {
 
   async startTask(
     workspaceId: string,
-    body: { text: string; title?: string; model?: string; schema?: unknown },
+    body: {
+      text: string;
+      title?: string;
+      model?: string;
+      schema?: unknown;
+      handoff?: { origin: "cli" | "mcp"; branch?: string; commit?: string; dirty?: boolean };
+    },
   ): Promise<{ task: RemoteTask }> {
     return this.send("POST", `/v1/workspaces/${encodeURIComponent(workspaceId)}/tasks`, body);
   }

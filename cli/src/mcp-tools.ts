@@ -477,6 +477,7 @@ export function localBackend(d: LocalDeps): TaskBackend {
             ...(a.title ? { title: a.title } : {}),
             ...(a.model ? { model: a.model } : {}),
             allowDirty: a.allowDirty,
+            origin: "mcp",
             dir,
             onLine: d.log,
           },

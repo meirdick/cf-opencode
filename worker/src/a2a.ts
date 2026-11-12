@@ -291,6 +291,11 @@ async function sendMessage(id: RpcId, params: Record<string, unknown>, deps: A2a
     text: task ? closingInstruction(task, meta.branch as string | undefined) : "",
     ...(meta.title !== undefined ? { title: meta.title } : {}),
     ...(meta.model !== undefined ? { model: meta.model } : {}),
+    // The session is told that an A2A agent started it and that nobody is attached.
+    handoff: {
+      origin: "a2a",
+      ...(typeof meta.branch === "string" && meta.branch ? { branch: meta.branch } : {}),
+    },
   });
   if ("error" in parsed) return invalid(id, "message", `${parsed.error}; ${parsed.fix}`);
 

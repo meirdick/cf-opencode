@@ -5,7 +5,8 @@
 
 /**
  * Start a session with a first prompt, and return without waiting for the agent. Env: PORT,
- * OPENCODE_SERVER_PASSWORD, TASK (JSON: { create: <session.create body>, prompt: <session.prompt body> }),
+ * OPENCODE_SERVER_PASSWORD, TASK (JSON: { create: <session.create body>, prompt: <session.prompt body>,
+ * context?: <session.synthetic body> }),
  * DIRECTORY (optional: the checkout, whose HEAD is the task's base).
  * Prints {"id", "title", "base"?} on success, plus "error" when the prompt was refused, or {"error"} alone
  * when the session was not made.
@@ -45,9 +46,19 @@ except Exception as e:
 out = {"id": s["id"], "title": s.get("title") or ""}
 if len(base_sha) == 40:
     out["base"] = base_sha
+prompt = spec["prompt"]
+if spec.get("context"):
+    # The handoff context goes in as its own message, with resume false so the agent does not start on it.
+    # An OpenCode without that call still gets the context: it is put in front of the task.
+    try:
+        call("/api/session/%s/synthetic" % s["id"], spec["context"])
+        out["context"] = "message"
+    except Exception:
+        prompt = dict(prompt, text=spec["context"]["text"] + "\\n\\n---\\n\\n" + prompt["text"])
+        out["context"] = "inline"
 try:
     # session.prompt admits the input and schedules the agent loop; it does not wait for the turn.
-    call("/api/session/%s/prompt" % s["id"], spec["prompt"])
+    call("/api/session/%s/prompt" % s["id"], prompt)
 except Exception as e:
     out["error"] = "session.prompt: " + why(e)
 print(json.dumps(out))

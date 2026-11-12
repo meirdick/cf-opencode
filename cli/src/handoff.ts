@@ -117,6 +117,10 @@ export interface RunInput {
   allowDirty?: boolean;
   /** The local checkout. Default: the current directory. */
   dir?: string;
+  /** Who hands the task off. The session is told (default cli). */
+  origin?: "cli" | "mcp";
+  /** Passed to connect: runs when the workspace is up, before the task starts. */
+  beforeAttach?: ConnectInput["beforeAttach"];
   onLine?: (line: string) => void;
 }
 
@@ -144,14 +148,23 @@ export async function runTask(input: RunInput, deps: RunDeps): Promise<RunResult
     token: input.token,
     ...(input.id ? { id: input.id } : {}),
     attach: false,
+    ...(input.beforeAttach ? { beforeAttach: input.beforeAttach } : {}),
     ...(input.onLine ? { onLine: input.onLine } : {}),
   });
   const id = woke.workspace.id;
+  const commit = p.checkout ? git(dir, ["rev-parse", "--verify", "-q", "HEAD"]) : undefined;
   const { task } = await deps.client(input.url, input.token).startTask(id, {
     text: taskPrompt(input.task, p.branch, input.schema),
     ...(input.title ? { title: input.title } : {}),
     ...(input.model ? { model: input.model } : {}),
     ...(input.schema !== undefined ? { schema: input.schema } : {}),
+    // The session is told where it came from and that nobody is attached (worker task-context.ts).
+    handoff: {
+      origin: input.origin ?? "cli",
+      ...(p.branch ? { branch: p.branch } : {}),
+      ...(commit && /^[0-9a-f]{40}$/.test(commit) ? { commit } : {}),
+      dirty: Boolean(warning),
+    },
   });
   return { workspace: id, task, ...(warning ? { warning } : {}) };
 }

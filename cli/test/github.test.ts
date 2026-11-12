@@ -124,7 +124,13 @@ describe("setupSkill (init)", () => {
     writeFileSync(source, "skill v1\n");
     const lines: string[] = [];
     const asked: string[] = [];
-    const deps = { step: (l: string) => lines.push(l), ask: async (q: string) => (asked.push(q), "") };
+    const deps = {
+      step: (l: string) => lines.push(l),
+      ask: async (q: string) => {
+        asked.push(q);
+        return "";
+      },
+    };
 
     // No agent folder: nothing to do, nothing printed, nothing asked.
     expect(await setupSkill({ interactive: true, home, source }, deps)).toEqual([]);
