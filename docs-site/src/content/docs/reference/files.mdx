@@ -10,7 +10,8 @@ The CLI keeps its state in `~/.cf-opencode`. Files that hold a secret have mode 
 | Path | Secret | Content |
 | --- | --- | --- |
 | `~/.cf-opencode/install.json` | No | The Worker URL, the Worker name and the account ID. Mode 600. |
-| `~/.cf-opencode/config.json` | No | Your settings. You write it; `init` and `upgrade` apply it. See [Configuration](/reference/configuration/). |
+| `~/.cf-opencode/config.json` | No | Your settings. You write it; `init` and `upgrade` read it and apply it. The CLI never writes it. See [Configuration](/reference/configuration/). |
+| `~/.cf-opencode/skills.json` | No | The default skill list, as `{ "names": [...] }`. `cf-opencode skills default` writes it. `connect`, `run` and `skills push` read it. It does not exist until you set a list. See [Skills in a workspace](/guides/skills/). |
 | `~/.cf-opencode/control-token` | Yes | The control token. Mode 600. |
 | `~/.cf-opencode/workspaces/<workspace>.json` | No | The local record of a workspace: URL, directory, repository, branch and snapshot ID. Mode 600. |
 | `~/.cf-opencode/workspaces/<workspace>.password` | Yes | The workspace password. Mode 600. |
@@ -25,7 +26,10 @@ The CLI keeps its state in `~/.cf-opencode`. Files that hold a secret have mode 
 
 - `init` writes `control-token`, `install.json` and the deploy files.
 - `connect` writes the workspace files and the password file.
-- `list` and `sessions` read the workspace files. They show the workspaces that this machine connected to.
+- `list`, `sessions` and `tasks` read the workspace files. They show the workspaces that this machine connected to.
+- `shell`, `ssh`, `ssh-config`, `preview`, `skills` and `browse` read the workspace password file. `ssh` makes the SSH key on first use.
+- `skills default` writes `skills.json`. `connect`, `run` and `skills push` read it.
+- `doctor` reads `install.json` and `control-token`.
 - `delete` removes the two files of that workspace and its line in `known_hosts`.
 - `uninstall --yes` removes `install.json`. It keeps the rest.
 
@@ -37,8 +41,11 @@ The Worker writes these files in `/home/user` of the workspace:
 
 | Path | Content |
 | --- | --- |
-| `~/.cf-opencode-url` | The Worker URL. `cf-opencode-browse` reads it. |
-| `~/.cf-opencode-workspace` | The workspace ID. `cf-opencode-browse` reads it. |
-| `~/.cf-opencode/opencode-config.json` | The OpenCode model config. It holds a placeholder, not a key. |
+| `~/.cf-opencode-url` | The Worker URL. `cf-opencode-browse` and `cf-opencode-preview` read it. |
+| `~/.cf-opencode-workspace` | The workspace ID. `cf-opencode-browse` and `cf-opencode-preview` read it. |
+| `~/.cf-opencode/opencode-config.json` | The OpenCode model config. It holds a placeholder, not a key. The `opencode` command reads it. The Worker writes it on each wake, and removes it when `ai` is `false`. |
+| `~/.config/opencode/AGENTS.md` | The workspace notes. The Worker writes them on each wake. A file there that you wrote, without the first-line marker `cf-opencode workspace notes`, is left alone. See [What the agent knows](/concepts/what-the-agent-knows/). |
+| `~/.config/opencode/skills/<name>/` | Skills that you copied with `cf-opencode skills push`, `connect --skills` or `run --skills`. See [Skills in a workspace](/guides/skills/). |
+| `~/.ssh/authorized_keys` | A cf-opencode block with the CLI keys that connected in the last 30 days. Each SSH connect rewrites the block. Lines that you add stay. |
 
 The project is at `/home/user/project`, unless you pass `--dir`.

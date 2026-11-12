@@ -1,0 +1,68 @@
+---
+title: Skills in a workspace
+description: Copy skills from your machine into a workspace so the remote agent has them. Nothing is copied unless you ask.
+sidebar:
+  order: 4
+---
+
+A workspace starts with the skills of OpenCode only. Your own skills are on your machine. Copy a skill into a workspace so that the agent there can use it.
+
+A skill is a folder with a `SKILL.md` file. The CLI looks for skills in `~/.config/opencode/skills`, `~/.claude/skills` and `~/.agents/skills`. A name that is in more than one folder is read from the first folder in that list. Use `--from <dir>` to read one other folder.
+
+## Nothing is copied by itself
+
+Copying is off by default. A skill can name local tools or hold local paths. A copy stays on the disk of the workspace and in its snapshots. You choose each skill by name.
+
+## List skills
+
+```sh
+cf-opencode skills
+```
+
+The table shows each skill, the folder it is in on this machine, and whether it is in the workspace. The command needs no running workspace. If the workspace does not answer, the last column shows `?`.
+
+## Copy skills
+
+```sh
+cf-opencode skills push review deploy
+cf-opencode skills push --all
+```
+
+`push` replaces a copy that is already there. The skills go to `~/.config/opencode/skills` in the workspace. A new OpenCode session in the workspace sees them. `push` needs `ssh` on your machine. Without `--workspace <id>`, it uses the workspace of the current directory.
+
+You can copy in the same step as `connect` or `run`:
+
+```sh
+cf-opencode connect --skills review,deploy
+cf-opencode run "Review the open changes" --skills review
+```
+
+`--skills all` copies every skill found on this machine. The CLI checks the names before it wakes the workspace.
+
+## Remove skills
+
+```sh
+cf-opencode skills remove review
+```
+
+## The default list
+
+```sh
+cf-opencode skills default review deploy
+```
+
+This saves a list in `~/.cf-opencode/skills.json`. A workspace that starts from the bare image gets these skills on its first connect. An older disk keeps what was copied to it before. To copy the list into an existing workspace, run `cf-opencode skills push` with no names.
+
+The list is empty until you set it. Clear it with `cf-opencode skills default --none`. A name in the list with no skill on this machine is reported, and `connect` still works.
+
+## What is never copied
+
+- `.git`, `node_modules`, `.env`, `.env.*`, `*.pem`, `*.key` and `.DS_Store`.
+- A file that a link in the skill points to. The CLI packs a link as a link and does not follow it.
+- A skill over 5 MB. The command fails with a line that names the skill. Remove large files from it, or copy it by hand with `cf-opencode ssh`.
+
+## Related pages
+
+- [CLI reference](/reference/cli/#skills)
+- [Hand off a task](/guides/hand-off-a-task/)
+- [Files on your machine](/reference/files/)

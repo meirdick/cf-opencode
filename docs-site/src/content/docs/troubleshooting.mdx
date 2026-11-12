@@ -28,7 +28,7 @@ Two commands help with most problems:
 | `bad Worker name …` | Use lowercase letters, digits and `-`, up to 63 characters. |
 | `Docker is not running (wrangler builds the workspace image locally)` | Start Docker. Check `docker info`. Run `init` again. |
 | `Docker has no buildx plugin …` | Install buildx. On Debian or Ubuntu, run `apt install docker-buildx-plugin`. Check `docker buildx version`. |
-| `wrangler is not logged in to Cloudflare` | Run `npx wrangler login`, or set `CLOUDFLARE_API_TOKEN`. Run `init` again. |
+| `wrangler is not logged in to Cloudflare` or `not logged in to Cloudflare` or `wrangler is not logged in, or the token lacks Workers Scripts Write and Workers Containers Write` | Run `npx wrangler login`, or set `CLOUDFLARE_API_TOKEN`. Run `init` again. |
 | `Cloudflare rejected the API token` | Create a token with Workers Scripts Write and Workers Containers Write. Run `init` again. |
 | `account … is not one this login can see` | Pass an ID that `npx wrangler whoami` lists. |
 | `this login lists no Cloudflare accounts` | Pass `--account <id>`, or log in with an account that has Workers Paid. |
@@ -48,6 +48,66 @@ Two commands help with most problems:
 | `nothing to upgrade on this machine` | Run `cf-opencode init`. |
 
 On a first run that failed after it created the Worker, `~/.cf-opencode/deploying.json` lets the rerun finish without `--adopt`.
+
+## run and tasks
+
+| Cause | What to do |
+| --- | --- |
+| `… not pushed to origin/<branch>`, `branch <branch> is not pushed (no upstream)`, `HEAD is not on a branch`, `N files with changes not committed` or `N untracked files`, followed by `the workspace clones from the Git remote and would not see this` | Commit and `git push`, or pass `--allow-dirty`. These are the preflight failures of `run`. |
+| `the task is empty` or `run needs a task` | Give the task as one quoted argument. |
+| `run takes the task as one argument` | Put the task in quotes. |
+| `<file> is outside the supported JSON Schema subset (…)` | Use only `type`, `properties`, `required`, `items`, `enum` and `additionalProperties: false` in `--schema`. |
+| `<file> is not JSON`, `cannot read <file> (…)` or `<file> is over 8000 characters` | Fix the schema file. |
+| `bad --timeout <value>` | Pass a number of minutes, for example `--timeout 90`. |
+| `--wait and --follow do the same wait` | Pass one of them. |
+| `--wait needs one task` or `--follow needs one task` | Give a `ses_…` ID. |
+| `no task <ses_…> in the workspaces of this machine` | Run `cf-opencode tasks`. Pass `--workspace <id>` for another workspace. |
+| `task <ses_…> is in <a> and <b>` | Pass `--workspace <id>`. |
+| `<cause>, so task <ses_…> cannot finish` | Run `cf-opencode connect <workspace> --session <ses_…>`. |
+| `task <ses_…> still runs after N min` | Wait again with the same command. The exit code is 3. |
+| `--reply needs one task` | Give a `ses_…` ID: `cf-opencode tasks <session> --reply "<text>"`. |
+| `the reply is empty` or `the reply is over 20000 characters` | Change the text of the reply. |
+| `no session <ses_…> in <workspace>` | Run `cf-opencode tasks`. |
+| `no access to <workspace>` | Run `cf-opencode connect <workspace> --no-attach`, then retry. |
+| `OpenCode refused the reply (HTTP <code>)` | Run `cf-opencode logs <workspace>`. |
+
+## Notify URL
+
+| Cause | What to do |
+| --- | --- |
+| `no URL given` | Pipe the URL in: `printf %s "$URL" \| cf-opencode notify-url`. |
+| `the URL must start with https://`, `the URL is not a URL`, or `the URL must name a public host, not an IP address, localhost or an internal name` | Give an `https` URL of your receiver. |
+| `the URL must not hold a user or password; the POST is signed instead` | Remove the user and password from the URL. |
+| `no notify URL is set` | The note or delivery has no target. Run `cf-opencode notify-url`. |
+| `this workspace sent 20 notes in the last hour` | Wait, and send fewer notes. |
+| `notifyUrl in <path> is no longer a setting; the URL is a Worker secret now` | Remove `notifyUrl` from the file. Run `cf-opencode notify-url`. |
+| `could not delete the secret: …` | Run `npx wrangler login`, then retry. |
+
+## Skills and completion
+
+| Cause | What to do |
+| --- | --- |
+| `no skill <name> on this machine` | Run `cf-opencode skills` to list the names. |
+| `skill <name> is N MB, over the 5 MB limit` | Remove large files from the skill, or copy it by hand with `cf-opencode ssh`. |
+| `skills push needs skill names` | Name the skills, or pass `--all`. Or set a list with `cf-opencode skills default`. |
+| `skills remove needs skill names` | Name the skills to remove. |
+| `no skills on this machine` | Put a skill folder with a `SKILL.md` in `~/.config/opencode/skills`. |
+| `bad skill name …` | Rename the skill folder. A name has letters, digits, `.`, `_` and `-`, at most 64 characters. |
+| `unknown skills action <word>` | Use `push`, `remove` or `default`. |
+| `the workspace command failed (ssh exit <code>)` | Run `cf-opencode connect <workspace>`, then retry. |
+| `<path> exists and differs from this version` | `cf-opencode skill --install` does not replace a file that differs. Pass `--force`. |
+| `--install needs one place` | Pass one of `--claude`, `--opencode` or `--dir <skills folder>`. |
+| `--claude, --opencode and --dir go with --install` | Add `--install`. |
+| `completion needs a shell` or `no completion for "<shell>"` | Use `bash`, `zsh` or `fish`. |
+
+## MCP
+
+| Cause | What to do |
+| --- | --- |
+| `<dir> is outside the folder this MCP server started in` | Start the MCP server in that project, or leave `directory` out. |
+| `<dir> is not a git checkout` | Pass `directory` (a git checkout) or `workspace`. |
+| `session must be a ses_… id` | Pass the session that `handoff_task` returned. |
+| `task is empty` | Pass the full task brief as `task`. |
 
 ## GitHub
 
@@ -76,7 +136,6 @@ On a first run that failed after it created the Worker, `~/.cf-opencode/deployin
 | `opencode serve did not start: …` | Run `cf-opencode logs <workspace>`. |
 | `opencode did not answer /api/info in … s` | Run `cf-opencode logs <workspace>`. |
 | `control plane restarted during …` | Wait. The connect retries. If it repeats, run `cf-opencode logs <workspace>`. |
-| `wrong workspace password` | Run `cf-opencode connect <workspace>`, then retry. |
 
 A deploy restarts the Durable Object of a workspace. If that interrupts a connect, the CLI prints `the Worker restarted (a deploy); trying once more`.
 
@@ -90,6 +149,7 @@ A deploy restarts the Durable Object of a workspace. If that interrupts a connec
 | `<workspace> did not wake (<status>)` | Run `cf-opencode logs <workspace>`. |
 | `the shell websocket was refused (<code>)` | Run `cf-opencode logs <workspace>`. |
 | `the ssh websocket was refused (<code>)` | Run `cf-opencode logs <workspace>`. |
+| `<workspace> is paused, and a dev server does not survive a pause` | A `--web` preview does not wake a paused workspace. Run `cf-opencode connect <workspace>`, start the dev server, then retry. The default `cf-opencode preview` wakes it. |
 | `shell needs an interactive terminal` | Use `cf-opencode ssh <workspace> -- <command>` in a script. |
 | `ssh is not installed here` | Install OpenSSH. |
 | `ssh-keygen failed` | Install OpenSSH (`ssh` and `ssh-keygen`). |

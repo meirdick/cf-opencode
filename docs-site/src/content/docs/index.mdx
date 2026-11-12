@@ -16,6 +16,11 @@ A workspace is a container with your repository, your tools and an OpenCode serv
 - **No model keys.** Models come from your account through the Workers AI and AI Gateway bindings.
 - **Private repositories.** The GitHub token stays in the Worker. It never enters the workspace.
 - **Shell, SSH and browser access.** You can open a terminal, use `ssh`, or give the agent a browser.
+- **Hand off a task.** `cf-opencode run` gives a task to the agent and returns. `cf-opencode tasks` shows the result. An agent on your machine can do the same over MCP, and another agent can use A2A.
+- **Preview a dev server.** `cf-opencode preview 3000` opens a dev server of the workspace at `http://localhost:3000`. Nothing is public.
+- **Skills.** `cf-opencode skills` copies your skills into a workspace.
+- **Web search and page reading.** The agent searches the web and reads pages with no key.
+- **Messages.** `cf-opencode notify-url` sends the result of a task to a URL that you own.
 
 ## How you use it
 
@@ -38,6 +43,7 @@ npx cf-opencode connect
 - [Quickstart](/quickstart/) installs cf-opencode and opens a first workspace.
 - [How it works](/concepts/how-it-works/) explains the parts and the workspace life cycle.
 - [CLI reference](/reference/cli/) lists every command and flag.
+- [Hand off a task](/guides/hand-off-a-task/) gives work to the agent and closes the laptop.
 - [Troubleshooting](/troubleshooting/) explains the `Failed:` errors.
 - [Limits and costs](/limits/) lists what a workspace cannot do and what it costs.
 

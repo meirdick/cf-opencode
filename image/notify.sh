@@ -1,7 +1,7 @@
 #!/bin/bash
 # Tell the user something from this workspace: cf-opencode-notify "<text>"
-# The request goes to the cf-opencode Worker, which signs it and POSTs it to the install's notifyUrl
-# (a chat webhook, a push service). No key exists in the workspace. With no notifyUrl set, it fails.
+# The request goes to the cf-opencode Worker, which signs it and POSTs it to the install's notify URL
+# (a chat webhook, a push service). No key exists in the workspace. With no notify URL set, it fails.
 set -euo pipefail
 case "${1:-}" in
   -h|--help) echo 'usage: cf-opencode-notify "<text>"'; exit 0 ;;

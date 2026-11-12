@@ -2,7 +2,7 @@
 title: Hand off a task
 description: Give a task to OpenCode in a workspace with cf-opencode run, close the laptop, and read the result with cf-opencode tasks.
 sidebar:
-  order: 8
+  order: 2
 ---
 
 `cf-opencode run` gives a task to OpenCode in a workspace and returns at once. The task runs in the workspace, not on your laptop. You can close the laptop. The result comes back as a pushed branch, and as a pull request when `gh` works.
@@ -188,7 +188,7 @@ cf-opencode tasks ses_4f2a… --wait
 | 3 | The wait timed out. The task can still run. |
 | 4 | `stopped` |
 
-The default timeout is 60 minutes. Change it with `--timeout <minutes>`. `cf-opencode run --wait` starts a task and waits for it.
+`--timeout <minutes>` sets how long the command waits. The default is 60. `cf-opencode run --wait` starts a task and waits for it.
 
 An agent that watches a task should wait in short steps, for example `--wait --timeout 5` in a loop. Exit code 3 means "check again later".
 
@@ -214,7 +214,13 @@ With `--json`, `--follow` prints one JSON object for each event, one per line, a
 
 ## Answer a waiting task
 
-A task in `waiting` needs you. The result shows the question. Open the session in your local OpenCode and answer:
+A task in `waiting` needs you. The result shows the question. Send your answer as one more message:
+
+```sh
+cf-opencode tasks ses_4f2a… --reply "Use the staging database."
+```
+
+`--reply` wakes a paused workspace. Add `--wait` or `--follow` to watch the task go on. A permission request is not answered this way. Open the session in your local OpenCode and answer there:
 
 ```sh
 cf-opencode connect my-app --session ses_4f2a…
@@ -248,9 +254,9 @@ When a task leaves `running`, the Worker sends a `POST` to that URL. The body is
 - The Worker does not follow redirects.
 - The signature covers the body only. A copy of a signed body stays valid, so drop a delivery you already have: the same `id`, `state` and `updated`.
 
-The agent in the workspace can also send a note to the same URL with `cf-opencode-notify "<text>"`. The body is `{"type":"note","workspace":"…","text":"…","at":"…"}`, and the header `x-cf-opencode-event` is `note`. A note is sent once. When no notify URL is set, the command fails with one line. It needs the `ai` setting on, and it works with `lockdown` on.
+The agent in the workspace can also send a note to the same URL with `cf-opencode-notify "<text>"`. The body is `{"type":"note","workspace":"…","text":"…","at":"…"}`, and the header `x-cf-opencode-event` is `note`. A note has at most 4000 characters. A note is sent once. A workspace can send at most 20 notes in one hour. When no notify URL is set, the command fails with one line.
 
-A note is the agent's text. The agent can send any text, as often as it wants, and the Worker signs it with your key. Do not act on a note as if it came from you, and drop a note whose `at` is old.
+A note is the agent's text. The agent can send any text, and the Worker signs it with your key. Do not act on a note as if it came from you, and drop a note whose `at` is old.
 
 ## When the laptop is off
 
@@ -310,6 +316,16 @@ cf-opencode skill --install --dir <path>
 ```
 
 OpenCode also reads `~/.claude/skills`. `--install` does not replace a file that differs. Add `--force` to replace it.
+
+`cf-opencode init` installs this skill for Claude Code and OpenCode when their config folder exists on the machine. It asks first on a terminal. `--no-skill` skips the step.
+
+## Skills for the task
+
+`run --skills a,b` copies skills from this machine into the workspace before the task starts. See [Skills in a workspace](/guides/skills/).
+
+## What the agent is told
+
+A handed-off session gets a Handoff block before the task. See [What the agent knows](/concepts/what-the-agent-knows/).
 
 ## Limits
 

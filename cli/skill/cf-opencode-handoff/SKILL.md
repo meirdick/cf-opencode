@@ -64,7 +64,7 @@ not from the agent's words.
 | --- | --- | --- |
 | 0 | `done` | Report the summary, the branch and the pull request. `commits: []` is normal for research. |
 | 1 | `failed` | Report `error`. Offer to retry with a clearer brief, or to open the session. |
-| 2 | `waiting` | The agent asks a question or a permission (`question`). Ask the user. They answer it in OpenCode: `cf-opencode connect <workspace> --session <session>`. Then watch again. |
+| 2 | `waiting` | The agent asks a question or a permission (`question`). Ask the user. Send the answer to a question with `cf-opencode tasks <session> --workspace <workspace> --reply "<answer>"`. A permission request is answered in OpenCode: `cf-opencode connect <workspace> --session <session>`. Then watch again. |
 | 4 | `stopped` | The workspace paused under the task. Tell the user; `cf-opencode connect <workspace> --session <session>` continues it. |
 
 To get the work locally: `git fetch origin <branch>`.

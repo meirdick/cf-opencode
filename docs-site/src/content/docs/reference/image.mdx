@@ -25,10 +25,20 @@ The workspace image is small on purpose. It is Debian bookworm-slim with a few t
 | `sudo` | `user` has passwordless `sudo`. |
 | `tini` | PID 1. |
 | `bash`, `procps`, `ca-certificates`, `libnss-myhostname` | Base tools. |
-| `cf-opencode-browse` | The command that opens a browser session. See [Web search and browsing](/guides/browsing/). |
-| `cf-opencode-fetch` | The command that reads a page. See [Web search and browsing](/guides/browsing/). |
-| `cf-opencode-search` | The command that searches the web. See [Web search and browsing](/guides/browsing/). |
-| `cf-opencode-notify` | The command that sends a note to the notify URL. See [Hand off a task](/guides/hand-off-a-task/#get-a-message-when-a-task-ends). |
+
+## Commands for the agent
+
+The image has these commands. The agent uses them. You can run them in `cf-opencode shell` too.
+
+| Command | Usage | What it does |
+| --- | --- | --- |
+| `cf-opencode-search` | `cf-opencode-search [-n 1..10] [--provider exa\|linkup\|ceramic] [--json] <query>` | Searches the web. See [Web search and browsing](/guides/browsing/). |
+| `cf-opencode-fetch` | `cf-opencode-fetch [--links\|--html\|--screenshot <file>\|--pdf <file>] [--max-chars <n>] <url>` | Reads a page through a real browser. It also reads a dev server of this workspace. See [Web search and browsing](/guides/browsing/). |
+| `cf-opencode-browse` | `cf-opencode-browse [--preview <port>]...` | Opens a remote browser session and prints its websocket address. See [Web search and browsing](/guides/browsing/). |
+| `cf-opencode-preview` | `cf-opencode-preview <port>` | Prints the preview URL of a dev server, and checks that the port listens on `0.0.0.0`. See [Preview a dev server](/guides/preview/). |
+| `cf-opencode-notify` | `cf-opencode-notify "<text>"` | Sends a note to the notify URL. See [Hand off a task](/guides/hand-off-a-task/#get-a-message-when-a-task-ends). |
+
+`opencode` on the `PATH` is a small wrapper. It adds the model config, then runs the real OpenCode binary.
 
 ## Not installed
 

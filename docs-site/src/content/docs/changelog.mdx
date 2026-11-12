@@ -7,7 +7,48 @@ sidebar:
 
 The full history is in [CHANGELOG.md](https://github.com/meirdick/cf-opencode/blob/main/CHANGELOG.md) in the repository.
 
-## 0.1.0
+## 0.2.0 (2026-11-12)
+
+Hand off tasks, preview dev servers, copy skills, and a tighter Worker.
+
+New:
+
+- `cf-opencode run "<task>"` hands a task to OpenCode in the workspace of the checkout, and returns. A preflight fails on changes that are not committed or pushed (`--allow-dirty` skips it). Flags: `--title`, `--model`, `--skills`, `--schema`, `--wait`, `--follow`, `--timeout`.
+- `cf-opencode tasks` lists handed-off tasks across workspaces. The states are `running`, `done`, `failed`, `waiting` and `stopped`. `tasks <ses_…>` shows one task. `--unseen` lists results that you did not read. `--reply "<text>"` sends one more message to a session. The exit codes of `--wait` and `--follow` are 0 done, 1 failed, 2 waiting, 3 timed out, 4 stopped. See [Hand off a task](/guides/hand-off-a-task/).
+- The result record: state, summary, and the branch, commits, changed files and pull request that the Worker reads with `git` and `gh pr view` in the workspace. `run --schema <file.json>` adds a checked `structured` value.
+- `--follow` shows the agent's tool calls and messages live.
+- `cf-opencode notify-url` sets where the Worker sends a task's result, signed with a key from `cf-opencode notify-key`. The URL is the Worker secret `NOTIFY_URL`. Failed deliveries retry after 1, 5 and 30 minutes. `cf-opencode-notify "<text>"` in the workspace sends a note.
+- `cf-opencode mcp` is an MCP server over stdio with the tools `handoff_task`, `get_task`, `wait_task` and `list_tasks`. See [Hand off tasks over MCP](/guides/mcp/).
+- An A2A endpoint on the Worker, off by default (setting `a2a`). See [Hand off tasks over A2A](/guides/a2a/).
+- `cf-opencode skill` prints the handoff skill for agents, and `--install` copies it. `init` installs it for Claude Code and OpenCode when their config folder exists. `--no-skill` skips it.
+- `cf-opencode skills` copies skills from your machine into a workspace. `connect --skills` and `run --skills` copy in the same step. `skills default` saves a list for new workspaces. Nothing is copied unless you ask. See [Skills in a workspace](/guides/skills/).
+- `cf-opencode preview [workspace] <port...>` opens a dev server of the workspace at `http://localhost:<port>` through an SSH forward. `--web` uses a Worker URL behind a one-time sign-in link. `--public` makes a public URL, `--stop` removes it and `--list` lists them. See [Preview a dev server](/guides/preview/).
+- `cf-opencode completion <bash|zsh|fish>` prints a tab-completion script.
+- `cf-opencode-search` and `cf-opencode-fetch` in the workspace search the web and read pages through the bindings of the Worker. The setting `searchProvider` defaults to `exa`.
+- `cf-opencode-preview <port>` in the workspace prints the preview URL. The remote browser opens a dev server as `http://p<port>.preview.internal/`.
+- A session knows where it is. The workspace notes say that the workspace is a clone of the remote. A handed-off session gets a Handoff block before the task. See [What the agent knows](/concepts/what-the-agent-knows/).
+
+Security:
+
+- A visitor to the Worker URL without the control token gets one bare `401 Unauthorized` for every path.
+- The Worker checks the workspace password itself before it calls a Durable Object. A request with no password or a wrong one costs one Worker request.
+- Every refused password gets the same 401 body. A deleted workspace answers 410 only to the holder of its password.
+- `/shell`, `/ssh` and `/browse` refuse a request from a web page, from another site or from the Worker's own origin.
+- The browser relay serves only sessions that the workspace opened.
+- `authorized_keys` in a workspace holds the CLI keys that connected in the last 30 days. Each SSH connect rewrites the block.
+- `ssh` and `ssh-config` accept only an https Worker origin for `--url`, and quote every part of the `ProxyCommand`.
+- The image does not pipe the OpenCode installer to bash. It downloads the release asset and checks a pinned SHA-256.
+- With `lockdown: true`, `cf-opencode-fetch` is refused.
+- Previews: the Worker checks the password, the cookie, the sign-in ticket and the public token before it calls a Durable Object. A dev server's `Service-Worker-Allowed` and `Clear-Site-Data` headers do not reach the browser.
+- The notify URL is a Worker secret, not a setting. A `notifyUrl` key in `config.json` fails with the fix. The URL must be https to a public host name.
+- A blocking A2A `SendMessage` holds a request for 5 minutes at most.
+- Egress that adds a secret does not follow a redirect with the secret on it.
+- The CLI prints terminal control characters in text from a workspace as `?`. Tab completion offers only plain words.
+- `preview --web` opens only a link on the preview path of the Worker.
+- The `run --schema` check uses own keys only, and a deeply nested `json` block is a `structuredError`. The Worker cuts the failure reason, the summary and each changed file name.
+- Two `connect` calls with different inputs no longer share one op.
+
+## 0.1.0 (2026-11-12)
 
 First release. It has one package, `cf-opencode`: the CLI. It carries the Worker source and the workspace image. It deploys them to your Cloudflare account with `cf-opencode init`.
 

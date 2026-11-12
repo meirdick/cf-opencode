@@ -26,6 +26,8 @@ With `--json`, an error from a command is `{"ok":false,"error":"Failed: … — 
 
 The exit code is 0 on success, 1 on failure and 2 on a usage error such as an unknown command or flag.
 
+When the Worker refuses the control token, the CLI prints `Failed: the Worker refused the control token on this machine — fix: …`. The Worker itself answers a request without a valid control token with one bare `401 {"error":"Unauthorized"}` for every path.
+
 ## Set up
 
 ### init
@@ -44,7 +46,12 @@ Check this machine and your Cloudflare account, deploy the Worker and the worksp
 | `--adopt` | Replace a Worker of that name that this machine did not deploy. This changes its control token. |
 | `--url <url>` | Deploy nothing. Use a Worker that another machine deployed. It needs the control token. See [A second machine](/guides/second-machine/). |
 | `--yes`, `-y` | Never prompt. `--json` and a non-terminal stdin also imply it. |
-| `--no-github` | Do not set up GitHub now. |
+| `--no-github` | Do not set up GitHub now. Later, run `cf-opencode git-token`. |
+| `--no-skill` | Do not install the handoff skill for Claude Code and OpenCode on this machine. |
+
+`init` has these steps: check the machine and the account, deploy, store the control token, set up GitHub, and install the handoff skill. The skill step installs the skill for each agent whose config folder exists on this machine. On a terminal, it asks first. It never replaces a skill file that differs. See [Hand off a task](/guides/hand-off-a-task/#the-handoff-skill-for-agents).
+
+`init` reads your settings from `~/.cf-opencode/config.json` and prints the keys it found. See [Configuration](/reference/configuration/).
 
 ### upgrade
 
@@ -59,6 +66,7 @@ Redeploy the Worker and the image from this CLI version. The control token stays
 | `--token-file <path>` | A file with a Cloudflare API token. |
 | `--yes`, `-y` | Never prompt. |
 | `--no-github` | Accepted. Skips the GitHub step. |
+| `--no-skill` | Accepted. Skips the handoff skill step. |
 
 `upgrade` fails with `nothing to upgrade on this machine` if no install is saved.
 
@@ -109,7 +117,7 @@ Print the path and the text of the handoff skill. The skill tells a local agent 
 cf-opencode notify-url [--remove]
 ```
 
-Set where the Worker sends a task's result and the workspace's notes. The command reads the URL from stdin, or asks for it on a terminal without echo. It never takes the URL as an argument. It stores the URL as the Worker secret `NOTIFY_URL`. The URL must be `https`, with no user or password in it, to a public host name. See [Get a message when a task ends](/guides/hand-off-a-task/#get-a-message-when-a-task-ends).
+Set where the Worker sends a task's result and the workspace's notes. The command reads the URL from stdin, or asks for it on a terminal without echo. It never takes the URL as an argument. It stores the URL as the Worker secret `NOTIFY_URL`. The URL must be `https`, with no user or password in it, to a public host name. Running workspaces use it at once. See [Get a message when a task ends](/guides/hand-off-a-task/#get-a-message-when-a-task-ends).
 
 | Flag | Meaning |
 | --- | --- |
@@ -138,8 +146,25 @@ Check Node, OpenCode, ssh, the saved install, the control token, the Worker and 
 - `install` and `control token`: both exist.
 - `worker`: the Worker accepts the control token and its API version equals the CLI version.
 - `models`, `browse` and `github`: the AI binding, the Browser Run binding and the GitHub token.
+- `notify`: whether a notify URL is set. It is optional. `doctor` never prints the URL.
 
 Each line starts with `✓`, `!` or `✗`. The exit code is 1 if any line is `✗`.
+
+### completion
+
+```text
+cf-opencode completion <bash|zsh|fish>
+```
+
+Print a tab-completion script for commands, flags and workspace IDs. The script asks the CLI for the words, so it stays correct after an upgrade.
+
+| Shell | Setup |
+| --- | --- |
+| `bash` | Add `eval "$(cf-opencode completion bash)"` to `~/.bashrc`. |
+| `zsh` | Add `eval "$(cf-opencode completion zsh)"` to `~/.zshrc`. |
+| `fish` | Run `cf-opencode completion fish > ~/.config/fish/completions/cf-opencode.fish`. |
+
+The completion offers only plain words. Workspace IDs come from `~/.cf-opencode/workspaces`.
 
 ## Workspaces
 
@@ -157,8 +182,9 @@ Wake or create a workspace and open it in your local OpenCode. Without an ID, `c
 | `--repo <url>` | The git remote to clone when the workspace has no snapshot yet. The default is the `origin` remote of the current directory. |
 | `--branch <name>` | The branch to check out. The default is the current branch. |
 | `--no-attach` | Do not open OpenCode. Print one JSON object with the workspace and its server URL. |
+| `--skills <a,b\|all>` | Copy these skills from this machine into the workspace before OpenCode opens. Off by default. See [`skills`](#skills) and [Skills in a workspace](/guides/skills/). |
 | `--continue`, `-c` | Open the last session of the workspace. |
-| `--session <id>`, `-s <id>` | Open that session. Use the `ses_…` ID. |
+| `--session <id>`, `-s <id>` | Open that session. Use the `ses_…` ID that OpenCode prints on exit. |
 | `--url <url>` | The Worker URL. |
 
 With `--no-attach` or `--json`, stdout is `{"ok":true,"workspace":"…","url":"…","username":"opencode"}`.
@@ -184,12 +210,13 @@ Give a task to OpenCode in the workspace of the current checkout, and return. Th
 | `--title <text>` | The session title. The default comes from the task. |
 | `--model <provider/model>` | The model of the session. The default is the model of the workspace. |
 | `--allow-dirty` | Start anyway. Print what the workspace will not see. |
+| `--skills <a,b\|all>` | Copy these skills from this machine into the workspace before the task starts. See [Skills in a workspace](/guides/skills/). |
 | `--schema <file.json>` | The last message must end with a `json` block that matches this JSON Schema. The result then has `structured`. Only `type`, `properties`, `required`, `items`, `enum` and `additionalProperties: false` are allowed. |
 | `--wait` | Wait until the task is not `running`, then print the result. |
 | `--follow` | As `--wait`, and show the agent's tool calls and messages while it works. |
 | `--timeout <minutes>` | How long `--wait` and `--follow` wait. The default is 60. |
 
-With `--json`, stdout is `{"ok":true,"workspace":"…","session":"ses_…","title":"…","state":"running"}`. With `--wait --json`, stdout is the result record. With `--follow --json`, stdout is one JSON object for each event, one per line, then the result record. With `--wait` or `--follow`, the exit code is 0 for `done`, 1 for `failed`, 2 for `waiting`, 3 for a timeout and 4 for `stopped`. See [Hand off a task](/guides/hand-off-a-task/#output-for-agents).
+`--wait` and `--follow` do not go together. With `--json`, stdout is `{"ok":true,"workspace":"…","session":"ses_…","title":"…","state":"running"}`. With `--wait --json`, stdout is the result record. With `--follow --json`, stdout is one JSON object for each event, one per line, then the result record. With `--wait` or `--follow`, the exit code is 0 for `done`, 1 for `failed`, 2 for `waiting`, 3 for a timeout and 4 for `stopped`. See [Hand off a task](/guides/hand-off-a-task/#output-for-agents).
 
 ### tasks
 
@@ -205,11 +232,14 @@ The states are `running`, `done`, `failed`, `waiting` and `stopped`. `stopped` m
 | --- | --- |
 | `--workspace <id>` | The workspace of the task. The default is the workspace that has the task. |
 | `--unseen` | List only the tasks that ended and that you did not read. |
+| `--reply "<text>"` | With a session ID: send one more message to the session, for example the answer to its question. It wakes a paused workspace. With `--wait` or `--follow`, the command then watches the task. A permission request is not answered this way: use `cf-opencode connect <workspace> --session <ses_…>`. |
 | `--wait` | With a session ID: wait until the task is not `running`. The exit codes are the same as for `run --wait`. |
 | `--follow` | With a session ID: as `--wait`, and show the agent's progress live. |
 | `--timeout <minutes>` | How long `--wait` and `--follow` wait. The default is 60. |
 
-With a session ID and `--json`, stdout is the result record.
+With a session ID and `--json`, stdout is the result record. With `--reply --json` and no `--wait` or `--follow`, stdout is `{"ok":true,"workspace":"…","session":"ses_…","replied":true}`.
+
+`--reply`, `--wait` and `--follow` need a session ID. The exit codes of `--wait` and `--follow` are 0 for `done`, 1 for `failed`, 2 for `waiting`, 3 for a timeout and 4 for `stopped`.
 
 ### mcp
 
@@ -217,7 +247,36 @@ With a session ID and `--json`, stdout is the result record.
 cf-opencode mcp
 ```
 
-Serve `run` and `tasks` to an agent as MCP tools over stdio: `handoff_task`, `get_task`, `wait_task` and `list_tasks`. stdout carries MCP messages only. Logs go to stderr. See [Hand off tasks over MCP](/guides/mcp/).
+Serve `run` and `tasks` to an agent as MCP tools over stdio: `handoff_task`, `get_task`, `wait_task` and `list_tasks`. stdout carries MCP messages only. Logs go to stderr. The tools use the install and the control token of this machine. `handoff_task` works on the directory that the client started the server in, or on its `directory` argument. The `directory` argument must be that folder or a folder under it. See [Hand off tasks over MCP](/guides/mcp/).
+
+To add the server, run `claude mcp add cf-opencode -- cf-opencode mcp` for Claude Code. For other clients, add a stdio server with the command `cf-opencode mcp`.
+
+### skills
+
+```text
+cf-opencode skills [push|remove|default] [name...]
+```
+
+Copy skills from this machine into a workspace, so the remote agent has them. A skill is a folder with a `SKILL.md`. Nothing is copied unless you ask. See [Skills in a workspace](/guides/skills/).
+
+| Command | Meaning |
+| --- | --- |
+| `cf-opencode skills` | List the skills on this machine, and which of them are in the workspace. It needs no running workspace. |
+| `cf-opencode skills push <name...>` | Copy the named skills. A copy that is already there is replaced. |
+| `cf-opencode skills push --all` | Copy every skill found on this machine. |
+| `cf-opencode skills push` | With no names: copy the saved default list. |
+| `cf-opencode skills remove <name...>` | Delete the named skills from the workspace. |
+| `cf-opencode skills default <name...>` | Save a list. Every new workspace gets these skills on its first connect. |
+| `cf-opencode skills default --none` | Clear the saved list. This is the start state. |
+
+| Flag | Meaning |
+| --- | --- |
+| `--workspace <id>` | The workspace. The default is the workspace of the current directory. |
+| `--from <dir>` | A skills folder to read. The default is `~/.config/opencode/skills`, `~/.claude/skills` and `~/.agents/skills`. |
+| `--all` | With `push` or `default`: every skill found. |
+| `--none` | With `default`: clear the list. |
+
+The copies go to `~/.config/opencode/skills` in the workspace. They stay on its disk and in its snapshots. `.git`, `node_modules`, `.env`, `.env.*`, `*.pem`, `*.key` and `.DS_Store` are not copied. A link inside a skill is not followed. A skill over 5 MB is refused. `push` and `remove` need `ssh` on this machine.
 
 ### list
 
@@ -318,6 +377,29 @@ cf-opencode browse <workspace>
 ```
 
 Open a Browser Run session for a workspace. Print its websocket address. See [Browsing](/guides/browsing/).
+
+### preview
+
+```text
+cf-opencode preview [workspace] <port...>
+```
+
+Open a dev server that runs in the workspace at `http://localhost:<port>` on this machine. The default is a private forward over the workspace's SSH. Nothing is public. The forward lives while the command runs. Ctrl-C stops it. Without a workspace, the command uses the workspace of the current directory. You can give more than one port. See [Preview a dev server](/guides/preview/).
+
+```text
+cf-opencode preview 3000
+cf-opencode preview app 3000 5173
+```
+
+| Flag | Meaning |
+| --- | --- |
+| `--no-open` | Do not open the browser. |
+| `--web` | Use a URL on the Worker, behind a one-time sign-in link. It needs no `ssh` here. The dev server must listen on `0.0.0.0`. An app with absolute paths needs a base path. |
+| `--public` | Make a URL that needs no password, until `--stop`. It needs the control token. |
+| `--stop` | Remove the public URL of `<port>`, or of every port when you give no port. |
+| `--list` | List the public URLs of the workspace. |
+
+`--web`, `--public`, `--stop`, `--list` and `--json` use the Worker, not the forward. With `--json`, the command prints one JSON document. `--public`, `--stop` and `--list` do not go together.
 
 ## Environment variables
 

@@ -2,7 +2,7 @@
 title: Hand off tasks over MCP
 description: Add cf-opencode mcp to Claude Code, OpenCode or another MCP client, so a local agent hands off tasks and reads the results as structured data.
 sidebar:
-  order: 9
+  order: 5
 ---
 
 `cf-opencode mcp` is an MCP server. It gives a local agent four tools to hand off a task and follow it. The agent gets the task record as structured data. It does not parse shell output.
@@ -65,7 +65,7 @@ If npm could not install the CLI globally, use `npx cf-opencode mcp` as the comm
 | Argument | Required | Meaning |
 | --- | --- | --- |
 | `task` | Yes | The full task. The remote agent did not see your conversation. |
-| `directory` | No | The git checkout. Default: the directory that the client started the server in. |
+| `directory` | No | The git checkout. Default: the directory that the client started the server in. It must be that folder or a folder under it. Another path is refused. |
 | `workspace` | No | The workspace ID. Default: the workspace of the checkout, as `connect` names it. |
 | `title` | No | The session title. |
 | `model` | No | `provider/model`. Default: the model of the workspace. |
@@ -74,6 +74,10 @@ If npm could not install the CLI globally, use `npx cf-opencode mcp` as the comm
 The tool runs the same preflight as `run`. The workspace clones from the Git remote. It does not see changes that are not committed or commits that are not pushed. The tool fails on these, unless `allowDirty` is `true`. See [The preflight](/guides/hand-off-a-task/#the-preflight).
 
 The tool adds the same closing instruction as `run`: commit, push the branch, open a pull request, and end with a `Result:` line.
+
+The task text has at most 32000 characters.
+
+If `directory` is outside the folder where the client started the server, the tool fails with `Failed: <dir> is outside the folder this MCP server started in — fix: start the MCP server in that project, or leave directory out`. A folder that is not a git checkout, with no `workspace` argument, fails with `<dir> is not a git checkout`.
 
 The result has `workspace`, `session` and `task`. Give `session` to the other tools.
 

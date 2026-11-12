@@ -76,6 +76,9 @@ Run `init` from any directory.
 
     The token becomes a Worker secret. It never enters a workspace. See [GitHub and private repositories](/guides/github/).
   </Step>
+  <Step title="Install the handoff skill">
+    If Claude Code or OpenCode has a config folder on this machine, `init` offers to install the handoff skill for it. On a terminal it asks first. The skill tells the agent how to hand a task to a workspace. It never replaces a skill file that differs. `--no-skill` skips this step. See [Hand off a task](/guides/hand-off-a-task/#the-handoff-skill-for-agents).
+  </Step>
 </Steps>
 
 At the end, `init` prints the Worker URL and the next command:
@@ -101,6 +104,8 @@ The workspace ID comes from the directory name: lowercase, with each other chara
 A directory with no `origin` remote gets an empty workspace: nothing is cloned.
 
 If your branch is not pushed, the workspace starts on the default branch and creates your branch from it. Push the branch first to bring your commits.
+
+To give the agent a task and close the laptop, run `cf-opencode run "<task>"`. See [Hand off a task](/guides/hand-off-a-task/).
 
 Later connects restore the snapshot. Installed packages and uncommitted work are still there.
 

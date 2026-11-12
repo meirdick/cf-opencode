@@ -26,6 +26,8 @@ The CLI derives the password from the control token and the workspace ID with HM
 
 The CLI writes it to `~/.cf-opencode/workspaces/<workspace>.password`, mode 600. OpenCode reads it from `OPENCODE_SERVER_PASSWORD`. The username is always `opencode`. The password is not in any URL. The CLI never prints it.
 
+A visitor to the Worker URL without the control token gets one bare `401` with the body `{"error":"Unauthorized"}` for every path. It names no product, secret or route.
+
 The Worker checks the password first, in constant time. Because the password is derived, this check needs no state. No password or a wrong one gets the same 401, reaches no Durable Object, and does not say whether the workspace exists. Then the workspace's Durable Object checks the password again before it wakes anything. A wrong password wakes nothing.
 
 There is no lockout. The password is 256 bits, so nobody can guess it, and a lockout on a workspace name would let anyone lock you out.
@@ -55,7 +57,7 @@ A preview shows a dev server that the agent runs. Treat its pages as code you di
 
 Each `POST` carries `x-cf-opencode-timestamp` (Unix seconds) and `x-cf-opencode-signature: sha256=<HMAC of "<timestamp>.<body>">`, with the key from `cf-opencode notify-key`. The time is signed with the body. A receiver must refuse a timestamp more than 5 minutes old, so a copy of a delivery cannot be sent again later. A workspace can send at most 20 notes in one hour; the count is kept outside the workspace.
 
-The agent can send any text to the URL with `cf-opencode-notify`, with no limit on how often. Treat a note as text from the agent, not from you.
+The agent can send any text to the URL with `cf-opencode-notify`, up to 20 notes an hour. Treat a note as text from the agent, not from you.
 
 ## The agent account
 

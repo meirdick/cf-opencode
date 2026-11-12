@@ -42,12 +42,14 @@ The CLI stops before the deploy when the file is not one JSON object. A value ou
 | `lockdown` | `false` | `true` or `false` | `true` turns general internet off. See [Security and trust](/concepts/security/). |
 | `ai` | `true` | `true` or `false` | Route models through the AI binding. See [Models](/concepts/models/). |
 | `aiGateway` | `"default"` | A gateway name: lowercase letters, digits, `_` and `-`, up to 64 characters | The AI Gateway for model requests. |
-| `searchProvider` | `"exa"` | The Web Search API provider for `cf-opencode-search`: `exa`, `linkup` or `ceramic`. |
+| `searchProvider` | `"exa"` | A provider name of 1 to 32 characters: lowercase letters, digits, `.`, `_` and `-`, starting with a letter or digit | The Web Search API provider for `cf-opencode-search`. Known providers are `exa`, `linkup` and `ceramic`. |
 | `model` | `"cloudflare-workers-ai/@cf/zai-org/glm-5.3"` | `provider/model`, or `""` | The default OpenCode model. An empty value lets OpenCode choose. |
 | `a2a` | `false` | `true` or `false` | `true` serves the A2A Agent Card and the JSON-RPC endpoint `/a2a`. See [Hand off tasks over A2A](/guides/a2a/). |
 | `images` | `{}` | An object of image references | Extra image references mapped to image keys. For advanced use. |
 
-The notify URL is not a setting. A webhook URL often holds its own secret, and these settings are a plain Worker variable. It is the Worker secret `NOTIFY_URL`; set it with `cf-opencode notify-url`. A `notifyUrl` key in the settings file fails with `Failed: … — fix: … cf-opencode notify-url`.
+The notify URL is not a setting. A webhook URL often holds its own secret, and these settings are a plain Worker variable. It is the Worker secret `NOTIFY_URL`; set it with `cf-opencode notify-url`. A `notifyUrl` key in the settings file stops `init` and `upgrade` before the deploy with `Failed: notifyUrl in <path> is no longer a setting; the URL is a Worker secret now — fix: remove notifyUrl from the file, then run cf-opencode notify-url`.
+
+An unknown key in the file is not checked. Check the spelling.
 
 The file `worker/wrangler.jsonc` ships with these values: the default `instance`, `maxRunning` 10, `maxAwakeHours` 12, `warmMinutes` 10, `inactivityTimeoutMinutes` 15, `alarmSeconds` 60, `serverPort` 4096, `idlePauseMinutes` 20 and `projectSnapshotRefresh` `"off"`.
 
@@ -61,6 +63,17 @@ The file `worker/wrangler.jsonc` ships with these values: the default `instance`
   "model": "cloudflare-workers-ai/@cf/zai-org/glm-5.3"
 }
 ```
+
+## Secrets that commands set
+
+Two commands store a value as a Worker secret, not as a setting. A secret does not need `upgrade`, and a running workspace uses a new value at once or on its next `connect`.
+
+| Command | Secret | Meaning |
+| --- | --- | --- |
+| `cf-opencode git-token` | `GITHUB_TOKEN` | The GitHub token. Workspaces use it for private clones, `git push` and `gh`. `init` also sets it. See [GitHub and private repositories](/guides/github/). |
+| `cf-opencode notify-url` | `NOTIFY_URL` | Where the Worker sends task results and notes. See [Hand off a task](/guides/hand-off-a-task/#get-a-message-when-a-task-ends). |
+
+Both commands read the value from stdin, or ask for it without echo. Neither takes the value as an argument. `--remove` deletes the secret.
 
 ## Worker secrets and bindings
 

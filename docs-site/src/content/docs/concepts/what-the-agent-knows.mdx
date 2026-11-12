@@ -1,0 +1,62 @@
+---
+title: What the agent knows
+description: The workspace notes that every session reads, and the Handoff block that a handed-off session gets before its task.
+sidebar:
+  order: 5
+---
+
+The agent in a workspace did not see your screen or your conversation. cf-opencode tells it two things: the workspace notes, and for a handed-off task, a Handoff block. This page quotes the gist of both.
+
+## The workspace notes
+
+The Worker writes a notes file in the workspace on each wake: `~/.config/opencode/AGENTS.md`. OpenCode reads this file in every session. The first line of the file is a marker, `cf-opencode workspace notes`. The Worker rewrites a file that has the marker. A file that you wrote there, without the marker, is left alone.
+
+The notes have two parts.
+
+### Where you are
+
+The notes say that the agent runs in a cf-opencode workspace: a Debian container on Cloudflare, in the user's own Cloudflare account. They give these facts:
+
+- The project is a clone of its Git remote. The agent cannot see the files on the user's machine, or changes there that are not pushed. What is not in the remote is not in the workspace.
+- A "# Handoff" block as the first message means that nobody is attached. The agent follows that block. Without the block, a person is attached through OpenCode and reads the messages as the agent writes them.
+- The user does not see the screen or the ports of the workspace. To show a dev server, the agent uses `cf-opencode-preview`.
+
+### This machine
+
+The notes list what the agent can do:
+
+| Topic | What the notes say |
+| --- | --- |
+| Packages | `sudo apt-get install <package>` works without a password. Installed packages stay on the disk. |
+| GitHub | `git clone`, `pull`, `push` and `gh` work for the user's repositories. The agent must not ask for a token and must not run `gh auth login`. The credential is added outside the machine. |
+| Web search | Run `cf-opencode-search "<query>"`. It runs on the user's Cloudflare account. |
+| Read a page | Run `cf-opencode-fetch <url>`. A real browser loads the page. `--links`, `--screenshot` and `--pdf` are options. |
+| Browser | No browser is installed. `cf-opencode-browse` opens a remote browser session and prints a Chrome DevTools Protocol websocket address. Python has the `websocket` module. |
+| Dev server | Start it on `0.0.0.0`. Run `cf-opencode-preview <port>`. Give the user the line it prints. They open it with `cf-opencode preview`. Nothing is public. The agent can check its own frontend with `cf-opencode-fetch http://p<port>.preview.internal/` or `cf-opencode-browse --preview <port>`. |
+| Notes to the user | `cf-opencode-notify "<text>"` posts the text to the user's notify URL. Use it for a blocker or a result that the user must see soon, not for progress. |
+| Disk | The disk is saved when the workspace is idle. Processes do not survive that. Files do. |
+
+## The Handoff block
+
+A session that `run`, the MCP tool `handoff_task` or an A2A `SendMessage` starts gets a Handoff block as its own message, before the task. The task text stays your text. The block names no host and no person. It says "the user's machine".
+
+The block has these lines:
+
+- Who started the session: the cf-opencode CLI (`cf-opencode run`), an agent on the user's machine through the cf-opencode MCP tools, or another agent through the A2A endpoint of the Worker. Nobody is attached to the session and nobody reads it live.
+- The start point: the branch, and the commit when it is known, on `origin`. Without a branch, it is the default branch on `origin`.
+- Whether the local checkout had changes that are not pushed. If it had, the agent cannot see them and must not assume they exist. If it had none, what the agent sees is what the user has.
+- The agent works alone. It asks a question only when it cannot continue, because a question stops the task until the user opens the session.
+- The last message of the agent is the result that the caller reads. It must be short and factual.
+- The agent uses `cf-opencode-notify` only for something that the user must know before the task ends.
+- The task ID, when it is known.
+
+The block ends with: "The task follows in the next message."
+
+`run` also adds a closing instruction to the task text: commit, push the branch, open a pull request when `gh auth status` succeeds, and end with a `Result:` line. See [Hand off a task](/guides/hand-off-a-task/#write-the-task).
+
+## Related pages
+
+- [Hand off a task](/guides/hand-off-a-task/)
+- [Web search and browsing](/guides/browsing/)
+- [Preview a dev server](/guides/preview/)
+- [The workspace image](/reference/image/)
