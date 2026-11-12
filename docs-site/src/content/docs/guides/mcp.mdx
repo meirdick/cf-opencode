@@ -1,0 +1,120 @@
+---
+title: Hand off tasks over MCP
+description: Add cf-opencode mcp to Claude Code, OpenCode or another MCP client, so a local agent hands off tasks and reads the results as structured data.
+sidebar:
+  order: 9
+---
+
+`cf-opencode mcp` is an MCP server. It gives a local agent four tools to hand off a task and follow it. The agent gets the task record as structured data. It does not parse shell output.
+
+The tools do what `cf-opencode run` and `cf-opencode tasks` do. Read [Hand off a task](/guides/hand-off-a-task/) first.
+
+## Before you start
+
+1. Install cf-opencode on this machine: `cf-opencode init`.
+2. Connect the checkout once: `cf-opencode connect`.
+3. Set up GitHub, so the agent in the workspace can push. See [GitHub](/guides/github/).
+
+The server uses the install and the control token of this machine, in `~/.cf-opencode`. It needs no other key.
+
+## Add the server
+
+The server runs over stdio. The client starts it with the command `cf-opencode mcp`.
+
+### Claude Code
+
+```sh
+claude mcp add cf-opencode -- cf-opencode mcp
+```
+
+### OpenCode
+
+Add a `servers` entry under `mcp` in `opencode.json`:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "servers": {
+      "cf-opencode": {
+        "type": "local",
+        "command": ["cf-opencode", "mcp"]
+      }
+    }
+  }
+}
+```
+
+### Other clients
+
+Add a stdio server with the command `cf-opencode mcp` and no arguments.
+
+If npm could not install the CLI globally, use `npx cf-opencode mcp` as the command.
+
+## The tools
+
+| Tool | What it does |
+| --- | --- |
+| `handoff_task` | Starts a task in the workspace of a checkout, and returns at once. |
+| `get_task` | Reads one task. Wakes nothing. |
+| `wait_task` | Waits until the task is not `running`, for at most 280 seconds. |
+| `list_tasks` | Lists the tasks of the workspaces of this machine, newest first. Wakes nothing. |
+
+### handoff_task
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `task` | Yes | The full task. The remote agent did not see your conversation. |
+| `directory` | No | The git checkout. Default: the directory that the client started the server in. |
+| `workspace` | No | The workspace ID. Default: the workspace of the checkout, as `connect` names it. |
+| `title` | No | The session title. |
+| `model` | No | `provider/model`. Default: the model of the workspace. |
+| `allowDirty` | No | `true` starts the task when the checkout has changes that are not committed or pushed. |
+
+The tool runs the same preflight as `run`. The workspace clones from the Git remote. It does not see changes that are not committed or commits that are not pushed. The tool fails on these, unless `allowDirty` is `true`. See [The preflight](/guides/hand-off-a-task/#the-preflight).
+
+The tool adds the same closing instruction as `run`: commit, push the branch, open a pull request, and end with a `Result:` line.
+
+The result has `workspace`, `session` and `task`. Give `session` to the other tools.
+
+### get_task and wait_task
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `session` | Yes | The `ses_…` ID that `handoff_task` returned. |
+| `workspace` | No | The workspace. Default: the workspace of this machine that has the session. |
+| `timeoutSeconds` | No, `wait_task` only | 1 to 280. Default 240. |
+
+The result has `workspace`, `task`, `live` and `at`. `live` is `false` when a paused workspace answered with its saved copy. `wait_task` also returns `timedOut`.
+
+Most MCP clients stop a tool call after 5 minutes. For this reason, `wait_task` waits 280 seconds or less. When `timedOut` is `true`, the task still runs. Call `wait_task` again.
+
+### The task record
+
+`task` is the record that `cf-opencode tasks --json` shows. It has `id`, `title`, `state`, `started` and, when known, `updated`, `model`, `last` and `reason`. A newer Worker adds fields, such as `summary`, `error`, `branch`, `commits` and `pullRequest`. The server passes every field on.
+
+`state` is one of these:
+
+| State | Meaning |
+| --- | --- |
+| `running` | The agent works. |
+| `waiting` | The agent asks a question or a permission. Answer it with `cf-opencode connect <workspace> --session <ses_…>`. |
+| `done` | The agent finished its turn. |
+| `failed` | The turn stopped with an error, or did not start. |
+| `stopped` | The session was stopped before it finished. A newer Worker reports it. |
+
+## Errors
+
+A tool that fails returns `isError: true` and one line: `Failed: <cause> — fix: <action>`. The agent can read the fix and try again.
+
+## Protocol
+
+The server speaks MCP `2026-07-28`, in which each request carries its protocol version. It also answers `initialize` for clients that use `2025-11-25` or `2025-06-18`. Other versions get the error that the spec gives, with the list of supported versions.
+
+The server writes only MCP messages to stdout. It writes logs to stderr.
+
+## Limits
+
+- The server acts with the control token of this machine. A client that runs the server can start tasks in every workspace of the install.
+- `handoff_task` never sends local files.
+- The tools cannot answer a waiting task. Answer it in OpenCode.

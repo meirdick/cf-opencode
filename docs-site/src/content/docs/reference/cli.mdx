@@ -167,6 +167,14 @@ List the tasks that `run` started, newest first. The columns are `WORKSPACE`, `S
 | `--wait` | With a session ID: wait until the task is not `running`. The exit codes are the same as for `run --wait`. |
 | `--timeout <minutes>` | How long `--wait` waits. The default is 60. |
 
+### mcp
+
+```text
+cf-opencode mcp
+```
+
+Serve `run` and `tasks` to an agent as MCP tools over stdio: `handoff_task`, `get_task`, `wait_task` and `list_tasks`. stdout carries MCP messages only. Logs go to stderr. See [Hand off tasks over MCP](/guides/mcp/).
+
 ### list
 
 ```text

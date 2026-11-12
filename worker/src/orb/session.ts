@@ -69,6 +69,8 @@ import { LOGTAIL_SH, SSH_PREP_SH } from "./scripts";
 import { readSessions, type SessionList } from "./sessions";
 import { runSpawn, SCRIPT_ENV, sh, WORKSPACE_USER } from "./spawn";
 import { installSshKeys } from "./ssh-keys";
+import { type CancelResult, cancelTask } from "./task-cancel";
+import { wakeAndStart } from "./task-wake";
 import { readTasks, type StartResult, startTask, type TaskInput, type TaskList } from "./tasks";
 import { bridge, isPublicKey, type StdioProcess, shellParams } from "./terminal";
 
@@ -397,6 +399,39 @@ export class WorkspaceSession extends DurableObject<Env> implements WorkspaceSes
   /** Handed-off tasks: live from a running workspace, else the copy kept at the last refresh. Wakes nothing. */
   async tasks(): Promise<TaskList> {
     return readTasks(this.base(await this.workspaceId()));
+  }
+
+  /** A2A has no checkout to connect from, so this wakes a known workspace itself (task-wake.ts). */
+  async startTaskAwake(input: TaskInput): Promise<StartResult> {
+    const id = await this.workspaceId();
+    return wakeAndStart(
+      {
+        workspaceId: id,
+        running: () => Boolean(this.ctx.container?.running),
+        record: () => loadOrb(this.kv),
+        controlToken: this.env.CONTROL_TOKEN,
+        password: workspacePassword,
+        spawn: async (password, directory) => {
+          const { done } = await runOpWithJournal(
+            this.base(id),
+            this.kv,
+            { op: "spawn", password, ...(directory ? { directory } : {}) },
+            REAL_OPS,
+            this.rt,
+          );
+          const result = await done;
+          this.ctx.waitUntil(this.arm(this.config.alarmSeconds * 1000));
+          return result;
+        },
+        start: (i) => this.startTask(i),
+      },
+      input,
+    );
+  }
+
+  /** Interrupt a task's OpenCode session. Wakes nothing. */
+  async cancelTask(sessionId: string): Promise<CancelResult> {
+    return cancelTask(this.base(await this.workspaceId()), sessionId);
   }
 
   async logs(lines: number): Promise<{ containerRunning: boolean; log: string }> {

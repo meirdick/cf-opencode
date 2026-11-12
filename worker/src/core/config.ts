@@ -67,6 +67,11 @@ export function parseConfig(raw: string | undefined): ProviderConfig {
       "Failed: lockdown must be true or false — fix: set it in ~/.cf-opencode/config.json, then cf-opencode upgrade",
     );
   }
+  if (typeof cfg.a2a !== "boolean") {
+    throw new Error(
+      "Failed: a2a must be true or false — fix: set it in ~/.cf-opencode/config.json, then cf-opencode upgrade",
+    );
+  }
   return cfg;
 }
 
@@ -93,6 +98,7 @@ function pick(o: Record<string, unknown>): Partial<ProviderConfig> {
   if (o.aiGateway !== undefined) out.aiGateway = o.aiGateway as string;
   if (o.model !== undefined) out.model = o.model as string;
   if (o.searchProvider !== undefined) out.searchProvider = o.searchProvider as string;
+  if (o.a2a !== undefined) out.a2a = o.a2a as boolean;
   return out;
 }
 
