@@ -232,7 +232,7 @@ describe("task lifecycle in the Durable Object", () => {
     expect(await readTask(h.ctx, "ses_9")).toBeUndefined();
   });
 
-  it("a running task gets live git facts without gh", async () => {
+  it("a running task gets live git facts, without gh, only on the read that shows it", async () => {
     const { h, io } = workspace();
     await started(h);
     io.status = { active: ["ses_1"], sessions: { ses_1: { found: true } } };
@@ -240,7 +240,10 @@ describe("task lifecycle in the Durable Object", () => {
       branch: "main",
       tasks: { ses_1: { commits: [{ sha: SHA("c"), subject: "wip" }], changedFiles: [] } },
     };
-    const one = await readTask(h.ctx, "ses_1");
+    // A poll (--wait) runs no git.
+    expect((await readTask(h.ctx, "ses_1"))?.task.commits).toBeUndefined();
+    expect(io.gitEnvs).toHaveLength(0);
+    const one = await readTask(h.ctx, "ses_1", { seen: true });
     expect(one?.task.commits).toEqual([{ sha: SHA("c"), subject: "wip" }]);
     expect(io.gitEnvs[0]?.GH).toBe("0");
   });

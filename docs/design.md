@@ -263,8 +263,9 @@ the same object. `branch`, `commits`, `changedFiles` and `pullRequest` are
 facts: `TASK_GIT_SH` reads them with git (and `gh pr view`) in the checkout,
 never from the agent's text. `run` records `HEAD` when it starts the session;
 the task's commits are `base..HEAD` with a commit time at or after the start, so
-commits a branch checkout brings from origin are not counted. Git runs while a
-task runs (on a read of that one task) and once more, with `gh`, when it ends.
+commits a branch checkout brings from origin are not counted. For a running
+task, git runs only on the read that shows it (`tasks <ses_…>`, not a `--wait`
+poll); it runs once more, with `gh`, when the task ends.
 A task that ends with no commit is `done`: many tasks are research.
 
 `run --schema` keeps the schema with the task in the Durable Object, so

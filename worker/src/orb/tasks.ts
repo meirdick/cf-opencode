@@ -419,7 +419,8 @@ async function readFacts(ctx: Ctx, tasks: TaskRecord[], gh: boolean): Promise<Gi
       GH: gh ? "1" : "0",
       GH_TOKEN: "cf-opencode-egress",
     });
-    const r = await ctx.container.exec(cmd, { ...opts, timeoutMs: 40_000 });
+    // Bounded: a pause runs this before its snapshot.
+    const r = await ctx.container.exec(cmd, { ...opts, timeoutMs: 30_000 });
     return r.exitCode === 0 ? parseGitFacts(r.stdout) : undefined;
   } catch {
     return undefined;
@@ -483,8 +484,9 @@ export async function readTasks(ctx: Ctx): Promise<TaskList> {
 }
 
 /**
- * One task, with its git facts: live for a running task, read once (with the pull request) for one that
- * ended. `seen` clears the unseen mark: this is the read that shows the result to someone.
+ * One task. `seen` marks the read that shows the result to someone: it clears the unseen mark, and reads
+ * live git facts for a running task. A poll (no `seen`) reads git only for an ended task that has no facts
+ * yet, so `--wait` does not run git every 10 s. An ended task's facts are read once, with the pull request.
  */
 export async function readTask(
   ctx: Ctx,
@@ -495,7 +497,7 @@ export async function readTask(
   const t = saved?.tasks.find((x) => x.id === id);
   if (!t) return undefined;
   const ended = t.state !== "running";
-  const needFacts = !ended || t.commits === undefined;
+  const needFacts = ended ? t.commits === undefined : o.seen === true;
   const live = await captureTasks(ctx, needFacts ? { facts: [id], gh: ended } : {});
   const list = live ?? { ...(saved as Saved), live: false };
   let task = list.tasks.find((x) => x.id === id) ?? t;
@@ -517,7 +519,8 @@ export async function readTask(
 export async function stopTasks(ctx: Ctx): Promise<void> {
   const saved = await ctx.kv.get<Saved>(TASKS_KEY);
   const running = saved?.tasks.filter((t) => t.state === "running").map((t) => t.id) ?? [];
-  await captureTasks(ctx, running.length ? { facts: running, gh: true } : {}).catch(() => undefined);
+  if (running.length === 0) return;
+  await captureTasks(ctx, { facts: running, gh: true }).catch(() => undefined);
   const after = await ctx.kv.get<Saved>(TASKS_KEY);
   if (!after?.tasks.some((t) => t.state === "running")) return;
   const now = ctx.clock.now();
