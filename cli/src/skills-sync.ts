@@ -4,9 +4,18 @@
 // agent folders. Copying is explicit and by name: a skill can name local tools or hold local paths, and
 // what is copied stays on the workspace disk and in its snapshots.
 import { spawn } from "node:child_process";
-import { existsSync, readdirSync, realpathSync, statSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { stateDir } from "./config.js";
 import { CliError } from "./errors.js";
 import { sshKey, sshOptions } from "./terminal.js";
 import { table } from "./ui.js";
@@ -200,4 +209,47 @@ export function renderSkills(found: LocalSkill[], remote: string[] | undefined, 
     return [n, f ? f.root.replace(homedir(), "~") : "-", remote ? (remote.includes(n) ? "yes" : "no") : "?"];
   });
   return `${table(["SKILL", "ON THIS MACHINE", `IN ${id}`], rows)}\n\nCopy: cf-opencode skills push <name...>   Remove: cf-opencode skills remove <name...>`;
+}
+
+/** The saved list of skills that every new workspace gets. Empty until the user sets it. */
+export function defaultsPath(): string {
+  return join(stateDir(), "skills.json");
+}
+
+export function readDefaults(path = defaultsPath()): string[] {
+  try {
+    const v = JSON.parse(readFileSync(path, "utf8")) as { names?: unknown };
+    return Array.isArray(v.names)
+      ? v.names.filter((n): n is string => typeof n === "string" && SKILL_NAME_RE.test(n))
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+export function writeDefaults(names: string[], path = defaultsPath()): void {
+  for (const n of names)
+    if (!SKILL_NAME_RE.test(n))
+      throw new CliError(`bad skill name ${JSON.stringify(n)}`, "cf-opencode skills lists them");
+  mkdirSync(join(path, ".."), { recursive: true });
+  writeFileSync(path, `${JSON.stringify({ names: [...new Set(names)].sort() }, null, 2)}\n`);
+}
+
+/**
+ * The default skills that exist on this machine now. A name with no skill here is reported, not fatal:
+ * a connect must not fail because a skill was deleted locally.
+ */
+export function resolveDefaults(
+  found: LocalSkill[],
+  names: string[],
+  say: (s: string) => void,
+): LocalSkill[] {
+  const out: LocalSkill[] = [];
+  for (const n of names) {
+    const s = found.find((f) => f.name === n);
+    if (!s) say(`! default skill ${n} is not on this machine; cf-opencode skills default sets the list`);
+    else if (s.bytes > MAX_SKILL_BYTES) say(`! default skill ${n} is over 5 MB; not copied`);
+    else out.push(s);
+  }
+  return out;
 }

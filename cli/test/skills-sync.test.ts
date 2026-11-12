@@ -119,3 +119,28 @@ describe("skills sync", () => {
     expect(localSkills([linked])[0]?.dir).toBe(realpathSync(join(root, "demo")));
   });
 });
+
+describe("default skills", () => {
+  it("is empty until set, keeps a sorted list, and skips a name that is gone from this machine", async () => {
+    const { readDefaults, writeDefaults, resolveDefaults } = await import("../src/skills-sync.js");
+    const file = join(mkdtempSync(join(tmpdir(), "cfoc-def-")), "sub", "skills.json");
+    expect(readDefaults(file)).toEqual([]);
+    writeDefaults(["wrangler", "cloudflare", "wrangler"], file);
+    expect(readDefaults(file)).toEqual(["cloudflare", "wrangler"]);
+    expect(() => writeDefaults(["a b"], file)).toThrow(/bad skill name/);
+    writeFileSync(file, '{"names":["ok","$(id)",7]}');
+    expect(readDefaults(file)).toEqual(["ok"]);
+    writeFileSync(file, "not json");
+    expect(readDefaults(file)).toEqual([]);
+
+    const found: LocalSkill[] = [
+      { name: "cloudflare", root: "/r", dir: "/r/cloudflare", bytes: 10 },
+      { name: "huge", root: "/r", dir: "/r/huge", bytes: 9 * 1024 * 1024 },
+    ];
+    const said: string[] = [];
+    const got = resolveDefaults(found, ["cloudflare", "gone", "huge"], (s) => said.push(s));
+    expect(got.map((s) => s.name)).toEqual(["cloudflare"]);
+    expect(said.join("\n")).toMatch(/gone is not on this machine/);
+    expect(said.join("\n")).toMatch(/huge is over 5 MB/);
+  });
+});

@@ -48,6 +48,8 @@
 - `cf-opencode skills push <name...>` copies skills from this machine (`~/.config/opencode/skills`,
   `~/.claude/skills`) into a workspace, so the remote agent has them; `skills remove` deletes them and `skills`
   lists both sides. Nothing is copied unless you ask: `connect --skills a,b` (or `all`) copies in the same step.
+  `skills default a b` saves a list on this machine; a workspace that starts from the image gets those skills on
+  its first connect. The list is empty until you set it.
   `.git`, `node_modules`, `.env` and key files are left out, and links inside a skill are not followed.
 - `cf-opencode completion <bash|zsh|fish>`: tab completion for commands, flags and workspace ids.
 - `cf-opencode preview … --web` opens the dev server on a Worker URL instead, behind

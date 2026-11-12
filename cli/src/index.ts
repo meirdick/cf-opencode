@@ -23,12 +23,15 @@ import { listSessions, localWorkspaceIds, renderSessions } from "./sessions.js";
 import {
   localSkills,
   pushSkills,
+  readDefaults,
   remoteSkills,
   removeCommand,
   renderSkills,
+  resolveDefaults,
   selectSkills,
   skillRoots,
   sshRun,
+  writeDefaults,
 } from "./skills-sync.js";
 import { notifyKeyCommand, runCommand, skillCommand, tasksCommand } from "./task-commands.js";
 import { forgetHostKey, shell, ssh, sshConfigBlock, sshKey, sshProxy, target } from "./terminal.js";
@@ -455,19 +458,27 @@ const COMMANDS: Record<string, Command> = {
 
 COMMANDS.skills = {
   group: "Workspaces",
-  usage: "skills [push|remove] [name...]",
+  usage: "skills [push|remove|default] [name...]",
   summary: "Copy skills from this machine into a workspace, so the remote agent has them.",
   details: [
     "cf-opencode skills                 skills on this machine, and which are in the workspace",
     "cf-opencode skills push a b        copy skills a and b (replaces the copy that is there)",
     "cf-opencode skills push --all      copy every skill found here",
     "cf-opencode skills remove a        delete skill a from the workspace",
+    "cf-opencode skills default a b     save a list: every new workspace gets these on its first connect",
+    "cf-opencode skills default --none  clear the list (the start state: nothing is copied by itself)",
+    "cf-opencode skills push            with no names: copy the saved list",
     "--workspace <id>   the workspace (default: the one of this directory)",
     "--from <dir>       a skills folder to read (default: ~/.config/opencode/skills, ~/.claude/skills, ~/.agents/skills)",
     "A skill is a folder with a SKILL.md. Copies go to ~/.config/opencode/skills in the workspace and stay",
     "on its disk and in its snapshots. .git, node_modules, .env and key files are not copied. Needs ssh here.",
   ],
-  flags: { workspace: { type: "string" }, from: { type: "string" }, all: { type: "boolean" } },
+  flags: {
+    workspace: { type: "string" },
+    from: { type: "string" },
+    all: { type: "boolean" },
+    none: { type: "boolean" },
+  },
   run: async (args) => {
     const [verb, ...names] = args.positionals;
     const id = flagString(args, "workspace") ?? workspaceIdFrom(process.cwd());
@@ -483,9 +494,26 @@ COMMANDS.skills = {
       else process.stdout.write(`${renderSkills(found, remote, id)}\n`);
       return 0;
     }
+    if (verb === "default") {
+      if (flagBool(args, "none")) writeDefaults([]);
+      else if (flagBool(args, "all") || names.length)
+        writeDefaults(selectSkills(found, names, flagBool(args, "all")).map((s) => s.name));
+      const now = readDefaults();
+      if (flagBool(args, "json")) process.stdout.write(`${JSON.stringify({ ok: true, default: now })}\n`);
+      else
+        process.stdout.write(
+          now.length
+            ? `Every new workspace gets: ${now.join(", ")}\nAn existing workspace: cf-opencode skills push\n`
+            : "No default skills. Nothing is copied unless you ask.\n",
+        );
+      return 0;
+    }
     target(requireUrl(args).url, id);
     if (verb === "push") {
-      const picked = selectSkills(found, names, flagBool(args, "all"));
+      const saved = names.length === 0 && !flagBool(args, "all") ? readDefaults() : [];
+      const picked = saved.length
+        ? resolveDefaults(found, saved, say)
+        : selectSkills(found, names, flagBool(args, "all"));
       await pushSkills(id, picked, run, say);
       say(`A new OpenCode session in ${id} sees them.`);
       return 0;
@@ -497,7 +525,10 @@ COMMANDS.skills = {
       say(`✓ removed from ${id}: ${names.join(", ")}`);
       return 0;
     }
-    throw new CliError(`unknown skills action ${verb}`, "use: cf-opencode skills [push|remove] [name...]");
+    throw new CliError(
+      `unknown skills action ${verb}`,
+      "use: cf-opencode skills [push|remove|default] [name...]",
+    );
   },
 };
 
@@ -626,13 +657,19 @@ async function connectCommand(args: ParsedArgs): Promise<number> {
     continueLast: flagBool(args, "continue"),
     ...(flagString(args, "session") ? { session: flagString(args, "session") } : {}),
     onLine: (line) => process.stderr.write(`${line}\n`),
-    // Off unless asked: a skill can hold local paths, and a copy stays on the workspace disk.
-    ...(skills.length
-      ? {
-          beforeAttach: (ws: string) =>
-            pushSkills(ws, skills, sshRun(flagString(args, "url")), (s) => process.stderr.write(`${s}\n`)),
-        }
-      : {}),
+    // Off unless asked: a skill can hold local paths, and a copy stays on the workspace disk. --skills copies
+    // now. The saved default list is copied only to a workspace that starts from the bare image; a later
+    // connect finds them on the disk.
+    beforeAttach: async (ws: string, info: { fresh: boolean }) => {
+      const say = (s: string) => process.stderr.write(`${s}\n`);
+      const list =
+        wanted !== undefined
+          ? skills
+          : info.fresh
+            ? resolveDefaults(localSkills(skillRoots()), readDefaults(), say)
+            : [];
+      if (list.length) await pushSkills(ws, list, sshRun(flagString(args, "url")), say);
+    },
   });
   if (flagBool(args, "json") || flagBool(args, "no-attach")) {
     process.stdout.write(
