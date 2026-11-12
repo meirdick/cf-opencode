@@ -16,6 +16,7 @@ import {
   uninstall,
 } from "./manage.js";
 import { listSessions, localWorkspaceIds, renderSessions } from "./sessions.js";
+import { runCommand, tasksCommand } from "./task-commands.js";
 import { forgetHostKey, shell, ssh, sshConfigBlock, sshKey, sshProxy, target } from "./terminal.js";
 import { fmtAge, makeUi, readSecret } from "./ui.js";
 import { runProcess } from "./wrangler.js";
@@ -107,6 +108,45 @@ const COMMANDS: Record<string, Command> = {
     ],
     flags: {},
     run: sessionsCommand,
+  },
+  run: {
+    group: "Workspaces",
+    usage: 'run "<task>" [workspace]',
+    summary: "Hand a task to OpenCode in the workspace of this checkout, and return.",
+    details: [
+      "The task runs as a new session in the workspace, so it goes on after you close the laptop.",
+      "The workspace clones from the Git remote: run fails on changes that are not committed or pushed.",
+      "The agent is told to commit, push the branch, open a pull request when gh works, and end with a result line.",
+      "--title <text>             session title (default: from the task)",
+      "--model <provider/model>   for example cloudflare-workers-ai/@cf/zai-org/glm-5.3",
+      "--allow-dirty              start anyway, and say what the workspace will not see",
+      "--wait                     wait until the task is done, failed or waiting",
+      "--timeout <minutes>        how long --wait waits (default 60)",
+      "Exit code with --wait: 0 done, 1 failed, 2 waiting, 3 timed out.",
+    ],
+    flags: {
+      title: { type: "string" },
+      model: { type: "string" },
+      "allow-dirty": { type: "boolean" },
+      wait: { type: "boolean" },
+      timeout: { type: "string" },
+    },
+    run: (args) => runCommand(args, requireInstall(args)),
+  },
+  tasks: {
+    group: "Workspaces",
+    usage: "tasks [workspace | session]",
+    summary: "Tasks handed off with run, newest first, or one task. Wakes nothing.",
+    details: [
+      "States: running, done, failed, waiting (the agent asks a question or a permission).",
+      "A running workspace answers live. A paused one answers with the states saved at its last refresh.",
+      "--workspace <id>      the workspace of the task (default: found in your workspaces)",
+      "--wait                with a session: wait until the task leaves running",
+      "--timeout <minutes>   how long --wait waits (default 60)",
+      "Exit code with --wait: 0 done, 1 failed, 2 waiting, 3 timed out.",
+    ],
+    flags: { workspace: { type: "string" }, wait: { type: "boolean" }, timeout: { type: "string" } },
+    run: (args) => tasksCommand(args, requireInstall(args)),
   },
   rebuild: {
     group: "Workspaces",

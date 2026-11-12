@@ -5,6 +5,7 @@ import type { OpRequest } from "../core/types";
 import type { OrbContext } from "./context";
 import { iso, loadOrb, newOrbRecord, saveOrb } from "./journal";
 import { SESSIONS_KEY } from "./sessions";
+import { TASKS_KEY } from "./tasks";
 
 export async function runDelete(ctx: OrbContext, req?: Pick<OpRequest, "snapshotId">): Promise<{ ok: true }> {
   const { container, clock, kv, registry, orbId } = ctx;
@@ -29,6 +30,7 @@ export async function runDelete(ctx: OrbContext, req?: Pick<OpRequest, "snapshot
   }
   await saveOrb(kv, rec, now());
   await kv.delete(SESSIONS_KEY);
+  await kv.delete(TASKS_KEY);
   // The project snapshot is this workspace's disk under the checkout's name. Drop it only when this
   // workspace made it. The CLI names it snap-<workspace>.
   const snapshotId = req?.snapshotId ?? `snap-${orbId}`;

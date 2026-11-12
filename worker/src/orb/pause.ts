@@ -20,6 +20,7 @@ import {
 import { QUIESCE_SH, STATUS_SH } from "./scripts";
 import { captureSessions } from "./sessions";
 import { beat, sh } from "./spawn";
+import { captureTasks } from "./tasks";
 
 export type PauseResult = { ok: boolean; error?: string; handle?: SnapshotHandle };
 
@@ -98,6 +99,8 @@ export async function runPause(
 
   // Keep the session list, so `cf-opencode sessions` can show a paused workspace without waking it.
   await captureSessions(ctx).catch(() => undefined);
+  // The same for handed-off tasks: `cf-opencode tasks` answers from this copy while the workspace sleeps.
+  await captureTasks(ctx).catch(() => undefined);
 
   // Warm only for a pause with no project snapshot id. A project snapshot must be a quiesced disk.
   const warmMs = opts.cold || req.snapshotId ? 0 : ctx.config.warmMinutes * 60_000;

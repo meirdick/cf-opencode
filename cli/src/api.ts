@@ -24,6 +24,27 @@ export interface RemoteSessions {
   live: boolean;
 }
 
+export type TaskState = "running" | "done" | "failed" | "waiting";
+
+export interface RemoteTask {
+  id: string;
+  title: string;
+  /** Epoch ms. */
+  started: number;
+  model?: string;
+  state: TaskState;
+  reason?: string;
+  /** The end of the last assistant message with text. */
+  last?: string;
+  updated?: number;
+}
+
+export interface RemoteTasks {
+  tasks: RemoteTask[];
+  at?: string;
+  live: boolean;
+}
+
 export class ControlClient {
   constructor(
     private readonly url: string,
@@ -62,6 +83,26 @@ export class ControlClient {
 
   async sessions(workspaceId: string): Promise<RemoteSessions> {
     return this.get(`/v1/workspaces/${encodeURIComponent(workspaceId)}/sessions`);
+  }
+
+  async startTask(
+    workspaceId: string,
+    body: { text: string; title?: string; model?: string },
+  ): Promise<{ task: RemoteTask }> {
+    return this.send("POST", `/v1/workspaces/${encodeURIComponent(workspaceId)}/tasks`, body);
+  }
+
+  async tasks(workspaceId: string): Promise<RemoteTasks> {
+    return this.get(`/v1/workspaces/${encodeURIComponent(workspaceId)}/tasks`);
+  }
+
+  async task(
+    workspaceId: string,
+    sessionId: string,
+  ): Promise<{ task: RemoteTask; at?: string; live: boolean }> {
+    return this.get(
+      `/v1/workspaces/${encodeURIComponent(workspaceId)}/tasks/${encodeURIComponent(sessionId)}`,
+    );
   }
 
   async logs(workspaceId: string, lines: number): Promise<{ log: string }> {

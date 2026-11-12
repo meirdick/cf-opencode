@@ -15,6 +15,8 @@ import {
 import { type Env, REGISTRY_DO_NAME, workspaceDoName } from "./env";
 import { connectCdp, relay, SESSION_ID_RE } from "./orb/browse";
 import type { SessionList } from "./orb/sessions";
+import type { StartResult, TaskInput, TaskList } from "./orb/tasks";
+import { tasksRoute } from "./tasks-api";
 
 export const API_VERSION = "0.1.0";
 
@@ -32,6 +34,10 @@ export interface WorkspaceSessionApi {
   status(): Promise<WorkspaceStatus>;
   logs(lines: number): Promise<{ containerRunning: boolean; log: string }>;
   sessions(): Promise<SessionList>;
+  /** Start a handed-off task in the running workspace. */
+  startTask(input: TaskInput): Promise<StartResult>;
+  /** Handed-off tasks: live from a running workspace, else the saved copy. Wakes nothing. */
+  tasks(): Promise<TaskList>;
   /** Proxy to opencode serve. Wakes a paused workspace when the password header is present. */
   proxy(req: Request): Promise<Response>;
   /** Open a Browser Run session for this workspace through the Browser Run binding. */
@@ -111,6 +117,8 @@ async function route(req: Request, env: Env): Promise<Response> {
   const parts = url.pathname.split("/").filter((p) => p !== "");
   if (parts[0] !== "v1") return notFound(req);
   const [, a, b, c, ...rest] = parts;
+  if (a === "workspaces" && b && c === "tasks" && rest.length <= 1)
+    return tasksRoute(req, (id) => sessionOf(env, id), b, rest[0]);
   if (rest.length > 0) return notFound(req);
   const method = req.method.toUpperCase();
 

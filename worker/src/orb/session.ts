@@ -56,6 +56,7 @@ import { type RebuildTarget, receiveRebuild, runRebuild } from "./rebuild";
 import { LOGTAIL_SH, SSH_PREP_SH } from "./scripts";
 import { readSessions, type SessionList } from "./sessions";
 import { runSpawn, SCRIPT_ENV, sh, WORKSPACE_USER } from "./spawn";
+import { readTasks, type StartResult, startTask, type TaskInput, type TaskList } from "./tasks";
 import { bridge, isPublicKey, type StdioProcess, shellParams } from "./terminal";
 
 export interface OpRunners {
@@ -373,6 +374,16 @@ export class WorkspaceSession extends DurableObject<Env> implements WorkspaceSes
   /** OpenCode sessions: live from a running workspace, else the list kept at the last pause. Wakes nothing. */
   async sessions(): Promise<SessionList> {
     return readSessions(this.base(await this.workspaceId()));
+  }
+
+  /** Start a handed-off task. The CLI wakes the workspace first; this never does. */
+  async startTask(input: TaskInput): Promise<StartResult> {
+    return startTask(this.base(await this.workspaceId()), input);
+  }
+
+  /** Handed-off tasks: live from a running workspace, else the copy kept at the last refresh. Wakes nothing. */
+  async tasks(): Promise<TaskList> {
+    return readTasks(this.base(await this.workspaceId()));
   }
 
   async logs(lines: number): Promise<{ containerRunning: boolean; log: string }> {
