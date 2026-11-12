@@ -118,6 +118,9 @@ browsing. A secret is the fallback for what has no binding, never the default.
 account. The default provider is `exa`: for a technical query, `exa` and `linkup` returned the documentation
 pages and `ceramic` did not (checked 2026-11-12).
 
+`cf-opencode-fetch` is the second half: it posts a URL to the same host, and the Worker runs a Browser Run
+Quick Action (`markdown`, `content`, `links`, `screenshot`, `pdf`). Search finds a page; fetch reads it.
+
 ## Browsing
 
 `cf-opencode browse <workspace>` opens a Browser Run session and prints its

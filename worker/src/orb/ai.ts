@@ -27,6 +27,22 @@ export interface AiRunner {
   }): Promise<Response>;
 }
 
+/** The part of env.BROWSER this module uses: Browser Run Quick Actions. */
+export interface PageRunner {
+  quickAction(action: string, options: Record<string, unknown>): Promise<Response>;
+}
+
+/** Read a page for the workspace: POST /page on AI_HOST. `cf-opencode-fetch` in the image calls it. */
+export const PAGE_PATH = "/page";
+/** format in the request → Quick Action, and whether the answer is a JSON envelope with a `result`. */
+const PAGE_FORMATS: Record<string, { action: string; envelope: boolean; type: string }> = {
+  markdown: { action: "markdown", envelope: true, type: "text/markdown; charset=utf-8" },
+  html: { action: "content", envelope: true, type: "text/html; charset=utf-8" },
+  links: { action: "links", envelope: true, type: "application/json" },
+  screenshot: { action: "screenshot", envelope: false, type: "image/png" },
+  pdf: { action: "pdf", envelope: false, type: "application/pdf" },
+};
+
 /** Web search for the workspace: POST /search on AI_HOST. `cf-opencode-search` in the image calls it. */
 export const SEARCH_PATH = "/search";
 export const SEARCH_MAX_QUERY = 1024;
@@ -59,8 +75,10 @@ export async function handleAi(
   ai: AiRunner | undefined,
   gateway: string,
   searchProvider?: string,
+  browser?: PageRunner,
 ): Promise<Response> {
   const path = new URL(req.url).pathname;
+  if (req.method === "POST" && path === PAGE_PATH) return handlePage(req, browser);
   if (!ai) return aiError(503, "the Worker has no AI binding; redeploy with cf-opencode init");
   if (req.method === "POST" && path === SEARCH_PATH) return handleSearch(req, ai, gateway, searchProvider);
   if (req.method !== "POST" || !PATHS.has(path)) return aiError(404, `no AI route ${req.method} ${path}`);
@@ -128,6 +146,47 @@ async function handleSearch(
     return new Response(text, { headers: { "content-type": "application/json" } });
   } catch (e) {
     return aiError(502, `web search failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+/**
+ * One page through Browser Run Quick Actions: a real browser loads the URL, so pages that need JavaScript
+ * work. Body: { url, format? }. format is markdown (default), html, links, screenshot or pdf. Text formats
+ * come back as the text itself; screenshot and pdf as the file. Bills to the account's Browser Run usage.
+ */
+async function handlePage(req: Request, browser: PageRunner | undefined): Promise<Response> {
+  if (!browser?.quickAction)
+    return aiError(503, "the Worker has no Browser Run binding; run cf-opencode upgrade");
+  let body: Record<string, unknown>;
+  try {
+    body = (await req.json()) as Record<string, unknown>;
+  } catch {
+    return aiError(400, "the request body is not JSON");
+  }
+  let url: URL;
+  try {
+    url = new URL(typeof body.url === "string" ? body.url : "");
+  } catch {
+    return aiError(400, "the request needs a full URL, such as https://example.com/page");
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:")
+    return aiError(400, "only http and https URLs can be read");
+  const format = PAGE_FORMATS[typeof body.format === "string" ? body.format : "markdown"];
+  if (!format) return aiError(400, `format must be one of: ${Object.keys(PAGE_FORMATS).join(", ")}`);
+  try {
+    const res = await browser.quickAction(format.action, {
+      url: url.toString(),
+      gotoOptions: { waitUntil: "networkidle2", timeout: 30_000 },
+    });
+    if (!res.ok) return aiError(502, `the page was not read: ${(await res.text()).slice(0, 300)}`);
+    if (!format.envelope) return new Response(res.body, { headers: { "content-type": format.type } });
+    const data = (await res.json()) as { success?: boolean; result?: unknown; errors?: unknown };
+    if (data.success === false || data.result === undefined)
+      return aiError(502, `the page was not read: ${JSON.stringify(data.errors ?? data).slice(0, 300)}`);
+    const out = typeof data.result === "string" ? data.result : JSON.stringify(data.result);
+    return new Response(out, { headers: { "content-type": format.type } });
+  } catch (e) {
+    return aiError(502, `the page was not read: ${e instanceof Error ? e.message : String(e)}`);
   }
 }
 

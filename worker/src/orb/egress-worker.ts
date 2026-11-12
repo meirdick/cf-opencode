@@ -4,7 +4,7 @@ import { WorkerEntrypoint } from "cloudflare:workers";
 import { parseConfig } from "../core/config";
 import type { EgressRoute } from "../core/container-port";
 import type { Env } from "../env";
-import { type AiRunner, handleAi } from "./ai";
+import { type AiRunner, handleAi, type PageRunner } from "./ai";
 import { rewriteEgress } from "./egress";
 
 interface EgressProps {
@@ -37,6 +37,7 @@ export class AiEgress extends WorkerEntrypoint<Env, { gateway: string }> {
       this.env.AI as unknown as AiRunner | undefined,
       this.ctx.props.gateway,
       searchProvider,
+      this.env.BROWSER as unknown as PageRunner | undefined,
     );
   }
 }

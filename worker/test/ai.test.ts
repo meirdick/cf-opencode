@@ -165,3 +165,66 @@ describe("web search (POST /search)", () => {
     expect(JSON.stringify(await res.json())).toContain("gateway timeout");
   });
 });
+
+describe("read a page (POST /page)", () => {
+  function pages(answer: () => Response | Promise<Response>) {
+    const calls: { action: string; options: Record<string, unknown> }[] = [];
+    const browser = {
+      quickAction: async (action: string, options: Record<string, unknown>) => {
+        calls.push({ action, options });
+        return answer();
+      },
+    };
+    return { browser, calls };
+  }
+  const page = (body: unknown, browser?: Parameters<typeof handleAi>[4]) =>
+    handleAi(post("/page", body), undefined, "default", undefined, browser);
+
+  it("returns the page as Markdown by default, without the JSON envelope, and needs no AI binding", async () => {
+    const { browser, calls } = pages(() => Response.json({ success: true, result: "# Title\n\ntext" }));
+    const res = await page({ url: "https://example.com/a" }, browser);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("text/markdown");
+    expect(await res.text()).toBe("# Title\n\ntext");
+    expect(calls[0]?.action).toBe("markdown");
+    expect(calls[0]?.options.url).toBe("https://example.com/a");
+  });
+
+  it("maps each format to its Quick Action, and passes a file through as bytes", async () => {
+    const links = pages(() =>
+      Response.json({ success: true, result: ["https://a.example/", "https://b.example/"] }),
+    );
+    const res = await page({ url: "https://example.com", format: "links" }, links.browser);
+    expect(await res.json()).toEqual(["https://a.example/", "https://b.example/"]);
+    expect(links.calls[0]?.action).toBe("links");
+
+    const html = pages(() => Response.json({ success: true, result: "<p>x</p>" }));
+    await page({ url: "https://example.com", format: "html" }, html.browser);
+    expect(html.calls[0]?.action).toBe("content");
+
+    const shot = pages(
+      () => new Response(new Uint8Array([137, 80, 78, 71]), { headers: { "content-type": "image/png" } }),
+    );
+    const png = await page({ url: "https://example.com", format: "screenshot" }, shot.browser);
+    expect(png.headers.get("content-type")).toBe("image/png");
+    expect(new Uint8Array(await png.arrayBuffer())).toEqual(new Uint8Array([137, 80, 78, 71]));
+  });
+
+  it("refuses a bad URL or format, and reports a page that Browser Run did not read", async () => {
+    const { browser, calls } = pages(() => Response.json({ success: true, result: "x" }));
+    expect((await page({ url: "not a url" }, browser)).status).toBe(400);
+    expect((await page({ url: "file:///etc/passwd" }, browser)).status).toBe(400);
+    expect((await page({ url: "https://example.com", format: "video" }, browser)).status).toBe(400);
+    expect(calls).toHaveLength(0);
+
+    expect((await page({ url: "https://example.com" })).status).toBe(503);
+    const failed = pages(() =>
+      Response.json({ success: false, errors: [{ message: "net::ERR_NAME_NOT_RESOLVED" }] }),
+    );
+    const res = await page({ url: "https://nope.invalid" }, failed.browser);
+    expect(res.status).toBe(502);
+    expect(JSON.stringify(await res.json())).toContain("ERR_NAME_NOT_RESOLVED");
+    const down = pages(() => new Response("rate limited", { status: 429 }));
+    expect((await page({ url: "https://example.com" }, down.browser)).status).toBe(502);
+  });
+});

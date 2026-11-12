@@ -1,6 +1,6 @@
 ---
 title: Web search and browsing
-description: Search the web with cf-opencode-search and open a browser with cf-opencode-browse, both through the Worker's bindings.
+description: Search the web, read a page and open a browser from a workspace, through the bindings of the Worker.
 sidebar:
   order: 3
 ---
@@ -28,6 +28,26 @@ The Worker runs the search with the Cloudflare Web Search API, through its AI bi
 The notes that the agent reads tell it to use this command. OpenCode also has its own web search tool. That tool uses the provider of OpenCode, not your Cloudflare account.
 
 A search with no credits on the account fails with a `Failed:` line. Add AI Gateway credits in the Cloudflare dashboard.
+
+## Read a page
+
+Run `cf-opencode-fetch` inside the workspace:
+
+```sh
+cf-opencode-fetch https://developers.cloudflare.com/containers/
+```
+
+It prints the page as Markdown. The Worker loads the page in a real browser with Browser Run Quick Actions, so a page that needs JavaScript works.
+
+| Flag | Effect |
+| --- | --- |
+| `--links` | Print the links on the page, one for each line. |
+| `--html` | Print the rendered HTML. |
+| `--screenshot <file>` | Save a screenshot as a PNG file. |
+| `--pdf <file>` | Save the page as a PDF file. |
+| `--max-chars <n>` | Cut the text after `n` characters. The default is 60000. `0` prints all. |
+
+Each call uses a new browser and closes it. It bills to the Browser Run usage of your account. Use a browser session when you must click, type or stay logged in.
 
 ## Browser
 

@@ -4,6 +4,8 @@
 
 - `cf-opencode-search` in the workspace: web search through the account's AI binding and AI Gateway, with no
   key. Setting `searchProvider` (default `exa`).
+- `cf-opencode-fetch` in the workspace: a page as Markdown, links, HTML, a screenshot or a PDF, through the
+  Browser Run binding.
 - The image has the Python `websocket` module, for the browser session's Chrome DevTools Protocol.
 
 ## 0.1.0 (2026-11-12)

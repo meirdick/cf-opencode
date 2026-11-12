@@ -329,6 +329,14 @@ credits at the provider's price. The provider is `exa` unless `searchProvider`
 in the settings file names another (`linkup`, `ceramic`). OpenCode's own web
 search tool still exists and goes to OpenCode's provider, not to your account.
 
+## Read a page
+
+`cf-opencode-fetch <url>` in the workspace prints a page as Markdown. The
+Worker loads the page in a real browser with Browser Run Quick Actions, so pages
+that need JavaScript work. `--links` lists the links, `--html` prints the
+rendered HTML, and `--screenshot <file>` and `--pdf <file>` save a file. It
+bills to your account's Browser Run usage.
+
 ## Browsing
 
 A workspace browses through [Browser Run](https://developers.cloudflare.com/browser-run/),
