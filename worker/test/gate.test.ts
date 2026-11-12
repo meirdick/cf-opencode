@@ -95,6 +95,36 @@ describe("workspace gate", () => {
   });
 });
 
+describe("cross-site requests", () => {
+  const browserRoutes = ROUTES.filter(([p]) => !p.startsWith("/oc/"));
+
+  it("a page on another site cannot open a terminal or a browser, even with the password", async () => {
+    const { env, getByName } = envWithStub();
+    const pw = await workspacePassword(TOKEN, "demo");
+    for (const origin of ["https://evil.example", "null", "http://w.example", "https://w.example:8443"]) {
+      for (const [path, init] of browserRoutes) {
+        const r = req(path, { ...init, headers: { ...(init.headers as object), origin } }, basic(pw));
+        const res = await handleApi(r, env);
+        expect(res.status, `${origin} ${path}`).toBe(403);
+      }
+    }
+    expect(getByName).not.toHaveBeenCalled();
+  });
+
+  it("no Origin (the CLI, ssh, curl) and the Worker's own origin pass", async () => {
+    const { env, getByName } = envWithStub();
+    const pw = await workspacePassword(TOKEN, "demo");
+    for (const origin of [undefined, "https://w.example"]) {
+      for (const [path, init] of [browserRoutes[0], browserRoutes[2]] as [string, RequestInit][]) {
+        const headers = { ...(init.headers as object), ...(origin ? { origin } : {}) };
+        const res = await handleApi(req(path, { ...init, headers }, basic(pw)), env);
+        expect(res.status, `${origin} ${path}`).not.toBe(403);
+      }
+    }
+    expect(getByName).toHaveBeenCalled();
+  });
+});
+
 describe("control API spawn password", () => {
   const spawn = (password: string) =>
     new Request("https://w.example/v1/workspaces/demo/ops", {

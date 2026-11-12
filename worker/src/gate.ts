@@ -35,12 +35,32 @@ export async function isWorkspacePassword(
   return timingSafeEqualStr(password, await workspacePassword(controlToken, id));
 }
 
-/** The Basic password of a request for workspace `id`, or the 401 to answer with. */
+/**
+ * True when a browser on another site sent this request. A browser always sends Origin on a websocket and on a
+ * cross-site POST, and it can attach Basic credentials it has cached for this Worker. The CLI, ssh, curl and
+ * CDP clients send no Origin. "null" (a sandboxed page, a file) is cross-site too.
+ */
+export function crossOrigin(req: Request): boolean {
+  const origin = req.headers.get("origin");
+  return origin !== null && origin !== new URL(req.url).origin;
+}
+
+/**
+ * The Basic password of a request for workspace `id`, or the response to refuse it with. `sameOriginOnly`
+ * also refuses a request from another site's page: /shell, /ssh and /browse have no browser client.
+ */
 export async function workspaceGate(
   req: Request,
   env: { CONTROL_TOKEN?: string },
   id: string,
+  opts: { sameOriginOnly?: boolean } = {},
 ): Promise<{ password: string } | Response> {
+  if (opts.sameOriginOnly && crossOrigin(req)) {
+    return Response.json(
+      { error: "Failed: a page on another site cannot open this — fix: use the cf-opencode CLI" },
+      { status: 403 },
+    );
+  }
   const password = basicPassword(req.headers.get("authorization"));
   if (!(await isWorkspacePassword(env.CONTROL_TOKEN, id, password))) return unauthorized();
   return { password: password as string };

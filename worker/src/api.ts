@@ -274,7 +274,7 @@ async function browseIngress(req: Request, env: Env): Promise<Response> {
   const id = decodeSegment(parts[1] ?? "");
   if (!id || !WORKSPACE_ID_RE.test(id) || parts.length > 3)
     return fail(400, "bad workspace id", "use letters, digits, _ and -");
-  const gate = await workspaceGate(req, env, id);
+  const gate = await workspaceGate(req, env, id, { sameOriginOnly: true });
   if (gate instanceof Response) return gate;
   const { password } = gate;
   const session = sessionOf(env, id);
@@ -319,7 +319,7 @@ async function terminalIngress(
 ): Promise<Response> {
   const id = decodeSegment(seg);
   if (!id || !WORKSPACE_ID_RE.test(id)) return fail(400, "bad workspace id", "use letters, digits, _ and -");
-  const gate = await workspaceGate(req, env, id);
+  const gate = await workspaceGate(req, env, id, { sameOriginOnly: true });
   if (gate instanceof Response) return gate;
   const { password } = gate;
   const url = new URL(req.url);

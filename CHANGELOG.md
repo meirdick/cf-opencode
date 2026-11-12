@@ -16,6 +16,9 @@
   token, so the check needs no state. The control API refuses a spawn with any other password.
 - Every refused password gets the same 401 body, from the Worker and from the Durable Object. It names no
   workspace, and a deleted workspace answers 410 only to the holder of its password.
+- `/shell`, `/ssh` and `/browse` refuse a request whose `Origin` is another site, so a web page cannot use
+  Basic credentials a browser cached for the Worker. Clients that send no `Origin` (the CLI, ssh, curl) and
+  the Worker's own origin still work.
 
 - Two `connect`s in flight with different inputs no longer share one op. The op journal hashed a field the
   API never sends, so the second caller could attach to the first one's spawn and get its password.
