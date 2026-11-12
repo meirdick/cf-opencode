@@ -111,6 +111,13 @@ the user has to make: the AI binding for models (Workers AI, and third-party
 models through AI Gateway with Unified Billing), the Browser Run binding for
 browsing. A secret is the fallback for what has no binding, never the default.
 
+## Web search
+
+`cf-opencode-search` in the workspace posts to the same intercepted host as the models. The Worker runs
+`env.AI.websearch()` through the install's AI Gateway. It follows the binding rule: no key, billed to the
+account. The default provider is `exa`: for a technical query, `exa` and `linkup` returned the documentation
+pages and `ceramic` did not (checked 2026-11-12).
+
 ## Browsing
 
 `cf-opencode browse <workspace>` opens a Browser Run session and prints its

@@ -104,8 +104,10 @@ You run in a cf-opencode workspace: a Debian container on Cloudflare, owned by t
 - Tools: \`sudo apt-get install <package>\` works without a password. Installed packages stay on the disk.
 - GitHub: \`git clone\`, \`pull\`, \`push\` and \`gh\` work for the user's repositories. Do not ask for a token
   and do not run \`gh auth login\`; the credential is added outside this machine.
+- Web search: run \`cf-opencode-search "<query>"\` (\`-n 10\` for more results, \`--json\` for the raw answer).
+  Use it for web searches; it runs on the user's Cloudflare account. Read a result's page with your fetch tool.
 - Browser: no browser is installed. Run \`cf-opencode-browse\` to open a remote browser session. It prints a
-  Chrome DevTools Protocol websocket URL and how to connect.
+  Chrome DevTools Protocol websocket URL and how to connect. Python has the \`websocket\` module for it.
 - The disk is saved when the workspace is idle. Processes do not survive that; files do.
 CF_OPENCODE_NOTES
 fi

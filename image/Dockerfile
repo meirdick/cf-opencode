@@ -26,6 +26,7 @@ RUN apt-get update \
       git \
       bash \
       python3 \
+      python3-websocket \
       procps \
       sudo \
       tmux \
@@ -75,8 +76,10 @@ RUN printf '%s\n' 'export GH_TOKEN="${GH_TOKEN:-cf-opencode-egress}"' > /etc/pro
 # has no CA file, and the copy is skipped.
 COPY entrypoint.sh /usr/local/bin/cf-opencode-entrypoint
 COPY browse.sh /usr/local/bin/cf-opencode-browse
+COPY search.sh /usr/local/bin/cf-opencode-search
 COPY opencode.sh /usr/local/bin/opencode
-RUN chmod 755 /usr/local/bin/cf-opencode-entrypoint /usr/local/bin/cf-opencode-browse /usr/local/bin/opencode
+RUN chmod 755 /usr/local/bin/cf-opencode-entrypoint /usr/local/bin/cf-opencode-browse \
+      /usr/local/bin/cf-opencode-search /usr/local/bin/opencode
 
 # Stay root. The entrypoint trusts the egress CA, which only root can install, and the
 # Worker starts opencode serve with `user: 1000:1000`. A root entrypoint is what the

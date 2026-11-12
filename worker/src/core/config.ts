@@ -47,6 +47,11 @@ export function parseConfig(raw: string | undefined): ProviderConfig {
       "Failed: ai must be true or false — fix: set it in ~/.cf-opencode/config.json, then cf-opencode upgrade",
     );
   }
+  if (typeof cfg.searchProvider !== "string" || !/^[a-z0-9][a-z0-9._-]{0,31}$/.test(cfg.searchProvider)) {
+    throw new Error(
+      "Failed: searchProvider must be a provider name such as exa — fix: set it in ~/.cf-opencode/config.json, then cf-opencode upgrade",
+    );
+  }
   if (typeof cfg.aiGateway !== "string" || !/^[a-z0-9][a-z0-9_-]{0,63}$/.test(cfg.aiGateway)) {
     throw new Error(
       "Failed: aiGateway must be a gateway name such as default — fix: set it in ~/.cf-opencode/config.json, then cf-opencode upgrade",
@@ -87,6 +92,7 @@ function pick(o: Record<string, unknown>): Partial<ProviderConfig> {
   if (o.ai !== undefined) out.ai = o.ai as boolean;
   if (o.aiGateway !== undefined) out.aiGateway = o.aiGateway as string;
   if (o.model !== undefined) out.model = o.model as string;
+  if (o.searchProvider !== undefined) out.searchProvider = o.searchProvider as string;
   return out;
 }
 

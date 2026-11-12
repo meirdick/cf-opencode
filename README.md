@@ -314,6 +314,21 @@ Worker passed any password through: a request to a paused workspace with a made-
 password woke it and started OpenCode with that password, which handed the
 workspace to whoever sent it, and `/browse` opened billed sessions for anyone.
 
+## Web search
+
+A workspace searches the web with Cloudflare's
+[Web Search API](https://developers.cloudflare.com/web-search/), through the
+Worker's AI binding and your AI Gateway. There is no key. Inside the workspace:
+
+```sh
+cf-opencode-search "cloudflare containers snapshots"   # -n 10 for more, --json for the raw answer
+```
+
+The agent's notes tell it to use this command. Searches bill to your AI Gateway
+credits at the provider's price. The provider is `exa` unless `searchProvider`
+in the settings file names another (`linkup`, `ceramic`). OpenCode's own web
+search tool still exists and goes to OpenCode's provider, not to your account.
+
 ## Browsing
 
 A workspace browses through [Browser Run](https://developers.cloudflare.com/browser-run/),

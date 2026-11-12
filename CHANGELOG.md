@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- `cf-opencode-search` in the workspace: web search through the account's AI binding and AI Gateway, with no
+  key. Setting `searchProvider` (default `exa`).
+- The image has the Python `websocket` module, for the browser session's Chrome DevTools Protocol.
+
 ## 0.1.0 (2026-11-12)
 
 First release. One package, `cf-opencode`: the CLI. It carries the Worker source and the workspace image,

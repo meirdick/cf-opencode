@@ -98,3 +98,70 @@ describe("opencodeConfig", () => {
     expect(JSON.parse(opencodeConfig(undefined))).not.toHaveProperty("model");
   });
 });
+
+describe("web search (POST /search)", () => {
+  function searcher(
+    answer: Response | Error = Response.json({ items: [{ title: "t", url: "https://e.example" }] }),
+  ) {
+    const calls: unknown[] = [];
+    const ai: AiRunner = {
+      run: async () => ({}),
+      websearch: async (input) => {
+        calls.push(input);
+        if (answer instanceof Error) throw answer;
+        return answer;
+      },
+    };
+    return { ai, calls };
+  }
+
+  it("runs the query through the install's gateway and returns Cloudflare's JSON", async () => {
+    const { ai, calls } = searcher();
+    const res = await handleAi(post("/search", { query: " opencode on workers ", limit: 3 }), ai, "gw1");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ items: [{ title: "t", url: "https://e.example" }] });
+    expect(calls).toEqual([{ gatewayId: "gw1", query: "opencode on workers", limit: 3 }]);
+  });
+
+  it("keeps the limit from 1 to 10, default 5, and passes a provider when named", async () => {
+    const { ai, calls } = searcher();
+    await handleAi(post("/search", { query: "a" }), ai, "default");
+    await handleAi(post("/search", { query: "a", limit: 99, provider: "exa" }), ai, "default");
+    await handleAi(post("/search", { query: "a", limit: 0 }), ai, "default");
+    expect(calls).toEqual([
+      { gatewayId: "default", query: "a", limit: 5 },
+      { gatewayId: "default", query: "a", limit: 10, provider: "exa" },
+      { gatewayId: "default", query: "a", limit: 1 },
+    ]);
+  });
+
+  it("uses the install's provider unless the request names one", async () => {
+    const { ai, calls } = searcher();
+    await handleAi(post("/search", { query: "a" }), ai, "default", "exa");
+    await handleAi(post("/search", { query: "a", provider: "linkup" }), ai, "default", "exa");
+    expect(calls).toEqual([
+      { gatewayId: "default", query: "a", limit: 5, provider: "exa" },
+      { gatewayId: "default", query: "a", limit: 5, provider: "linkup" },
+    ]);
+  });
+
+  it("refuses a missing or long query, and says what to do when search is not there or fails", async () => {
+    const { ai } = searcher();
+    expect((await handleAi(post("/search", {}), ai, "default")).status).toBe(400);
+    expect((await handleAi(post("/search", { query: "x".repeat(1025) }), ai, "default")).status).toBe(400);
+    expect(
+      (await handleAi(post("/search", { query: "a", provider: "Bad Name" }), ai, "default")).status,
+    ).toBe(400);
+
+    const old = await handleAi(post("/search", { query: "a" }), { run: async () => ({}) }, "default");
+    expect(old.status).toBe(501);
+    expect(JSON.stringify(await old.json())).toContain("cf-opencode upgrade");
+
+    const noCredit = searcher(new Response("no credits", { status: 402 }));
+    expect((await handleAi(post("/search", { query: "a" }), noCredit.ai, "default")).status).toBe(402);
+    const down = searcher(new Error("gateway timeout"));
+    const res = await handleAi(post("/search", { query: "a" }), down.ai, "default");
+    expect(res.status).toBe(502);
+    expect(JSON.stringify(await res.json())).toContain("gateway timeout");
+  });
+});

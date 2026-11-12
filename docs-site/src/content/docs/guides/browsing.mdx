@@ -1,9 +1,35 @@
 ---
-title: Browsing
-description: Give a workspace a browser through the Worker's Browser Run binding with browse and cf-opencode-browse.
+title: Web search and browsing
+description: Search the web with cf-opencode-search and open a browser with cf-opencode-browse, both through the Worker's bindings.
 sidebar:
   order: 3
 ---
+
+A workspace searches the web and opens a browser through the Worker's bindings. You create no key and no token.
+
+## Web search
+
+Run `cf-opencode-search` inside the workspace:
+
+```sh
+cf-opencode-search "cloudflare containers snapshots"
+```
+
+It prints a numbered list. Each result has a title, a URL and a short description.
+
+| Flag | Effect |
+| --- | --- |
+| `-n <1..10>` | The number of results. The default is 5. |
+| `--provider <name>` | The search provider for this search: `exa`, `linkup` or `ceramic`. |
+| `--json` | Print the answer of the Web Search API as JSON. |
+
+The Worker runs the search with the Cloudflare Web Search API, through its AI binding and your AI Gateway. Searches bill to your AI Gateway credits at the price of the provider. The default provider is `exa`. To change it, set `searchProvider` in `~/.cf-opencode/config.json` and run `cf-opencode upgrade`.
+
+The notes that the agent reads tell it to use this command. OpenCode also has its own web search tool. That tool uses the provider of OpenCode, not your Cloudflare account.
+
+A search with no credits on the account fails with a `Failed:` line. Add AI Gateway credits in the Cloudflare dashboard.
+
+## Browser
 
 A workspace browses through Browser Run. The Worker has a Browser Run binding. You create no token. Browser sessions bill to the account that owns the Worker.
 

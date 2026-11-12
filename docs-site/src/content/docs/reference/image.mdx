@@ -14,7 +14,7 @@ The workspace image is small on purpose. It is Debian bookworm-slim with a few t
 | OpenCode 2.2.7 | Installed from the official installer. `opencode` on the PATH adds the model config, then runs the real binary. |
 | `git` | |
 | `gh` | The GitHub CLI. It reads `GH_TOKEN`, which holds a placeholder. |
-| `python3` | |
+| `python3` | With the `websocket` module, for the Chrome DevTools Protocol of a browser session. |
 | `curl` | |
 | `ripgrep` | The command `rg`. |
 | `jq` | |
@@ -25,7 +25,8 @@ The workspace image is small on purpose. It is Debian bookworm-slim with a few t
 | `sudo` | `user` has passwordless `sudo`. |
 | `tini` | PID 1. |
 | `bash`, `procps`, `ca-certificates`, `libnss-myhostname` | Base tools. |
-| `cf-opencode-browse` | The command that opens a browser session. See [Browsing](/guides/browsing/). |
+| `cf-opencode-browse` | The command that opens a browser session. See [Web search and browsing](/guides/browsing/). |
+| `cf-opencode-search` | The command that searches the web. See [Web search and browsing](/guides/browsing/). |
 
 ## Not installed
 

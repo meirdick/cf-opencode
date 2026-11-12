@@ -18,7 +18,20 @@ export const AI_PLACEHOLDER = "cf-opencode-egress";
 /** The part of env.AI this module uses. */
 export interface AiRunner {
   run(model: string, input: Record<string, unknown>, options: { gateway: { id: string } }): Promise<unknown>;
+  /** Cloudflare Web Search API, through AI Gateway. Absent on a runtime from before it existed. */
+  websearch?(input: {
+    gatewayId: string;
+    query: string;
+    limit: number;
+    provider?: string;
+  }): Promise<Response>;
 }
+
+/** Web search for the workspace: POST /search on AI_HOST. `cf-opencode-search` in the image calls it. */
+export const SEARCH_PATH = "/search";
+export const SEARCH_MAX_QUERY = 1024;
+export const SEARCH_MAX_RESULTS = 10;
+const SEARCH_PROVIDER_RE = /^[a-z0-9][a-z0-9._-]{0,31}$/;
 
 /** The three request shapes OpenCode's Cloudflare providers send. */
 const PATHS = new Set(["/v1/chat/completions", "/v1/messages", "/v1/responses"]);
@@ -41,9 +54,15 @@ export function opencodeConfig(model: string | undefined): string {
 }
 
 /** Handle one intercepted request. */
-export async function handleAi(req: Request, ai: AiRunner | undefined, gateway: string): Promise<Response> {
+export async function handleAi(
+  req: Request,
+  ai: AiRunner | undefined,
+  gateway: string,
+  searchProvider?: string,
+): Promise<Response> {
   const path = new URL(req.url).pathname;
   if (!ai) return aiError(503, "the Worker has no AI binding; redeploy with cf-opencode init");
+  if (req.method === "POST" && path === SEARCH_PATH) return handleSearch(req, ai, gateway, searchProvider);
   if (req.method !== "POST" || !PATHS.has(path)) return aiError(404, `no AI route ${req.method} ${path}`);
   let body: Record<string, unknown>;
   try {
@@ -74,6 +93,42 @@ export async function handleAi(req: Request, ai: AiRunner | undefined, gateway: 
   }
   if (out instanceof Response) return out;
   return Response.json(out);
+}
+
+/**
+ * One web search through the account's AI Gateway. Body: { query, limit?, provider? }. The answer is
+ * Cloudflare's JSON as it is. Searches bill to the account's AI Gateway credits; no key is in the workspace.
+ */
+async function handleSearch(
+  req: Request,
+  ai: AiRunner,
+  gateway: string,
+  defaultProvider?: string,
+): Promise<Response> {
+  let body: Record<string, unknown>;
+  try {
+    body = (await req.json()) as Record<string, unknown>;
+  } catch {
+    return aiError(400, "the request body is not JSON");
+  }
+  const query = typeof body.query === "string" ? body.query.trim() : "";
+  if (!query) return aiError(400, "the request has no query");
+  if (query.length > SEARCH_MAX_QUERY)
+    return aiError(400, `the query is longer than ${SEARCH_MAX_QUERY} characters`);
+  const asked = typeof body.limit === "number" && Number.isFinite(body.limit) ? Math.floor(body.limit) : 5;
+  const limit = Math.min(SEARCH_MAX_RESULTS, Math.max(1, asked));
+  const provider = typeof body.provider === "string" && body.provider ? body.provider : defaultProvider;
+  if (provider && !SEARCH_PROVIDER_RE.test(provider)) return aiError(400, "bad search provider name");
+  if (!ai.websearch)
+    return aiError(501, "this Worker's AI binding has no web search; run cf-opencode upgrade");
+  try {
+    const res = await ai.websearch({ gatewayId: gateway, query, limit, ...(provider ? { provider } : {}) });
+    const text = await res.text();
+    if (!res.ok) return aiError(res.status === 402 ? 402 : 502, `web search failed: ${text.slice(0, 300)}`);
+    return new Response(text, { headers: { "content-type": "application/json" } });
+  } catch (e) {
+    return aiError(502, `web search failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
 }
 
 /** An error both the OpenAI and Anthropic SDKs show as a message. */

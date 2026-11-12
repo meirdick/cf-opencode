@@ -197,6 +197,8 @@ export interface ProviderConfig {
   aiGateway: string;
   /** OpenCode's default model, provider/model. Empty: OpenCode chooses. */
   model: string;
+  /** Web Search API provider for cf-opencode-search: exa, linkup or ceramic. */
+  searchProvider: string;
   /**
    * A stopped workspace's snapshot expires 30 days after its creation or last restore. This many days before
    * that, the alarm restores it briefly (no opencode, no internet) to start a new 30 days. 0: let it expire.
@@ -219,6 +221,8 @@ export const DEFAULT_CONFIG: ProviderConfig = {
   lockdown: false,
   ai: true,
   aiGateway: "default",
+  // exa and linkup found the documentation pages for a technical query; ceramic did not (checked 2026-11-12).
+  searchProvider: "exa",
   model: "cloudflare-workers-ai/@cf/zai-org/glm-5.3",
   snapshotRefreshDays: 3,
 };
