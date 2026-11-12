@@ -3,7 +3,7 @@
 import type { ControlClient, RemoteTask, TaskResult, TaskState } from "./api.js";
 import { CliError, toFailedLine } from "./errors.js";
 import { renderResult, resultOf } from "./task-result.js";
-import { fmtAge, table } from "./ui.js";
+import { fmtAge, table, terminalSafe } from "./ui.js";
 
 export interface TaskRow extends RemoteTask {
   workspace: string;
@@ -89,7 +89,7 @@ export function renderTasks(r: TasksResult, now = Date.now(), o: { unseen?: bool
       `Not running, states from the last refresh: ${saved.map((w) => `${w.id} (${fmtAge(w.at, now)})`).join(", ")}`,
     );
   for (const w of r.workspaces.filter((x) => x.error)) lines.push(`! ${w.id}: ${w.error}`);
-  return lines.join("\n");
+  return terminalSafe(lines.join("\n"));
 }
 
 export function renderTask(v: TaskView, now = Date.now()): string {

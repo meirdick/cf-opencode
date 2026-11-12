@@ -5,7 +5,7 @@ import { join } from "node:path";
 import type { ControlClient, RemoteSession } from "./api.js";
 import { readWorkspace, stateDir } from "./config.js";
 import { toFailedLine } from "./errors.js";
-import { fmtAge, table } from "./ui.js";
+import { fmtAge, table, terminalSafe } from "./ui.js";
 
 export interface SessionRow extends RemoteSession {
   workspace: string;
@@ -83,5 +83,5 @@ export function renderSessions(r: SessionsResult, now = Date.now()): string {
   if (none.length > 0)
     lines.push(`No list saved yet (it is saved on each pause): ${none.map((w) => w.id).join(", ")}`);
   for (const w of r.workspaces.filter((x) => x.error)) lines.push(`! ${w.id}: ${w.error}`);
-  return lines.join("\n");
+  return terminalSafe(lines.join("\n"));
 }

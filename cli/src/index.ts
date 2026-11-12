@@ -23,7 +23,7 @@ import { openInBrowser, preview } from "./preview.js";
 import { listSessions, localWorkspaceIds, renderSessions } from "./sessions.js";
 import { notifyKeyCommand, runCommand, skillCommand, tasksCommand } from "./task-commands.js";
 import { forgetHostKey, shell, ssh, sshConfigBlock, sshKey, sshProxy, target } from "./terminal.js";
-import { fmtAge, makeUi, readSecret } from "./ui.js";
+import { fmtAge, makeUi, readSecret, terminalSafe } from "./ui.js";
 import { runProcess } from "./wrangler.js";
 
 const VERSION = "0.1.0";
@@ -562,7 +562,8 @@ export async function main(argv: string[]): Promise<number> {
   } catch (e) {
     if (flagBool(args, "json"))
       process.stdout.write(`${JSON.stringify({ ok: false, error: toFailedLine(e) })}\n`);
-    else process.stderr.write(`${toFailedLine(e)}\n`);
+    // An error can quote the workspace (a clone error, OpenCode's answer).
+    else process.stderr.write(`${terminalSafe(toFailedLine(e))}\n`);
     return 1;
   }
 }
@@ -580,7 +581,7 @@ async function connectCommand(args: ParsedArgs): Promise<number> {
     attach: !flagBool(args, "no-attach"),
     continueLast: flagBool(args, "continue"),
     ...(flagString(args, "session") ? { session: flagString(args, "session") } : {}),
-    onLine: (line) => process.stderr.write(`${line}\n`),
+    onLine: (line) => process.stderr.write(`${terminalSafe(line)}\n`),
   });
   if (flagBool(args, "json") || flagBool(args, "no-attach")) {
     process.stdout.write(
@@ -656,7 +657,9 @@ async function logsCommand(args: ParsedArgs): Promise<number> {
   const { url, token } = requireInstall(args);
   const lines = Number(flagString(args, "lines") ?? "100");
   const { log } = await new ControlClient(url, token).logs(id, lines);
-  process.stdout.write(log.endsWith("\n") ? log : `${log}\n`);
+  // The log tail is the workspace's own output.
+  const safe = terminalSafe(log);
+  process.stdout.write(safe.endsWith("\n") ? safe : `${safe}\n`);
   return 0;
 }
 
@@ -669,7 +672,7 @@ async function opCommand(args: ParsedArgs, op: "pause" | "delete" | "rebuild"): 
   const body: Record<string, unknown> = { op };
   if ((op === "pause" || op === "delete") && local?.snapshotId) body.snapshotId = local.snapshotId;
   const { opId } = await client.submit(id, body);
-  const result = await client.wait(opId, (line) => process.stderr.write(`${line}\n`));
+  const result = await client.wait(opId, (line) => process.stderr.write(`${terminalSafe(line)}\n`));
   if (result.phase === "failed") throw new CliError(result.error ?? `${op} failed`, `cf-opencode logs ${id}`);
   if (op === "delete") {
     // A deleted workspace leaves cf-opencode list; its password is derived, so nothing is lost.

@@ -22,6 +22,16 @@ export function makeUi(json: boolean): Ui {
   };
 }
 
+/**
+ * Text from a workspace, made safe for a terminal. Task titles and summaries, branch names, commit subjects, file
+ * names, events, session titles and logs come from the agent or a repository. An escape sequence in them could set
+ * the window title, write the clipboard (OSC 52) or rewrite earlier lines. Newline and tab stay; every other C0 and
+ * C1 control, DEL and the bidi overrides become "?". JSON output needs none of this: JSON.stringify escapes C0.
+ */
+export function terminalSafe(s: string): string {
+  return s.replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f‪-‮⁦-⁩]/g, "?");
+}
+
 /** Plain text table, columns sized to content. */
 export function table(headers: string[], rows: string[][]): string {
   const widths = headers.map((h, i) => Math.max(h.length, ...rows.map((r) => (r[i] ?? "").length)));

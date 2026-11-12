@@ -8,6 +8,7 @@
 import type { ControlClient } from "./api.js";
 import { CliError, toFailedLine } from "./errors.js";
 import { type TaskView, WAIT_TIMEOUT_MS, WaitTimeout, waitTask } from "./tasks.js";
+import { terminalSafe } from "./ui.js";
 
 /** One normalized event: what --follow --json prints, one per line. */
 export interface FollowEvent {
@@ -17,6 +18,10 @@ export interface FollowEvent {
   [key: string]: unknown;
 }
 
+/** A longer line is dropped, and a message part keeps this much text: the stream is the workspace's. */
+const MAX_SSE_LINE = 4 * 1024 * 1024;
+const MAX_PART_TEXT = 64 * 1024;
+
 /** Incremental parser for text/event-stream. Feed it chunks; it returns the complete events. */
 export class SseParser {
   private buf = "";
@@ -25,6 +30,8 @@ export class SseParser {
 
   push(chunk: string): { event?: string; data: string }[] {
     this.buf += chunk;
+    // The stream is the workspace's; a line with no end must not grow without bound.
+    if (this.buf.length > MAX_SSE_LINE) this.buf = "";
     const out: { event?: string; data: string }[] = [];
     for (let nl = this.buf.search(/\r?\n/); nl >= 0; nl = this.buf.search(/\r?\n/)) {
       const line = this.buf.slice(0, nl);
@@ -87,7 +94,7 @@ export class EventNormalizer {
     const part = `${str(d.assistantMessageID) ?? ""}:${String(d.ordinal ?? "")}`;
     switch (type) {
       case "session.text.delta":
-        this.text.set(part, (this.text.get(part) ?? "") + (str(d.delta) ?? ""));
+        this.text.set(part, ((this.text.get(part) ?? "") + (str(d.delta) ?? "")).slice(0, MAX_PART_TEXT));
         return [];
       case "session.text.ended": {
         const text = (str(d.text) || this.text.get(part) || "").trim();
@@ -148,8 +155,13 @@ export class EventNormalizer {
 
 const MAX_TEXT_LINES = 20;
 
-/** The terminal line(s) for one event, or undefined for an event the terminal skips. */
+/** The terminal line(s) for one event, or undefined for an event the terminal skips. Safe for a terminal. */
 export function renderEvent(e: FollowEvent): string | undefined {
+  const line = eventLine(e);
+  return line === undefined ? undefined : terminalSafe(line);
+}
+
+function eventLine(e: FollowEvent): string | undefined {
   switch (e.type) {
     case "text": {
       const lines = String(e.text).split("\n");
