@@ -9,12 +9,39 @@ The agent can start a dev server in the workspace, for example on port 3000. You
 
 ## Open a preview
 
+1. Start the dev server in the workspace. It can listen on `127.0.0.1` or on `0.0.0.0`.
+2. On your machine, run:
+
+   ```sh
+   cf-opencode preview 3000
+   ```
+
+The command forwards port 3000 of the workspace to your machine through SSH. It prints `http://localhost:3000` and opens it in your browser. The preview stops when you stop the command with Ctrl-C.
+
+- Nothing is public. No URL exists outside your machine.
+- The app is at the root of `localhost`. Asset paths and hot reload work as they do on your machine.
+- A paused workspace wakes, as it does for `ssh`.
+- Without a workspace name, the command uses the workspace of the current directory. To name one, put it first: `cf-opencode preview my-repo 3000`.
+- You can give more than one port: `cf-opencode preview 3000 5173`.
+- If the port is in use on your machine, the command uses the next free port and prints it.
+
+| Flag | Effect |
+| --- | --- |
+| `--no-open` | Do not open the browser. |
+| `--web` | Use a URL on the Worker, not a forward. See the next section. |
+
+This command needs an `ssh` client on your machine.
+
+## Open a preview on the Worker
+
+Use `--web` on a machine with no `ssh` client, or to open the preview on another device of yours.
+
 1. Make sure that the workspace is awake. Run `cf-opencode connect my-repo` if it is paused.
 2. Start the dev server on `0.0.0.0`, not on `127.0.0.1`. For Vite, add `--host 0.0.0.0`.
 3. On your machine, run:
 
    ```sh
-   cf-opencode preview my-repo 3000
+   cf-opencode preview my-repo 3000 --web
    ```
 
 The command prints the preview URL, such as `https://cf-opencode.example.workers.dev/preview/my-repo/3000/`. Then it opens the URL in your browser. You do not type a password.

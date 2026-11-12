@@ -2,9 +2,11 @@
 import { readFileSync, rmSync } from "node:fs";
 import { ControlClient } from "./api.js";
 import { type FlagSpec, flagBool, flagString, type ParsedArgs, parseArgs } from "./args.js";
+import { completeWords, completionScript, SHELLS } from "./completion.js";
 import { readControlToken, readInstall, readPassword, readWorkspace, workspacePath } from "./config.js";
-import { connect } from "./connect.js";
+import { connect, workspaceIdFrom } from "./connect.js";
 import { CliError, toFailedLine } from "./errors.js";
+import { forwardPreview, splitPreviewArgs } from "./forward.js";
 import { type InitOptions, init } from "./init.js";
 import {
   doctor,
@@ -15,7 +17,7 @@ import {
   renderList,
   uninstall,
 } from "./manage.js";
-import { preview } from "./preview.js";
+import { openInBrowser, preview } from "./preview.js";
 import { listSessions, localWorkspaceIds, renderSessions } from "./sessions.js";
 import { runCommand, tasksCommand } from "./task-commands.js";
 import { forgetHostKey, shell, ssh, sshConfigBlock, sshKey, sshProxy, target } from "./terminal.js";
@@ -314,32 +316,53 @@ const COMMANDS: Record<string, Command> = {
   },
   preview: {
     group: "Browser",
-    usage: "preview <workspace> <port>",
-    summary: "Open a dev server that runs in the workspace, in your browser. No public URL.",
+    usage: "preview [workspace] <port...>",
+    summary:
+      "Open a dev server that runs in the workspace at http://localhost:<port> here. Nothing is public.",
     details: [
-      "Prints the preview URL and opens it, signed in, with a one-time link. The password is not in the URL.",
-      "The dev server must listen on 0.0.0.0. A paused workspace is not woken: cf-opencode connect first.",
-      "--no-open           print the URL and the one-time sign-in link; open nothing",
+      "cf-opencode preview 3000        the workspace of this directory",
+      "cf-opencode preview app 3000 5173   a named workspace, two ports",
+      "The port is forwarded over the workspace's SSH for as long as the command runs (Ctrl-C stops it).",
+      "The app is at the root of localhost, so asset paths and hot reload work as on your own machine.",
+      "--no-open           do not open the browser",
+      "--web               a URL on the Worker instead, behind a one-time sign-in link. Needs no ssh here;",
+      "                    the dev server must listen on 0.0.0.0, and an app with absolute paths needs a base path",
       "--public            make a URL that needs no password, until --stop. Needs the control token",
       "--stop              remove the public URL of <port>, or of every port without one",
       "--list              list the public URLs of the workspace",
     ],
     flags: {
       "no-open": { type: "boolean" },
+      web: { type: "boolean" },
       public: { type: "boolean" },
       stop: { type: "boolean" },
       list: { type: "boolean" },
     },
     run: async (args) => {
-      const [id, port] = args.positionals;
-      if (!id) throw new CliError("preview needs a workspace id", "cf-opencode preview <workspace> <port>");
+      const { id, ports } = splitPreviewArgs(args.positionals, () => workspaceIdFrom(process.cwd()));
+      const port = ports[0];
+      const open = !flagBool(args, "no-open") && Boolean(process.stdout.isTTY);
+      const other =
+        ["web", "public", "stop", "list"].some((f) => flagBool(args, f)) || flagBool(args, "json");
+      if (!other) {
+        // The default: a private forward to this machine. It needs the local password, as ssh does.
+        target(requireUrl(args).url, id);
+        return forwardPreview({
+          id,
+          ports,
+          open,
+          ssh: (ws, extra) => ssh(ws, extra, flagString(args, "url")),
+          opener: openInBrowser,
+          err: (s) => process.stderr.write(`${s}\n`),
+        });
+      }
       return preview({
         id,
         ...(port ? { port } : {}),
         public: flagBool(args, "public"),
         stop: flagBool(args, "stop"),
         list: flagBool(args, "list"),
-        open: !flagBool(args, "no-open") && Boolean(process.stdout.isTTY),
+        open,
         json: flagBool(args, "json"),
         target: () => target(requireUrl(args).url, id),
         control: () => {
@@ -352,6 +375,45 @@ const COMMANDS: Record<string, Command> = {
     },
   },
 };
+
+COMMANDS.completion = {
+  group: "Set up",
+  usage: "completion <bash|zsh|fish>",
+  summary: "Print a tab-completion script for commands, flags and workspace ids.",
+  details: [
+    'bash:  add to ~/.bashrc   eval "$(cf-opencode completion bash)"',
+    'zsh:   add to ~/.zshrc    eval "$(cf-opencode completion zsh)"',
+    "fish:  cf-opencode completion fish > ~/.config/fish/completions/cf-opencode.fish",
+  ],
+  flags: {},
+  run: async (args) => {
+    const shell = args.positionals[0];
+    if (!shell) throw new CliError("completion needs a shell", `cf-opencode completion ${SHELLS.join("|")}`);
+    process.stdout.write(completionScript(shell));
+    return 0;
+  },
+};
+
+/** What the completion scripts call. Prints one word per line; never fails loudly. */
+function completeCommand(words: string[]): number {
+  const commands = Object.entries(COMMANDS)
+    .filter(([name]) => name !== "ssh-proxy")
+    .map(([name, c]) => ({
+      name,
+      flags: Object.entries(c.flags).flatMap(([f, spec]) => [
+        `--${f}`,
+        ...(spec.short ? [`-${spec.short}`] : []),
+      ]),
+      workspace: /^\S+ [<[]workspace/.test(c.usage),
+    }));
+  const global = Object.keys(GLOBAL).map((f) => `--${f}`);
+  let out: string[] = [];
+  try {
+    out = completeWords(words.length ? words : [""], commands, global, localWorkspaceIds);
+  } catch {}
+  if (out.length) process.stdout.write(`${out.join("\n")}\n`);
+  return 0;
+}
 
 export function helpText(): string {
   const cmds = Object.values(COMMANDS);
@@ -379,6 +441,7 @@ export function helpText(): string {
 }
 
 export async function main(argv: string[]): Promise<number> {
+  if (argv[0] === "__complete") return completeCommand(argv.slice(argv[1] === "--" ? 2 : 1));
   const name = findCommand(argv);
   const cmd = name ? COMMANDS[name] : undefined;
   if (argv.includes("--version") || argv.includes("-v")) {

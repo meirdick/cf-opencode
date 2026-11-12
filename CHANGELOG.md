@@ -12,7 +12,11 @@
   (`--allow-dirty` skips it). Flags: `--title`, `--model`, `--wait`, `--json`.
 - `cf-opencode tasks`: handed-off tasks across workspaces, with state `running`, `done`, `failed` or
   `waiting`. `tasks <ses_…>` shows one task and its last message; `--wait` waits for it. Wakes nothing.
-- `cf-opencode preview <workspace> <port>` opens a dev server that runs in the workspace, in your browser, behind
+- `cf-opencode preview [workspace] <port...>` opens a dev server that runs in the workspace at
+  `http://localhost:<port>` on your machine, through an SSH port forward. Nothing is public, and the app is at
+  the root, so hot reload works.
+- `cf-opencode completion <bash|zsh|fish>`: tab completion for commands, flags and workspace ids.
+- `cf-opencode preview … --web` opens the dev server on a Worker URL instead, behind
   the workspace password. A one-time sign-in link gives the browser a cookie for that workspace and port; the
   password is never in a URL. A preview does not wake a paused workspace, and it counts as use for the idle pause.
 - `cf-opencode preview … --public` makes a public URL with an unguessable token, off until you ask; `--stop`

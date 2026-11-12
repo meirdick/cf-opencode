@@ -190,6 +190,7 @@ Other commands:
 | `cf-opencode preview <id> <port>` | Open a dev server in the workspace in your browser, behind the workspace password |
 | `cf-opencode preview <id> <port> --public` | Make a public URL for that port; `--stop` removes it, `--list` lists them |
 | `cf-opencode git-token` | Let workspaces use GitHub; the token stays in the Worker |
+| `cf-opencode completion <shell>` | Tab completion for bash, zsh or fish: commands, flags, workspace ids |
 | `cf-opencode doctor` | Check Node, OpenCode, ssh, the token, the Worker and its bindings. Starts nothing |
 | `cf-opencode upgrade` | Redeploy the Worker and image from this CLI version |
 | `cf-opencode uninstall [--yes]` | List, then delete, the Worker, container app and images |
@@ -421,11 +422,20 @@ session closes after 10 minutes without activity.
 The agent starts a dev server in the workspace. You open it on your machine:
 
 ```sh
-cf-opencode preview my-repo 3000
+cf-opencode preview 3000            # the workspace of this directory
+cf-opencode preview my-repo 3000 5173   # a named workspace, two ports
 ```
 
-The command prints `https://<worker>/preview/my-repo/3000/` and opens it in
-your browser, signed in. Nothing is public: the Worker asks for the workspace
+The command forwards the port over the workspace's SSH and opens
+`http://localhost:3000`. Nothing is public and no URL exists: only your machine
+can open it, for as long as the command runs (Ctrl-C stops it). The app is at the
+root of `localhost`, so asset paths and hot reload work as on your own machine,
+and a dev server that listens on `127.0.0.1` only is reached too. When the port
+is in use on your machine, the command takes the next free one and says so.
+
+`--web` gives a URL on the Worker instead, for a machine with no `ssh` client or
+for another device of yours. It prints `https://<worker>/preview/my-repo/3000/`
+and opens it in your browser, signed in. Nothing is public: the Worker asks for the workspace
 password, as for `/oc`. The password is not in the URL. The CLI gets a one-time
 sign-in link from the Worker (it works once, for 2 minutes), and the browser
 trades it for a cookie. The cookie works for that workspace and that port only,
