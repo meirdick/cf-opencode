@@ -26,6 +26,8 @@
   earlier release appended (comment `cf-opencode`) are removed; lines you wrote stay.
 - `ssh` and `ssh-config` accept only an https Worker origin for `--url` (http only for localhost), and quote
   every part of the ssh `ProxyCommand`. Before, a `--url` with a `"` ran shell on this machine.
+- The image no longer pipes the OpenCode installer script to bash. It downloads the linux x64 release asset
+  the installer uses and checks it against a pinned SHA-256 (`OPENCODE_SHA256`); a mismatch fails the build.
 
 - Two `connect`s in flight with different inputs no longer share one op. The op journal hashed a field the
   API never sends, so the second caller could attach to the first one's spawn and get its password.
