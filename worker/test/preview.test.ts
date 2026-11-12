@@ -26,6 +26,7 @@ import {
   TICKET_PARAM,
   TICKET_TTL_S,
   verifyCookie,
+  verifyShareToken,
   verifyTicket,
   withoutPreviewCookie,
 } from "../src/preview-auth";
@@ -360,12 +361,15 @@ describe("public preview", () => {
   it("is off by default, works with the token once shared, and stops with --stop", async () => {
     const h = await harness();
     expect(await listShares(h.kv)).toEqual([]);
-    const made = await addShare(h.kv, 3000, new Date(T0).toISOString(), 4096);
+    const k = await previewKey(CONTROL);
+    const made = await addShare(h.kv, 3000, new Date(T0).toISOString(), 4096, k, "demo");
     if (!made.ok) throw new Error(made.error);
     expect(made.share.token.length).toBeGreaterThanOrEqual(43);
-    const again = await addShare(h.kv, 3000, new Date(T0).toISOString(), 4096);
+    const again = await addShare(h.kv, 3000, new Date(T0).toISOString(), 4096, k, "demo");
     expect(again.ok && again.share.token).toBe(made.share.token);
-    expect(await addShare(h.kv, 4096, "", 4096)).toMatchObject({ ok: false, status: 400 });
+    expect(await addShare(h.kv, 4096, "", 4096, k, "demo")).toMatchObject({ ok: false, status: 400 });
+    expect(await addShare(h.kv, 5173, "", 4096, undefined, "demo")).toMatchObject({ ok: false, status: 503 });
+    expect(await verifyShareToken(k as CryptoKey, made.share.token, "demo")).toBe(true);
 
     const ok = await handlePreview(
       h.deps,
@@ -444,7 +448,9 @@ describe("Worker routes", () => {
       origin: "",
     });
     await handleApi(
-      new Request(`${ORIGIN}/preview/demo/3000/src/main.ts?x=1`, { headers: { [TARGET_HEADER]: forged } }),
+      new Request(`${ORIGIN}/preview/demo/3000/src/main.ts?x=1`, {
+        headers: { [TARGET_HEADER]: forged, cookie: await cookieFor("demo", 3000, Date.now()) },
+      }),
       e,
     );
     const t = JSON.parse(seen[0]!.headers.get(TARGET_HEADER)!) as PreviewTarget;
