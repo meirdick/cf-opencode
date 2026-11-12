@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 (2026-11-12)
 
 - `cf-opencode mcp`: an MCP server over stdio with the tools `handoff_task`, `get_task`, `wait_task` and
   `list_tasks`. A local agent (Claude Code, OpenCode, any MCP client) hands off a task and gets the task record as

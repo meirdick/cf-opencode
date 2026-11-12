@@ -14,7 +14,7 @@ import {
   toA2aTask,
 } from "../src/a2a";
 import type { WorkspaceSessionApi } from "../src/api";
-import { handleApi } from "../src/api";
+import { API_VERSION, handleApi } from "../src/api";
 import { parseConfig } from "../src/core/config";
 import type { OpRecord, WorkspaceRecord } from "../src/core/types";
 import type { Env } from "../src/env";
@@ -134,7 +134,7 @@ describe("Agent Card", () => {
     expect(card.supportedInterfaces).toEqual([
       { url: `${ORIGIN}/a2a`, protocolBinding: "JSONRPC", protocolVersion: A2A_VERSION },
     ]);
-    expect(card.version).toBe("0.1.0");
+    expect(card.version).toBe(API_VERSION);
     expect(card.capabilities).toEqual({
       streaming: false,
       pushNotifications: false,

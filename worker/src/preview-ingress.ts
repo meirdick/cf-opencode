@@ -73,7 +73,10 @@ export async function previewIngress(req: Request, env: Env): Promise<Response> 
     rest = pub[3];
     base = `/public/${pub[1]}/${pub[2]}`;
   } else {
-    return fail(404, "no preview at this path", "use the URL cf-opencode preview printed");
+    return new Response('{"error":"Not found"}', {
+      status: 404,
+      headers: { "content-type": "application/json" },
+    });
   }
   if (!WORKSPACE_ID_RE.test(target.workspaceId))
     return fail(400, "bad workspace id", "use letters, digits, _ and -");

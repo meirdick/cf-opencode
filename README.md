@@ -41,7 +41,7 @@ From a checkout:
 ```sh
 git clone https://github.com/meirdick/cf-opencode && cd cf-opencode
 npm ci && npm pack -w cli
-npm install -g ./cf-opencode-0.1.0.tgz
+npm install -g ./cf-opencode-*.tgz
 ```
 
 `init` checks everything before it changes anything, and prints every problem
@@ -61,7 +61,7 @@ prints the next command:
 … deploying Worker cf-opencode and building the workspace image (the first build takes a few minutes)
 ✓ Deployed https://cf-opencode.example.workers.dev in 190s (log: ~/.cf-opencode/deploy.log)
 ✓ Control token stored in ~/.cf-opencode/control-token and on the Worker
-✓ Worker healthy (API 0.1.0)
+✓ Worker healthy (API 0.2.0)
 ✓ GITHUB_TOKEN stored on cf-opencode (GitHub user you)
 
 Ready: https://cf-opencode.example.workers.dev
