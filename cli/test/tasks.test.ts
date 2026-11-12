@@ -47,7 +47,7 @@ describe("task list", () => {
     );
     expect(r.rows.map((t) => `${t.workspace}/${t.id}`)).toEqual(["app/ses_a2", "api/ses_b1", "app/ses_a1"]);
     const text = renderTasks(r, now);
-    expect(text).toMatch(/^WORKSPACE\s+SESSION\s+STATE\s+AGE\s+TITLE/);
+    expect(text).toMatch(/^\s*WORKSPACE\s+SESSION\s+STATE\s+AGE\s+TITLE/);
     expect(text).toMatch(/app\s+ses_a2\s+waiting\s+5m ago\s+Fix login/);
     expect(text).toMatch(/api\s+ses_b1\s+failed\s+10m ago/);
     expect(text).toContain("states from the last refresh: api (2h ago)");
@@ -91,12 +91,14 @@ describe("one task", () => {
     );
     expect(text).toContain("State      failed (rate limited)");
     expect(text).toContain("Read       60m ago; the workspace is not running");
-    expect(text).toContain("Last message:\n  Tried twice.\n  Result: none");
+    expect(text).toContain("Summary:\n  Tried twice.\n  Result: none");
     expect(text).toContain("Open: cf-opencode connect app --session ses_1");
   });
 
-  it("exit codes: 0 done, 1 failed, 2 waiting", () => {
-    expect([exitCodeFor("done"), exitCodeFor("failed"), exitCodeFor("waiting")]).toEqual([0, 1, 2]);
+  it("exit codes: 0 done, 1 failed, 2 waiting, 4 stopped", () => {
+    expect(["done", "failed", "waiting", "stopped"].map((s) => exitCodeFor(s as TaskState))).toEqual([
+      0, 1, 2, 4,
+    ]);
   });
 });
 

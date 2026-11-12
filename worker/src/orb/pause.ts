@@ -20,7 +20,7 @@ import {
 import { QUIESCE_SH, STATUS_SH } from "./scripts";
 import { captureSessions } from "./sessions";
 import { beat, sh } from "./spawn";
-import { captureTasks } from "./tasks";
+import { captureTasks, stopTasks } from "./tasks";
 
 export type PauseResult = { ok: boolean; error?: string; handle?: SnapshotHandle };
 
@@ -120,6 +120,9 @@ export async function runPause(
     }
     say("the warm workspace was used since the last pause; saving the disk again");
   }
+
+  // opencode stops with this pause: a task still running is saved as stopped, with its git facts.
+  if (!warm) await stopTasks(ctx).catch(() => undefined);
 
   rec.state = "pausing";
   await saveOrb(kv, rec, now());

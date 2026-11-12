@@ -149,6 +149,7 @@ cf-opencode run "Add a health check route with a test" --title "Health check"
 Started ses_4f2a… in my-app: Health check
 Status: cf-opencode tasks ses_4f2a… --workspace my-app
 Wait:   cf-opencode tasks ses_4f2a… --workspace my-app --wait
+Follow: cf-opencode tasks ses_4f2a… --workspace my-app --follow
 Open:   cf-opencode connect my-app --session ses_4f2a…
 ```
 
@@ -157,14 +158,31 @@ it fails when the branch is not pushed, or when files have changes that are
 not committed. `--allow-dirty` starts anyway and says what the workspace will
 not see. `run` adds a fixed instruction to each task: commit, push the branch,
 open a pull request when `gh` works, and end with a `Result:` line.
+`--schema <file.json>` also asks for a final `json` block that matches a JSON
+Schema (a small subset); the result then carries it as `structured`.
 
 `cf-opencode tasks` lists the tasks across workspaces, with their state:
-`running`, `done`, `failed`, or `waiting` (the agent asks a question or a
-permission; answer it with `cf-opencode connect <id> --session <ses_…>`).
-`cf-opencode tasks <ses_…>` shows one task and its last message. `--wait`
-returns when the task stops running, with exit code 0 done, 1 failed, 2
-waiting, 3 timed out (`--timeout`, default 60 minutes). Like `sessions`, it
-wakes nothing: a paused workspace answers with the states saved at its pause.
+`running`, `done`, `failed`, `waiting` (the agent asks a question or a
+permission; answer it with `cf-opencode connect <id> --session <ses_…>`), or
+`stopped` (the workspace paused under the task; `connect` continues it). A
+task that ended is marked `*` until you read it; `--unseen` lists only those.
+`cf-opencode tasks <ses_…>` shows the result: state, summary, then the branch,
+the commits since the start and the pull request, which the Worker reads with
+`git` and `gh`, not from the agent's words. `--wait` returns when the task
+stops running, with exit code 0 done, 1 failed, 2 waiting, 3 timed out
+(`--timeout`, default 60 minutes), 4 stopped. `--follow` does the same and
+shows the agent's tool calls and messages live. `--json` prints the result
+record. Like `sessions`, it wakes nothing: a paused workspace answers with the
+states saved at its pause.
+
+With `notifyUrl` set in `~/.cf-opencode/config.json`, the Worker POSTs the
+result record, signed (`cf-opencode notify-key`), when a task leaves
+`running`, and retries after 1, 5 and 30 minutes. The Worker sends it, so it
+works with the laptop closed; the receiver must be on (a chat webhook, a push
+service). In the workspace, `cf-opencode-notify "<text>"` sends a note there.
+
+`cf-opencode skill --install --claude` (or `--opencode`) installs a skill that
+tells a local agent when and how to hand off a task.
 
 ### Hand off from an agent: MCP and A2A
 
@@ -198,7 +216,7 @@ Other commands:
 | `cf-opencode connect [id] --session <ses_…>` | Same, and open that session |
 | `cf-opencode sessions [id]` | OpenCode sessions across your workspaces, newest first. Wakes nothing |
 | `cf-opencode run "<task>" [id]` | Hand a task to OpenCode in the workspace and return. It runs with the laptop closed |
-| `cf-opencode tasks [id \| ses_…]` | Handed-off tasks and their state, or one task. `--wait` waits for one. Wakes nothing |
+| `cf-opencode tasks [id \| ses_…]` | Handed-off tasks and their state, or one task's result. `--wait` or `--follow` waits for one. Wakes nothing |
 | `cf-opencode mcp` | Serve `run` and `tasks` to an agent as MCP tools over stdio |
 | `cf-opencode list` | Workspaces this machine connected to, with state and snapshot expiry |
 | `cf-opencode connect --no-attach` | Same, but print the server URL instead |
@@ -215,6 +233,8 @@ Other commands:
 | `cf-opencode preview <id> <port> --public` | Make a public URL for that port; `--stop` removes it, `--list` lists them |
 | `cf-opencode git-token` | Let workspaces use GitHub; the token stays in the Worker |
 | `cf-opencode completion <shell>` | Tab completion for bash, zsh or fish: commands, flags, workspace ids |
+| `cf-opencode skill [--install]` | Print the handoff skill for agents, or install it |
+| `cf-opencode notify-key` | Print the key that signs the POSTs to `notifyUrl` |
 | `cf-opencode doctor` | Check Node, OpenCode, ssh, the token, the Worker and its bindings. Starts nothing |
 | `cf-opencode upgrade` | Redeploy the Worker and image from this CLI version |
 | `cf-opencode uninstall [--yes]` | List, then delete, the Worker, container app and images |

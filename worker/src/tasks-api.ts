@@ -1,7 +1,8 @@
 // Control routes for handed-off tasks. Bearer auth is checked before this runs.
-//   POST /v1/workspaces/<id>/tasks         { text, title?, model? }  start a session in a running workspace
-//   GET  /v1/workspaces/<id>/tasks                                    the task list; wakes nothing
-//   GET  /v1/workspaces/<id>/tasks/<ses_…>                            one task; wakes nothing
+//   POST /v1/workspaces/<id>/tasks   { text, title?, model?, schema? }  start a session in a running workspace
+//   GET  /v1/workspaces/<id>/tasks                                      the task list; wakes nothing
+//   GET  /v1/workspaces/<id>/tasks/<ses_…>[?seen=1]                     one task and its result record;
+//                                                                       seen=1 clears its unseen mark
 // Each GET is short. `cf-opencode tasks --wait` polls it; no request is held open while an agent works.
 import type { WorkspaceSessionApi } from "./api";
 import { parseTaskInput } from "./orb/tasks";
@@ -26,10 +27,10 @@ export async function tasksRoute(
     if (sid === null || !SESSION_RE.test(sid))
       return fail(400, "bad task id", "use the ses_… id cf-opencode run printed");
     if (method !== "GET") return notAllowed(method, path);
-    const list = await sessionOf(id).tasks();
-    const task = list.tasks.find((t) => t.id === sid);
-    if (!task) return fail(404, `no task ${sid} in ${id}`, "cf-opencode tasks lists them");
-    return json(200, { task, live: list.live, ...(list.at ? { at: list.at } : {}) });
+    const seen = new URL(req.url).searchParams.get("seen") === "1";
+    const one = await sessionOf(id).task(sid, seen);
+    if (!one) return fail(404, `no task ${sid} in ${id}`, "cf-opencode tasks lists them");
+    return json(200, one);
   }
   if (method === "GET") return json(200, await sessionOf(id).tasks());
   if (method !== "POST") return notAllowed(method, path);

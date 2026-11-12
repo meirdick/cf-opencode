@@ -70,8 +70,18 @@ import { readSessions, type SessionList } from "./sessions";
 import { runSpawn, SCRIPT_ENV, sh, WORKSPACE_USER } from "./spawn";
 import { installSshKeys } from "./ssh-keys";
 import { type CancelResult, cancelTask } from "./task-cancel";
+import { taskTick } from "./task-notify";
+import { taskResult } from "./task-result";
 import { wakeAndStart } from "./task-wake";
-import { readTasks, type StartResult, startTask, type TaskInput, type TaskList } from "./tasks";
+import {
+  readTask,
+  readTasks,
+  type StartResult,
+  startTask,
+  type TaskInput,
+  type TaskList,
+  type TaskOne,
+} from "./tasks";
 import { bridge, isPublicKey, type StdioProcess, shellParams } from "./terminal";
 
 export interface OpRunners {
@@ -434,6 +444,13 @@ export class WorkspaceSession extends DurableObject<Env> implements WorkspaceSes
     return cancelTask(this.base(await this.workspaceId()), sessionId);
   }
 
+  /** One task and its result record. `seen` clears its unseen mark. Wakes nothing. */
+  async task(sessionId: string, seen = false): Promise<TaskOne | undefined> {
+    const workspaceId = await this.workspaceId();
+    const r = await readTask(this.base(workspaceId), sessionId, { seen });
+    return r && { ...r, result: taskResult(workspaceId, r.task) };
+  }
+
   async logs(lines: number): Promise<{ containerRunning: boolean; log: string }> {
     const running = Boolean(this.ctx.container?.running);
     const head = this.ring.slice(-lines).join("\n");
@@ -730,7 +747,10 @@ export class WorkspaceSession extends DurableObject<Env> implements WorkspaceSes
         : undefined;
       await idleTick(ctx, password);
       const { rearmInMs } = await runAlarm(ctx);
-      if (rearmInMs !== null) await this.arm(rearmInMs);
+      // Task push (task-notify.ts): stays armed while a delivery waits, also for a paused workspace.
+      const push = await taskTick(ctx).catch(() => null);
+      const next = rearmInMs === null ? push : push === null ? rearmInMs : Math.min(rearmInMs, push);
+      if (next !== null) await this.arm(Math.max(1000, next));
     });
     await pruneOps(this.kv, iso(Date.now() - OP_RETENTION_MS)).catch(() => undefined);
   }

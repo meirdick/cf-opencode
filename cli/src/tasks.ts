@@ -1,7 +1,8 @@
 // `cf-opencode tasks`: the tasks `run` handed off, across the workspaces this machine connected to.
 // Every read is one short request, so a paused workspace answers from its saved copy and wakes nothing.
-import type { ControlClient, RemoteTask, TaskState } from "./api.js";
+import type { ControlClient, RemoteTask, TaskResult, TaskState } from "./api.js";
 import { CliError, toFailedLine } from "./errors.js";
+import { renderResult, resultOf } from "./task-result.js";
 import { fmtAge, table } from "./ui.js";
 
 export interface TaskRow extends RemoteTask {
@@ -17,6 +18,7 @@ export interface TasksResult {
 export interface TaskView {
   workspace: string;
   task: RemoteTask;
+  result?: TaskResult;
   live: boolean;
   at?: string;
 }
@@ -26,7 +28,7 @@ export const looksLikeSession = (s: string) => /^ses_/.test(s);
 
 const iso = (ms: number) => new Date(ms).toISOString();
 
-/** Ask each workspace for its tasks, and merge them newest first. */
+/** Ask each workspace for its tasks, and merge them: tasks that ended and nobody read first, then newest first. */
 export async function listTasks(client: Pick<ControlClient, "tasks">, ids: string[]): Promise<TasksResult> {
   const answers = await Promise.all(
     ids.map(async (id) => {
@@ -39,7 +41,7 @@ export async function listTasks(client: Pick<ControlClient, "tasks">, ids: strin
   );
   const rows = answers
     .flatMap((a) => a.tasks.map((t) => ({ ...t, workspace: a.id })))
-    .sort((a, b) => b.started - a.started);
+    .sort((a, b) => Number(b.unseen === true) - Number(a.unseen === true) || b.started - a.started);
   const workspaces = answers.map((a) => ({
     id: a.id,
     live: a.live,
@@ -54,17 +56,31 @@ const short = (s: string, n: number) => {
   return one.length > n ? `${one.slice(0, n - 1)}…` : one;
 };
 
-export function renderTasks(r: TasksResult, now = Date.now()): string {
+/** Only the tasks that ended and nobody read yet: the inbox. */
+export function onlyUnseen(r: TasksResult): TasksResult {
+  return { ...r, rows: r.rows.filter((t) => t.unseen === true) };
+}
+
+export function renderTasks(r: TasksResult, now = Date.now(), o: { unseen?: boolean } = {}): string {
   if (r.workspaces.length === 0) return "No workspaces yet. In a git checkout: cf-opencode connect";
   const lines: string[] = [];
-  if (r.rows.length === 0) lines.push('No tasks yet. In a git checkout: cf-opencode run "<task>"');
+  if (r.rows.length === 0)
+    lines.push(o.unseen ? "No unread results." : 'No tasks yet. In a git checkout: cf-opencode run "<task>"');
   else {
     lines.push(
       table(
-        ["WORKSPACE", "SESSION", "STATE", "AGE", "TITLE"],
-        r.rows.map((t) => [t.workspace, t.id, t.state, fmtAge(iso(t.started), now), short(t.title, 60)]),
+        ["", "WORKSPACE", "SESSION", "STATE", "AGE", "TITLE"],
+        r.rows.map((t) => [
+          t.unseen ? "*" : "",
+          t.workspace,
+          t.id,
+          t.state,
+          fmtAge(iso(t.started), now),
+          short(t.title, 60),
+        ]),
       ),
     );
+    if (r.rows.some((t) => t.unseen)) lines.push("", "* ended, not read yet. Reading one marks it read.");
     lines.push("", "Show one: cf-opencode tasks <session> --workspace <workspace>");
   }
   const saved = r.workspaces.filter((w) => !w.live && w.at && !w.error);
@@ -77,21 +93,7 @@ export function renderTasks(r: TasksResult, now = Date.now()): string {
 }
 
 export function renderTask(v: TaskView, now = Date.now()): string {
-  const t = v.task;
-  const lines = [
-    `Task       ${t.id}`,
-    `Workspace  ${v.workspace}`,
-    `State      ${t.state}${t.reason ? ` (${t.reason})` : ""}`,
-    `Title      ${short(t.title, 100)}`,
-    `Started    ${fmtAge(iso(t.started), now)}`,
-  ];
-  if (t.model) lines.push(`Model      ${t.model}`);
-  if (!v.live) lines.push(`Read       ${v.at ? fmtAge(v.at, now) : "never"}; the workspace is not running`);
-  if (t.last) lines.push("", "Last message:", ...t.last.split("\n").map((l) => `  ${l}`));
-  if (t.state === "waiting") lines.push("", "The agent waits for an answer. Answer it in OpenCode:");
-  else lines.push("");
-  lines.push(`Open: cf-opencode connect ${v.workspace} --session ${t.id}`);
-  return lines.join("\n");
+  return renderResult(resultOf(v.workspace, v), { live: v.live, ...(v.at ? { at: v.at } : {}), now });
 }
 
 /** Which workspace has this task. Reads the saved lists; wakes nothing. */
@@ -111,9 +113,9 @@ export async function findTask(
   throw new CliError(`task ${sessionId} is in ${hits.join(" and ")}`, `pass --workspace <id>`);
 }
 
-/** Exit code of `tasks --wait` and `run --wait`: 0 done, 1 failed, 2 waiting. */
+/** Exit code of `--wait` and `--follow`: 0 done, 1 failed, 2 waiting, 4 stopped. 3 is a timeout. */
 export function exitCodeFor(state: TaskState): number {
-  return state === "done" ? 0 : state === "waiting" ? 2 : 1;
+  return state === "done" ? 0 : state === "waiting" ? 2 : state === "stopped" ? 4 : 1;
 }
 
 /** --wait gave up. Its exit code is 3, so a caller can tell it from a failed task. */

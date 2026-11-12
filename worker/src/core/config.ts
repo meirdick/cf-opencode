@@ -72,7 +72,28 @@ export function parseConfig(raw: string | undefined): ProviderConfig {
       "Failed: a2a must be true or false — fix: set it in ~/.cf-opencode/config.json, then cf-opencode upgrade",
     );
   }
+  const notifyProblem = checkNotifyUrl(cfg.notifyUrl);
+  if (notifyProblem) {
+    throw new Error(
+      `Failed: notifyUrl ${notifyProblem} — fix: set it in ~/.cf-opencode/config.json, then cf-opencode upgrade`,
+    );
+  }
   return cfg;
+}
+
+/** Why notifyUrl is not usable, or undefined. https only; no user or password in it, since URLs get logged. */
+export function checkNotifyUrl(v: unknown): string | undefined {
+  if (v === "") return undefined;
+  if (typeof v !== "string" || v.length > 2000) return "must be an https URL up to 2000 characters, or empty";
+  let u: URL;
+  try {
+    u = new URL(v);
+  } catch {
+    return "is not a URL";
+  }
+  if (u.protocol !== "https:") return "must start with https://";
+  if (u.username || u.password) return "must not hold a user or password; the POST is signed instead";
+  return undefined;
 }
 
 function pick(o: Record<string, unknown>): Partial<ProviderConfig> {
@@ -99,6 +120,7 @@ function pick(o: Record<string, unknown>): Partial<ProviderConfig> {
   if (o.model !== undefined) out.model = o.model as string;
   if (o.searchProvider !== undefined) out.searchProvider = o.searchProvider as string;
   if (o.a2a !== undefined) out.a2a = o.a2a as boolean;
+  if (o.notifyUrl !== undefined) out.notifyUrl = o.notifyUrl as string;
   return out;
 }
 

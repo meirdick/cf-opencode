@@ -24,7 +24,8 @@ export interface RemoteSessions {
   live: boolean;
 }
 
-export type TaskState = "running" | "done" | "failed" | "waiting";
+/** stopped: the workspace paused while the task ran; a connect continues the session. */
+export type TaskState = "running" | "done" | "failed" | "waiting" | "stopped";
 
 export interface RemoteTask {
   id: string;
@@ -37,6 +38,37 @@ export interface RemoteTask {
   /** The end of the last assistant message with text. */
   last?: string;
   updated?: number;
+  /** The task left running and no one read it yet (tasks <session>). */
+  unseen?: boolean;
+}
+
+/** The result record the Worker builds (worker/src/orb/task-result.ts). */
+export interface TaskResult {
+  id: string;
+  workspace: string;
+  state: TaskState;
+  title: string;
+  summary: string;
+  branch?: string;
+  commits?: { sha: string; subject: string }[];
+  pullRequest?: string;
+  changedFiles?: string[];
+  question?: string;
+  error?: string;
+  structured?: unknown;
+  structuredError?: string;
+  notified?: { at: string; status: number };
+  notifyError?: string;
+  started: string;
+  updated: string;
+}
+
+export interface RemoteTaskOne {
+  task: RemoteTask;
+  /** Absent from a Worker before 0.2. */
+  result?: TaskResult;
+  at?: string;
+  live: boolean;
 }
 
 export interface RemoteTasks {
@@ -93,7 +125,7 @@ export class ControlClient {
 
   async startTask(
     workspaceId: string,
-    body: { text: string; title?: string; model?: string },
+    body: { text: string; title?: string; model?: string; schema?: unknown },
   ): Promise<{ task: RemoteTask }> {
     return this.send("POST", `/v1/workspaces/${encodeURIComponent(workspaceId)}/tasks`, body);
   }
@@ -102,12 +134,10 @@ export class ControlClient {
     return this.get(`/v1/workspaces/${encodeURIComponent(workspaceId)}/tasks`);
   }
 
-  async task(
-    workspaceId: string,
-    sessionId: string,
-  ): Promise<{ task: RemoteTask; at?: string; live: boolean }> {
+  /** One task. `seen` clears its unseen mark: pass it for the read that shows the result. */
+  async task(workspaceId: string, sessionId: string, seen = false): Promise<RemoteTaskOne> {
     return this.get(
-      `/v1/workspaces/${encodeURIComponent(workspaceId)}/tasks/${encodeURIComponent(sessionId)}`,
+      `/v1/workspaces/${encodeURIComponent(workspaceId)}/tasks/${encodeURIComponent(sessionId)}${seen ? "?seen=1" : ""}`,
     );
   }
 

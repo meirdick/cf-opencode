@@ -17,6 +17,7 @@ import {
 import { runPause } from "./pause";
 import { ACTIVITY_SH, STATUS_SH } from "./scripts";
 import { sh, waitReady } from "./spawn";
+import { stopTasks } from "./tasks";
 
 export const WATCHDOG_KEY = "watchdog";
 /**
@@ -75,6 +76,8 @@ export async function runAlarm(ctx: OrbContext): Promise<{ rearmInMs: number | n
     const at = iso(clock.now());
     rec.state = "lost";
     rec.lastStop = { at, reason: "container stopped (platform or exit)" };
+    // Nothing can be read any more; a task saved as running is stopped.
+    await stopTasks(ctx).catch(() => undefined);
     clearAwake(rec);
     await saveOrb(kv, rec, at);
     await kv.delete(WATCHDOG_KEY);
@@ -165,6 +168,8 @@ async function coolDown(
     }
     return r;
   }
+  // opencode stops with the container: a task still running is saved as stopped.
+  await stopTasks(ctx).catch(() => undefined);
   await container.destroy();
   await registry.releaseRunSlot(orbId);
   const at = iso(clock.now());
@@ -298,6 +303,7 @@ async function selfPause(ctx: OrbContext, reason: string): Promise<{ rearmInMs: 
   ctx.say(
     `self-pause failed ${count} times; stopping the container without a snapshot (${rec.handle ? `next wake restores the disk from ${rec.handle.createdAt}` : "next wake boots the image"})`,
   );
+  await stopTasks(ctx).catch(() => undefined);
   await container.destroy();
   await registry.releaseRunSlot(orbId);
   rec.state = rec.handle ? "paused-stale" : "lost";

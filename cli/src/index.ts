@@ -20,7 +20,7 @@ import {
 import { mcpCommand } from "./mcp.js";
 import { openInBrowser, preview } from "./preview.js";
 import { listSessions, localWorkspaceIds, renderSessions } from "./sessions.js";
-import { runCommand, tasksCommand } from "./task-commands.js";
+import { notifyKeyCommand, runCommand, skillCommand, tasksCommand } from "./task-commands.js";
 import { forgetHostKey, shell, ssh, sshConfigBlock, sshKey, sshProxy, target } from "./terminal.js";
 import { fmtAge, makeUi, readSecret } from "./ui.js";
 import { runProcess } from "./wrangler.js";
@@ -124,15 +124,20 @@ const COMMANDS: Record<string, Command> = {
       "--title <text>             session title (default: from the task)",
       "--model <provider/model>   for example cloudflare-workers-ai/@cf/zai-org/glm-5.3",
       "--allow-dirty              start anyway, and say what the workspace will not see",
-      "--wait                     wait until the task is done, failed or waiting",
-      "--timeout <minutes>        how long --wait waits (default 60)",
-      "Exit code with --wait: 0 done, 1 failed, 2 waiting, 3 timed out.",
+      "--schema <file.json>       the last message must end with a json block that matches this JSON Schema",
+      "                           (subset: type, properties, required, items, enum, additionalProperties false)",
+      "--wait                     wait until the task leaves running, then print its result",
+      "--follow                   the same, and show the agent's progress live",
+      "--timeout <minutes>        how long --wait and --follow wait (default 60)",
+      "Exit code with --wait or --follow: 0 done, 1 failed, 2 waiting, 3 timed out, 4 stopped.",
     ],
     flags: {
       title: { type: "string" },
       model: { type: "string" },
       "allow-dirty": { type: "boolean" },
+      schema: { type: "string" },
       wait: { type: "boolean" },
+      follow: { type: "boolean" },
       timeout: { type: "string" },
     },
     run: (args) => runCommand(args, requireInstall(args)),
@@ -142,14 +147,25 @@ const COMMANDS: Record<string, Command> = {
     usage: "tasks [workspace | session]",
     summary: "Tasks handed off with run, newest first, or one task. Wakes nothing.",
     details: [
-      "States: running, done, failed, waiting (the agent asks a question or a permission).",
+      "States: running, done, failed, waiting (the agent asks a question or a permission),",
+      "stopped (the workspace paused under the task; cf-opencode connect continues it).",
       "A running workspace answers live. A paused one answers with the states saved at its last refresh.",
+      "A task that ended shows * until you read it with tasks <session>.",
       "--workspace <id>      the workspace of the task (default: found in your workspaces)",
+      "--unseen              list only the tasks that ended and are not read yet",
       "--wait                with a session: wait until the task leaves running",
-      "--timeout <minutes>   how long --wait waits (default 60)",
-      "Exit code with --wait: 0 done, 1 failed, 2 waiting, 3 timed out.",
+      "--follow              with a session: the same, and show the agent's progress live",
+      "--timeout <minutes>   how long --wait and --follow wait (default 60)",
+      "--json                with a session: the result record",
+      "Exit code with --wait or --follow: 0 done, 1 failed, 2 waiting, 3 timed out, 4 stopped.",
     ],
-    flags: { workspace: { type: "string" }, wait: { type: "boolean" }, timeout: { type: "string" } },
+    flags: {
+      workspace: { type: "string" },
+      wait: { type: "boolean" },
+      follow: { type: "boolean" },
+      unseen: { type: "boolean" },
+      timeout: { type: "string" },
+    },
     run: (args) => tasksCommand(args, requireInstall(args)),
   },
   mcp: {
@@ -168,6 +184,33 @@ const COMMANDS: Record<string, Command> = {
     ],
     flags: {},
     run: () => mcpCommand(VERSION),
+  },
+  skill: {
+    group: "Set up",
+    usage: "skill [--install]",
+    summary: "Print the handoff skill for agents, or install it into an agent's skills folder.",
+    details: [
+      "The skill tells a local agent when and how to hand a task to a workspace.",
+      "--install --claude     copy it to ~/.claude/skills/cf-opencode-handoff/",
+      "--install --opencode   copy it to ~/.config/opencode/skills/cf-opencode-handoff/",
+      "--install --dir <path> copy it to <path>/cf-opencode-handoff/",
+      "--force                replace a file there that differs",
+    ],
+    flags: {
+      install: { type: "boolean" },
+      claude: { type: "boolean" },
+      opencode: { type: "boolean" },
+      dir: { type: "string" },
+      force: { type: "boolean" },
+    },
+    run: skillCommand,
+  },
+  "notify-key": {
+    group: "Set up",
+    usage: "notify-key",
+    summary: "Print the key that signs the POSTs to notifyUrl, for the receiver. A secret.",
+    flags: {},
+    run: (args) => notifyKeyCommand(args, requireInstall(args)),
   },
   rebuild: {
     group: "Workspaces",

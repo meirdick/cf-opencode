@@ -1,13 +1,13 @@
 ---
 title: Hand off a task
-description: Give a task to OpenCode in a workspace with cf-opencode run, close the laptop, and check the result with cf-opencode tasks.
+description: Give a task to OpenCode in a workspace with cf-opencode run, close the laptop, and read the result with cf-opencode tasks.
 sidebar:
   order: 8
 ---
 
 `cf-opencode run` gives a task to OpenCode in a workspace and returns at once. The task runs in the workspace, not on your laptop. You can close the laptop. The result comes back as a pushed branch, and as a pull request when `gh` works.
 
-A local agent, such as Claude Code or OpenCode, can use the same commands from its shell tool.
+A local agent, such as Claude Code or OpenCode, can use the same commands from its shell tool. The [handoff skill](#the-handoff-skill-for-agents) tells it how.
 
 ## Before you start
 
@@ -29,6 +29,7 @@ The output gives the session ID and the next commands:
 Started ses_4f2a… in my-app: Health check
 Status: cf-opencode tasks ses_4f2a… --workspace my-app
 Wait:   cf-opencode tasks ses_4f2a… --workspace my-app --wait
+Follow: cf-opencode tasks ses_4f2a… --workspace my-app --follow
 Open:   cf-opencode connect my-app --session ses_4f2a…
 ```
 
@@ -36,8 +37,9 @@ Open:   cf-opencode connect my-app --session ses_4f2a…
 
 1. It checks the checkout. See [The preflight](#the-preflight).
 2. It wakes the workspace, as `cf-opencode connect --no-attach` does.
-3. It starts a new OpenCode session in the workspace, with your task as the first message.
-4. It prints the session ID and returns. It does not wait.
+3. It records the commit that the workspace checkout is on (`HEAD`). Commits after it are the task's.
+4. It starts a new OpenCode session in the workspace, with your task as the first message.
+5. It prints the session ID and returns. It does not wait.
 
 The session runs in `opencode serve` in the workspace. The workspace stays awake while the agent works. It pauses `idlePauseMinutes` after the agent stops. See [Idle pause](/concepts/how-it-works/#idle-pause).
 
@@ -53,10 +55,42 @@ The agent did not see your local conversation. Put everything it needs in the ta
 `run` adds a fixed instruction to each task. It tells the agent to:
 
 1. start from your current branch as it is on `origin`,
-2. commit the work, on a new branch if it is on the default branch,
+2. commit the work if it changed files, on a new branch if it is on the default branch,
 3. push the branch,
 4. open a pull request if `gh auth status` succeeds,
 5. end with one line: `Result: <what changed>; branch <name>; pull request <URL or none>`.
+
+A task that changes no files, for example research, does not need a commit. It ends `done` with no commits.
+
+## Ask for a structured result
+
+`--schema <file.json>` asks the agent to end its last message with one fenced `json` block that matches a JSON Schema. `run` adds the schema to the task text. An example `result.json`:
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "callers": { "type": "array", "items": { "type": "string" } },
+    "safe": { "type": "boolean" }
+  },
+  "required": ["callers", "safe"],
+  "additionalProperties": false
+}
+```
+
+```sh
+cf-opencode run "List the callers of parseConfig and say if a rename is safe" --schema result.json
+```
+
+When the task ends, the Worker reads the last `json` block of the last message and checks it against the schema. The result then has `structured`, the parsed value. When the block is missing or does not match, the result has `structuredError` instead. The state does not change.
+
+The schema can use these keywords only: `type`, `properties`, `required`, `items`, `enum` and `additionalProperties: false`. `title`, `description` and `$schema` are allowed and do nothing. A schema with any other keyword fails before the workspace wakes:
+
+```text
+Failed: result.json is outside the supported JSON Schema subset ($.properties.n: keyword minimum is not supported) — fix: use only type, properties, required, items, enum, additionalProperties false (and title, description, $schema)
+```
+
+The schema is kept with the task in the Worker. `tasks` on another machine shows the same `structured` value.
 
 ## The preflight
 
@@ -78,16 +112,18 @@ The preflight does not fetch. It compares with the upstream as your machine last
 
 ## Check a task
 
-List the tasks of all your workspaces, newest first:
+List the tasks of all your workspaces:
 
 ```sh
 cf-opencode tasks
 ```
 
 ```text
-WORKSPACE  SESSION     STATE    AGE     TITLE
-my-app     ses_4f2a…   running  3m ago  Health check
-my-app     ses_19c0…   done     2h ago  Fix the login form
+   WORKSPACE  SESSION     STATE    AGE     TITLE
+*  my-app     ses_19c0…   done     2h ago  Fix the login form
+   my-app     ses_4f2a…   running  3m ago  Health check
+
+* ended, not read yet. Reading one marks it read.
 ```
 
 A task has one of these states:
@@ -95,15 +131,42 @@ A task has one of these states:
 | State | Meaning |
 | --- | --- |
 | `running` | The agent works. |
-| `done` | The agent finished its turn. |
-| `failed` | The turn stopped with an error, was interrupted, or did not start. |
+| `done` | The agent finished its turn. A task with no commits can be `done`. |
+| `failed` | The turn stopped with an error, or did not start. |
 | `waiting` | The agent asks a question or asks for a permission. |
+| `stopped` | The workspace paused while the task ran. `cf-opencode connect <workspace> --session <ses_…>` continues it. |
 
-Show one task, with its last message:
+### Results you did not read
+
+A task that leaves `running` is marked with `*` until you read it with `cf-opencode tasks <ses_…>`. These tasks come first in the list. A list does not mark them read. `cf-opencode tasks --unseen` lists only these tasks.
+
+### Show one task
 
 ```sh
-cf-opencode tasks ses_4f2a…
+cf-opencode tasks ses_19c0…
 ```
+
+```text
+Task       ses_19c0…
+Workspace  my-app
+State      done
+Title      Fix the login form
+Started    2h ago
+
+Summary:
+  The form now trims the email before it checks it. Tests pass.
+  Result: trim the email; branch fix-login; pull request https://github.com/acme/my-app/pull/7
+
+Branch     fix-login
+Commits    1
+  3f1c2a9 Trim the email in the login form
+PR         https://github.com/acme/my-app/pull/7
+Changed    src/login.ts, test/login.test.ts
+
+Open: cf-opencode connect my-app --session ses_19c0…
+```
+
+`Branch`, `Commits`, `PR` and `Changed` are facts. The Worker reads them with `git` and `gh pr view` in the workspace. They do not come from the agent's message.
 
 If the same session ID is in two workspaces, add `--workspace <id>`.
 
@@ -115,7 +178,7 @@ If the same session ID is in two workspaces, add `--workspace <id>`.
 cf-opencode tasks ses_4f2a… --wait
 ```
 
-`--wait` asks the Worker every 10 seconds. It returns when the task is not `running` any more. The exit code tells the result:
+`--wait` asks the Worker every 10 seconds. It returns when the task is not `running` any more, and prints the result. The exit code tells the result:
 
 | Exit code | Meaning |
 | --- | --- |
@@ -123,20 +186,69 @@ cf-opencode tasks ses_4f2a… --wait
 | 1 | `failed` |
 | 2 | `waiting` |
 | 3 | The wait timed out. The task can still run. |
+| 4 | `stopped` |
 
 The default timeout is 60 minutes. Change it with `--timeout <minutes>`. `cf-opencode run --wait` starts a task and waits for it.
 
-If the workspace stops while the task runs, `--wait` fails with one line. Open the session to see what happened: `cf-opencode connect <workspace> --session <ses_…>`.
+An agent that watches a task should wait in short steps, for example `--wait --timeout 5` in a loop. Exit code 3 means "check again later".
+
+## Follow a task live
+
+```sh
+cf-opencode tasks ses_4f2a… --follow
+```
+
+`--follow` shows what the agent does while it works: one line for each tool call, and the agent's text for each message. It ends as `--wait` does, prints the result, and uses the same exit codes.
+
+```text
+→ bash: npm test
+✗ bash: exit 1
+→ edit: src/login.ts
+  The test failed on an empty email. I trim it first now.
+· turn succeeded
+```
+
+`--follow` reads OpenCode's event stream through the Worker, with the workspace password. When the stream drops, it connects again. When the stream does not open, it says so and checks every 10 seconds, as `--wait` does. `cf-opencode run --follow` starts a task and follows it.
+
+With `--json`, `--follow` prints one JSON object for each event, one per line, and then the result record. Each event has `type` and `at`. The types are `text`, `tool`, `tool.failed`, `question`, `retry`, `error`, `turn.started` and `turn.ended`.
 
 ## Answer a waiting task
 
-A task in `waiting` needs you. Open its session in your local OpenCode and answer:
+A task in `waiting` needs you. The result shows the question. Open the session in your local OpenCode and answer:
 
 ```sh
 cf-opencode connect my-app --session ses_4f2a…
 ```
 
 A waiting task does not keep the workspace awake. The workspace pauses after `idlePauseMinutes`. `connect` wakes it again with the question still open.
+
+## Continue a stopped task
+
+A pause stops `opencode serve`. A task that still runs then is saved as `stopped`, for example at `maxAwakeHours`, or after `cf-opencode pause`. Its branch and commits are read before the pause. Open the session to continue it:
+
+```sh
+cf-opencode connect my-app --session ses_4f2a…
+```
+
+## Get a message when a task ends
+
+Set `notifyUrl` in `~/.cf-opencode/config.json` to an `https` URL, then run `cf-opencode upgrade`. See [Configuration](/reference/configuration/).
+
+When a task leaves `running`, the Worker sends a `POST` to that URL. The body is the [result record](#output-for-agents). The Worker sends again when the task changes later, for example from `waiting` to `done`.
+
+- Headers: `content-type: application/json`, `x-cf-opencode-event: task`, and `x-cf-opencode-signature: sha256=<hex>`.
+- The signature is the HMAC-SHA256 of the raw body. The key is the text that `cf-opencode notify-key` prints. Keep the key secret, and check the signature before you use the body.
+- An answer other than 2xx, or no answer in 10 seconds, is a failure. The Worker tries again after 1, 5 and 30 minutes. Then it stops. `tasks <ses_…>` shows `Notified` with the time and the HTTP status, or the error.
+- The Worker does not follow redirects.
+
+The agent in the workspace can also send a note to the same URL with `cf-opencode-notify "<text>"`. The body is `{"type":"note","workspace":"…","text":"…","at":"…"}`, and the header `x-cf-opencode-event` is `note`. A note is sent once. When `notifyUrl` is empty, the command fails with one line. It needs the `ai` setting on.
+
+## When the laptop is off
+
+- The task runs in the workspace. A closed laptop does not stop it.
+- `--follow` and `--wait` run in your terminal. They end when the terminal ends. The task goes on.
+- The result stays in the Worker. `cf-opencode tasks` shows it the next time, also when the workspace is paused. The task stays marked `*` until you read it.
+- The Worker sends `notifyUrl`, not your laptop. Use a receiver that is always on: a chat webhook, a phone push service, or an email bridge. A URL on your laptop gets nothing while the laptop is off.
 
 ## Choose a model
 
@@ -153,13 +265,46 @@ Without `--model`, the session uses the default model of the workspace. See [Mod
 `--json` makes stdout one JSON document. Progress goes to stderr.
 
 - `run --json`: `{"ok":true,"workspace":"…","session":"ses_…","title":"…","state":"running"}`.
-- `tasks --json`: the task list and, for each workspace, where its list came from.
-- `tasks <ses_…> --json`: the task, `live`, and the time of the last read.
+- `tasks --json`: the task list and, for each workspace, where its list came from. A task that ended and was not read has `"unseen": true`.
+- `tasks <ses_…> --json`, `--wait --json` and `run --wait --json`: the result record.
+
+The result record:
+
+| Field | Meaning |
+| --- | --- |
+| `id`, `workspace`, `title` | The session ID, the workspace and the session title. |
+| `state` | `running`, `done`, `failed`, `waiting` or `stopped`. |
+| `summary` | The last message of the agent that has text (the end of it). |
+| `branch` | The branch of the workspace checkout. |
+| `commits` | `[{ "sha", "subject" }]`, the commits made after the task started. At most 30. An empty list means no commit. |
+| `pullRequest` | The pull request of the branch, when `gh pr view` finds one. |
+| `changedFiles` | The files that differ from the start of the task, committed or not. At most 100. |
+| `question` | When `waiting`: the open permission request or question. |
+| `error` | When `failed` or `stopped`: why. |
+| `structured`, `structuredError` | With `--schema`: the checked value, or why there is none. |
+| `notified`, `notifyError` | With `notifyUrl`: the last delivery, or why it failed. |
+| `started`, `updated` | ISO times. |
+
+Fields that are not known are left out. The Worker reads `branch`, `commits` and `changedFiles` while a task runs, and once more with `pullRequest` when the task ends.
 
 A failure is one line, `Failed: <cause> — fix: <action>`. With `--json` it is `{"ok":false,"error":"…"}`.
 
+## The handoff skill for agents
+
+The CLI package has a skill file that tells a local agent when and how to hand off a task: the preflight, how to write the task, how to watch it, and what to do for each state.
+
+```sh
+cf-opencode skill                       # print where it is, and its text
+cf-opencode skill --install --claude    # copy it to ~/.claude/skills/cf-opencode-handoff/
+cf-opencode skill --install --opencode  # copy it to ~/.config/opencode/skills/cf-opencode-handoff/
+cf-opencode skill --install --dir <path>
+```
+
+OpenCode also reads `~/.claude/skills`. `--install` does not replace a file that differs. Add `--force` to replace it.
+
 ## Limits
 
-- One workspace runs all the tasks of a checkout. Two tasks at the same time share the same files.
+- One workspace runs all the tasks of a checkout. Two tasks at the same time share the same files, and the same branch facts.
 - `run` never sends local files. Uncommitted work stays on your laptop.
-- A pause stops processes. A task that still runs when the workspace pauses, for example at `maxAwakeHours`, stops.
+- A pause stops processes. A task that still runs when the workspace pauses is `stopped`. Continue it with `connect`.
+- `changedFiles` compares with the commit at the start. When the agent checks out another branch, the files of that branch count too.

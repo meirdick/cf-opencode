@@ -114,6 +114,8 @@ You run in a cf-opencode workspace: a Debian container on Cloudflare, owned by t
   the line it prints; they open it with \`cf-opencode preview\` on their machine. Nothing is public. To check your own
   frontend, \`cf-opencode-fetch http://p<port>.preview.internal/\` (\`--screenshot f.png\` too), or
   \`cf-opencode-browse --preview <port>\` and open that address.
+- Tell the user something while they are away: \`cf-opencode-notify "<text>"\` posts the text to the user's notify URL.
+  Use it for a blocker or a result they must see soon, not for progress.
 - The disk is saved when the workspace is idle. Processes do not survive that; files do.
 CF_OPENCODE_NOTES
 fi

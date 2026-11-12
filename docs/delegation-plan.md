@@ -1,6 +1,6 @@
 # Plan: hand a task to a workspace (0.2.0)
 
-Status: draft for review. Not started.
+Status: in progress. Items marked (done) are on the v0.2 branch.
 
 ## Goal
 
@@ -27,7 +27,7 @@ agent). This list is from knowledge of those tools, not from a new survey.
 
 - The CLI is the interface. An agent hands off through its shell tool. No plugin is needed.
 - The workspace clones from the Git remote. A handoff never sends local files.
-- A task ends in one of three states: `done`, `failed`, `waiting` (a question or a permission).
+- A task ends in one of four states: `done`, `failed`, `waiting` (a question or a permission), `stopped` (the workspace paused under it).
 - A handoff never waits by default. `--wait` is opt in.
 - Every command has `--json`, so an agent can read the result.
 
@@ -51,24 +51,24 @@ agent). This list is from knowledge of those tools, not from a new survey.
 
 ### 3. Status
 
-1. `cf-opencode tasks` lists handed-off tasks: workspace, session, state, age, title, branch, pull request URL.
-2. `cf-opencode tasks <id>` shows one task: state, last message, changed files.
-3. `cf-opencode tasks <id> --wait` returns when the task leaves the running state. Exit code: 0 done, 1 failed, 2 waiting.
-4. The Durable Object keeps the task list, as it does for sessions, so a paused workspace answers without a wake.
-5. State comes from the OpenCode API: active sessions, open permissions and forms, and the session outcome.
+1. (done) `cf-opencode tasks` lists handed-off tasks: workspace, session, state, age, title. Unread results first, marked `*`; `--unseen` lists only those.
+2. (done) `cf-opencode tasks <id>` shows one task: state, summary, branch, commits, pull request, changed files.
+3. (done) `cf-opencode tasks <id> --wait` returns when the task leaves the running state. Exit code: 0 done, 1 failed, 2 waiting, 3 timed out, 4 stopped. `--follow` does the same and streams the agent's progress.
+4. (done) The Durable Object keeps the task list, as it does for sessions, so a paused workspace answers without a wake.
+5. (done) State comes from the OpenCode API: active sessions, open permissions and forms, and the session outcome.
 6. `cf-opencode tasks <id> --reply "<text>"` answers a waiting task.
 
 ### 4. Result
 
-1. The closing instruction makes the agent push a branch and open a pull request.
+1. (done) The closing instruction makes the agent push a branch and open a pull request.
 2. `cf-opencode tasks <id> --pull` fetches the task's branch into the local checkout.
-3. A task that made no commit is `failed`, with the last message as the reason.
+3. (changed) A task that made no commit is `done`, with `commits: []`: many tasks are research. The result record carries the git facts (branch, commits since the start, changed files, pull request), read by the Worker with git, not from the agent's text.
 
 ### 5. Handoff instructions for agents
 
-1. Ship a skill file in the package: when to hand off, the preflight, how to write the task prompt, how to check status.
-2. `cf-opencode init` prints where the file is. `cf-opencode skill --install` copies it into the agent's skills folder (OpenCode, Claude Code).
-3. The task prompt rule, from the orb skill: goal, branch, constraints, and how to prove the change works. The remote agent has not seen the local conversation.
+1. (done) Ship a skill file in the package (`cli/skill/cf-opencode-handoff/SKILL.md`): when to hand off, the preflight, how to write the task prompt, how to check status.
+2. (done, except init) `cf-opencode skill` prints where the file is. `cf-opencode skill --install --claude | --opencode | --dir` copies it into the agent's skills folder. `init` does not print it yet.
+3. (done) The task prompt rule, from the orb skill: goal, branch, constraints, and how to prove the change works. The remote agent has not seen the local conversation.
 4. The agent notes in the workspace (`AGENTS.md`) get a section for handed-off tasks: finish with commit, push, pull request, and a result line.
 
 ### 6. Checks before release
@@ -76,6 +76,15 @@ agent). This list is from knowledge of those tools, not from a new survey.
 1. Unit tests for the preflight, the state mapping, and the task list.
 2. Live tests: one task to a pull request; two tasks with `--new`; a task that asks a question, then `--reply`; laptop closed during a task; a task on a private repository.
 3. Docs: a guide "Hand off a task", the CLI reference, and the skill.
+
+### 6b. Result and push (done)
+
+1. One result record for `tasks <id> --json`, `run --wait --json` and `notifyUrl`.
+2. `run --schema <file.json>`: a JSON Schema subset for a final `json` block; `structured` or `structuredError`.
+3. `--follow` on `run` and `tasks <id>`: OpenCode's event stream through `/oc`, with reconnect and a polling fallback.
+4. `notifyUrl`: the Durable Object alarm POSTs the signed result record when a task leaves `running`, with retries after 1, 5 and 30 minutes. `cf-opencode-notify` in the workspace sends a note.
+5. A `stopped` state for a task the workspace paused under.
+6. Live tests still to run: `--follow` against OpenCode 2.2.7, a notification to a real receiver, a pause under a running task, `gh pr view` through egress.
 
 ### 7. Preview a dev server
 
