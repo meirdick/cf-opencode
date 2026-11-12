@@ -29,7 +29,15 @@ export function makeUi(json: boolean): Ui {
  * C1 control, DEL and the bidi overrides become "?". JSON output needs none of this: JSON.stringify escapes C0.
  */
 export function terminalSafe(s: string): string {
-  return s.replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f‪-‮⁦-⁩]/g, "?");
+  let out = "";
+  for (const ch of s) out += isUnsafeChar(ch.codePointAt(0) ?? 0) ? "?" : ch;
+  return out;
+}
+
+/** A control character a terminal acts on: C0 but tab and newline, DEL, C1, and the bidi overrides. */
+export function isUnsafeChar(c: number): boolean {
+  if (c === 0x09 || c === 0x0a) return false;
+  return c < 0x20 || (c >= 0x7f && c <= 0x9f) || (c >= 0x202a && c <= 0x202e) || (c >= 0x2066 && c <= 0x2069);
 }
 
 /** Plain text table, columns sized to content. */

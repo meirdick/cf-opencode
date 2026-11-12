@@ -6,7 +6,7 @@ import { EventNormalizer, renderEvent, SseParser } from "../src/follow.js";
 import { renderSessions } from "../src/sessions.js";
 import { renderResult } from "../src/task-result.js";
 import { renderTasks } from "../src/tasks.js";
-import { terminalSafe } from "../src/ui.js";
+import { isUnsafeChar, terminalSafe } from "../src/ui.js";
 
 const ESC = "\u001b";
 const OSC52 = `${ESC}]52;c;cm0gLXJmIH4K${ESC}\\`;
@@ -16,7 +16,7 @@ const BIDI = "‮";
 const hostile = `x${OSC52}${CSI}${C1}${BIDI}\r\u0007y`;
 
 function clean(s: string): void {
-  expect(s).not.toMatch(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f‪-‮⁦-⁩]/);
+  expect([...s].filter((ch) => isUnsafeChar(ch.codePointAt(0) ?? 0))).toEqual([]);
 }
 
 describe("terminal output of remote text", () => {
@@ -24,6 +24,7 @@ describe("terminal output of remote text", () => {
     expect(terminalSafe("a\tb\nc")).toBe("a\tb\nc");
     clean(terminalSafe(hostile));
     expect(terminalSafe(hostile).startsWith("x")).toBe(true);
+    expect(terminalSafe("\u001b[2J\r\u009b\u202e\u0007\u007fok")).toBe("?[2J?????ok");
   });
 
   it("the result record", () => {
