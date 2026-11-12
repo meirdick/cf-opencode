@@ -7,6 +7,9 @@
 // account's AI Gateway credits (Unified Billing). Verified live 2026-11-11 through the
 // binding: chat completions (tools, streaming) for @cf/, openai/, anthropic/ and google/
 // models, Anthropic Messages for anthropic/, and OpenAI Responses for openai/.
+import { previewPortOf } from "./preview-hosts";
+
+export type PreviewFormat = "markdown" | "html" | "links" | "screenshot" | "pdf";
 
 /** Intercepted, never resolved publicly. HTTP, so the request needs no CA. */
 export const AI_HOST = "ai.cf-opencode.internal";
@@ -69,6 +72,16 @@ export function opencodeConfig(model: string | undefined): string {
   });
 }
 
+/**
+ * Reads a page of the workspace's own dev server (preview-browser.ts). Absent when the Worker cannot route a
+ * browser to this workspace.
+ */
+export type PreviewPageReader = (
+  port: number,
+  path: string,
+  format: PreviewFormat,
+) => Promise<{ body: string | Uint8Array; type: string }>;
+
 /** Handle one intercepted request. */
 export async function handleAi(
   req: Request,
@@ -76,9 +89,10 @@ export async function handleAi(
   gateway: string,
   searchProvider?: string,
   browser?: PageRunner,
+  preview?: PreviewPageReader,
 ): Promise<Response> {
   const path = new URL(req.url).pathname;
-  if (req.method === "POST" && path === PAGE_PATH) return handlePage(req, browser);
+  if (req.method === "POST" && path === PAGE_PATH) return handlePage(req, browser, preview);
   if (!ai) return aiError(503, "the Worker has no AI binding; redeploy with cf-opencode init");
   if (req.method === "POST" && path === SEARCH_PATH) return handleSearch(req, ai, gateway, searchProvider);
   if (req.method !== "POST" || !PATHS.has(path)) return aiError(404, `no AI route ${req.method} ${path}`);
@@ -154,7 +168,11 @@ async function handleSearch(
  * work. Body: { url, format? }. format is markdown (default), html, links, screenshot or pdf. Text formats
  * come back as the text itself; screenshot and pdf as the file. Bills to the account's Browser Run usage.
  */
-async function handlePage(req: Request, browser: PageRunner | undefined): Promise<Response> {
+async function handlePage(
+  req: Request,
+  browser: PageRunner | undefined,
+  preview?: PreviewPageReader,
+): Promise<Response> {
   if (!browser?.quickAction)
     return aiError(503, "the Worker has no Browser Run binding; run cf-opencode upgrade");
   let body: Record<string, unknown>;
@@ -171,8 +189,22 @@ async function handlePage(req: Request, browser: PageRunner | undefined): Promis
   }
   if (url.protocol !== "http:" && url.protocol !== "https:")
     return aiError(400, "only http and https URLs can be read");
-  const format = PAGE_FORMATS[typeof body.format === "string" ? body.format : "markdown"];
+  const formatName = typeof body.format === "string" ? body.format : "markdown";
+  const format = PAGE_FORMATS[formatName];
   if (!format) return aiError(400, `format must be one of: ${Object.keys(PAGE_FORMATS).join(", ")}`);
+  // A dev server in this workspace: Quick Actions cannot reach it, a routed browser session can.
+  const previewPort = previewPortOf(url);
+  if (previewPort !== undefined) {
+    if (!preview)
+      return aiError(503, "this Worker cannot open the workspace's dev servers; run cf-opencode upgrade");
+    try {
+      const out = await preview(previewPort, `${url.pathname}${url.search}`, formatName as PreviewFormat);
+      return new Response(out.body as BodyInit, { headers: { "content-type": out.type } });
+    } catch (e) {
+      const why = e instanceof Error ? e.message : String(e);
+      return aiError(502, `port ${previewPort} was not read (${why}); start the dev server on 0.0.0.0`);
+    }
+  }
   try {
     const res = await browser.quickAction(format.action, {
       url: url.toString(),

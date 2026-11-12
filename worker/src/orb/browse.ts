@@ -18,7 +18,11 @@ export const SESSION_ID_RE = /^[A-Za-z0-9-]{1,64}$/;
 
 /** The part of the Browser Run binding this module uses. */
 export interface BrowserBinding {
-  acquire(options?: { keepAlive?: number }): Promise<{ sessionId: string }>;
+  /** outboundByHost routes those hostnames to a Worker Fetcher (preview-hosts.ts). */
+  acquire(options?: {
+    keepAlive?: number;
+    outboundByHost?: Record<string, Fetcher>;
+  }): Promise<{ sessionId: string }>;
   connectSession(sessionId: string): Promise<{ webSocket: Fetcher }>;
   getLiveView(sessionId: string): Promise<{ devtoolsFrontendUrl?: string } | null>;
 }
@@ -31,17 +35,22 @@ export interface BrowserSession {
 
 const NOT_SET_UP = "Failed: this Worker has no Browser Run binding — fix: redeploy with cf-opencode init";
 
-/** Open one browser session. `keepAliveMs` is clamped to the documented range. */
+/**
+ * Open one browser session. `keepAliveMs` is clamped to the documented range. `outboundByHost`, when given, routes
+ * the workspace's preview hostnames to it; it is fixed for the life of the session.
+ */
 export async function openBrowserSession(
   browser: BrowserBinding | undefined,
   keepAliveMs: number = KEEP_ALIVE_MS,
+  outboundByHost?: Record<string, Fetcher>,
 ): Promise<BrowserSession | { error: string; status: number }> {
   if (!browser) return { error: NOT_SET_UP, status: 503 };
   const keepAlive = Math.min(KEEP_ALIVE_MAX, Math.max(KEEP_ALIVE_MIN, Math.floor(keepAliveMs)));
   let sessionId: string;
   try {
     // One retry: acquire has returned a transient 500 right after a deploy (seen live).
-    ({ sessionId } = await browser.acquire({ keepAlive }).catch(() => browser.acquire({ keepAlive })));
+    const opts = outboundByHost ? { keepAlive, outboundByHost } : { keepAlive };
+    ({ sessionId } = await browser.acquire(opts).catch(() => browser.acquire(opts)));
   } catch (e) {
     return {
       error: `Failed: Browser Run refused a session (${errText(e)}) — fix: retry cf-opencode browse`,

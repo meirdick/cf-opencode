@@ -15,6 +15,7 @@ import {
 import { type Env, REGISTRY_DO_NAME, workspaceDoName } from "./env";
 import { connectCdp, relay, SESSION_ID_RE } from "./orb/browse";
 import type { SessionList } from "./orb/sessions";
+import { isPreviewPath, previewControl, previewFallback, previewIngress } from "./preview-ingress";
 
 export const API_VERSION = "0.1.0";
 
@@ -38,6 +39,7 @@ export interface WorkspaceSessionApi {
   browse(
     password: string,
     keepAliveMs?: number,
+    previewPorts?: number[],
   ): Promise<{ ok: true; session: unknown } | { ok: false; error: string; status: number }>;
   /** True when the password is this workspace's. Wakes nothing. */
   authorize(password: string): Promise<boolean>;
@@ -77,6 +79,9 @@ export async function handleApi(req: Request, env: Env): Promise<Response> {
     if (url.pathname === "/browse" || url.pathname.startsWith("/browse/")) return browseIngress(req, env);
     const term = /^\/(shell|ssh)\/([^/]+)$/.exec(url.pathname);
     if (term) return terminalIngress(req, env, term[1] as "shell" | "ssh", term[2] as string);
+    if (isPreviewPath(url.pathname)) return previewIngress(req, env);
+    const back = previewFallback(req);
+    if (back) return back;
     const denied = await checkAuth(req, env);
     if (denied) return denied;
     return await route(req, env);
@@ -165,6 +170,13 @@ async function route(req: Request, env: Env): Promise<Response> {
       return fail(400, "bad workspace id", "use letters, digits, _ and -");
     if (method !== "GET") return methodNotAllowed(method, url.pathname);
     return json(200, await sessionOf(env, id).sessions());
+  }
+
+  if (a === "workspaces" && b && c === "previews") {
+    const id = decodeSegment(b);
+    if (id === null || !WORKSPACE_ID_RE.test(id))
+      return fail(400, "bad workspace id", "use letters, digits, _ and -");
+    return previewControl(req, env, id);
   }
 
   if (a === "workspaces" && b && c === "logs") {
@@ -310,7 +322,11 @@ async function browseIngress(req: Request, env: Env): Promise<Response> {
   if (req.method !== "POST") return methodNotAllowed(req.method, url.pathname);
   const body = await readJson(req).catch(() => ({}) as Record<string, unknown>);
   const keep = typeof body.keepAliveMs === "number" ? body.keepAliveMs : undefined;
-  const result = await session.browse(password, keep);
+  // Dev-server ports the session may open as p<port>.preview.internal. The Durable Object checks each one.
+  const ports = Array.isArray(body.previewPorts)
+    ? body.previewPorts.filter((p) => typeof p === "number")
+    : [];
+  const result = await session.browse(password, keep, ports.length ? ports : undefined);
   if (!result.ok) return json(result.status, { error: result.error });
   const opened = result.session as { sessionId: string; liveUrl?: string };
   // The relay below is the only CDP endpoint the container gets.
