@@ -28,25 +28,15 @@ New:
 - `cf-opencode-preview <port>` in the workspace prints the preview URL. The remote browser opens a dev server as `http://p<port>.preview.internal/`.
 - A session knows where it is. The workspace notes say that the workspace is a clone of the remote. A handed-off session gets a Handoff block before the task. See [What the agent knows](/concepts/what-the-agent-knows/).
 
-Security:
+### Security
 
-- A visitor to the Worker URL without the control token gets one bare `401 Unauthorized` for every path.
-- The Worker checks the workspace password itself before it calls a Durable Object. A request with no password or a wrong one costs one Worker request.
-- Every refused password gets the same 401 body. A deleted workspace answers 410 only to the holder of its password.
-- `/shell`, `/ssh` and `/browse` refuse a request from a web page, from another site or from the Worker's own origin.
-- The browser relay serves only sessions that the workspace opened.
-- `authorized_keys` in a workspace holds the CLI keys that connected in the last 30 days. Each SSH connect rewrites the block.
-- `ssh` and `ssh-config` accept only an https Worker origin for `--url`, and quote every part of the `ProxyCommand`.
-- The image does not pipe the OpenCode installer to bash. It downloads the release asset and checks a pinned SHA-256.
-- With `lockdown: true`, `cf-opencode-fetch` is refused.
-- Previews: the Worker checks the password, the cookie, the sign-in ticket and the public token before it calls a Durable Object. A dev server's `Service-Worker-Allowed` and `Clear-Site-Data` headers do not reach the browser.
-- The notify URL is a Worker secret, not a setting. A `notifyUrl` key in `config.json` fails with the fix. The URL must be https to a public host name.
-- A blocking A2A `SendMessage` holds a request for 5 minutes at most.
-- Egress that adds a secret does not follow a redirect with the secret on it.
-- The CLI prints terminal control characters in text from a workspace as `?`. Tab completion offers only plain words.
-- `preview --web` opens only a link on the preview path of the Worker.
-- The `run --schema` check uses own keys only, and a deeply nested `json` block is a `structuredError`. The Worker cuts the failure reason, the summary and each changed file name.
-- Two `connect` calls with different inputs no longer share one op.
+This release was audited before it shipped. It hardens these areas:
+
+- Access checks on the new preview, task and agent-protocol routes.
+- How the CLI shows text from a workspace in your terminal and in tab completion.
+- The signature on notifications, and limits on what a workspace can send.
+- Outbound requests that carry a credential.
+- The notify URL is a secret.
 
 ## 0.1.1 (2026-11-12)
 
@@ -56,13 +46,13 @@ Security:
 
 ### Security
 
-- The Worker checks the workspace password before it calls a Durable Object. A request with no password or a wrong password gets one 401.
-- A request without the control token gets a bare `401 Unauthorized` on every path.
-- The image build checks the OpenCode release file against a pinned SHA-256.
-- A browser session is bound to the workspace that opened it.
-- `authorized_keys` holds the keys seen in the last 30 days, in a managed block.
-- `/shell`, `/ssh` and `/browse` refuse a page on another site.
-- With `lockdown` on, `cf-opencode-fetch` is refused.
+This release hardens the install. If you run 0.1.0, upgrade.
+
+- The Worker checks authentication earlier. A request without valid credentials gets one uniform answer.
+- The workspace image build verifies what it downloads.
+- Browser sessions and SSH keys are tied to their workspace.
+- The terminal and browser routes refuse requests from other websites.
+- `lockdown` also covers page reads.
 
 ## 0.1.0 (2026-11-12)
 

@@ -66,33 +66,13 @@ Everything in 0.1.1, and:
 
 ### Security
 
+This release was audited before it shipped. It hardens these areas:
 
-- Previews: the Worker checks the workspace password, the preview cookie, the sign-in ticket and the public
-  token itself before it calls a Durable Object. Before, an anonymous request to `/preview/<id>/…`,
-  `/preview/<id>/link` or `/public/<id>/…` created a Durable Object for any id it named. A public token now
-  carries its own HMAC over the workspace.
-- A dev server's `Service-Worker-Allowed` and `Clear-Site-Data` no longer reach the browser. With the first, a
-  service worker from one preview could control every page of the Worker's origin.
-- `/shell`, `/ssh` and `/browse` also refuse a browser request from the Worker's own origin (any request with
-  `Sec-Fetch-Site`). A preview page is on that origin.
-- The notify URL is a Worker secret (`cf-opencode notify-url`), not the `notifyUrl` setting: a webhook URL
-  often holds its own secret, and the setting was readable in the dashboard and in `status --json`. `status`
-  and `doctor` say only whether it is set. It must be https to a public host name, not an IP address,
-  `localhost` or an internal name. A `notifyUrl` key left in `~/.cf-opencode/config.json` fails with the fix.
-- A blocking A2A `SendMessage` holds a Worker request for 5 minutes at most, not 60.
-- Egress that adds a secret (a provider key, the GitHub token) no longer follows a redirect with the secret
-  on it. The redirect goes back to the container.
-- The CLI prints terminal control characters in text from a workspace (task titles and summaries, branch
-  names, commit subjects, file names, `--follow` events, session titles, logs, errors) as `?`. An escape
-  sequence there could write the clipboard or rewrite the terminal. The `--follow` stream buffers are bounded.
-- Tab completion offers only plain words. A file named `$(cmd).json` in `~/.cf-opencode/workspaces` put shell
-  on the bash command line.
-- `preview --web` opens only a link on the Worker's preview path with plain characters; on Windows the opener
-  is `cmd /c start`.
-- The `run --schema` check uses own keys only (a required `constructor` passed before), and a json block
-  nested deep enough to throw is a `structuredError` instead of stopping every task read of the workspace.
-  The Worker cuts the failure reason, the summary and each changed file name, since the agent can answer for
-  the scripts that read them.
+- Access checks on the new preview, task and agent-protocol routes.
+- How text from a workspace is shown in your terminal and in tab completion.
+- The signing of notifications, and limits on what a workspace can send.
+- Outbound requests that carry a credential.
+- The notify URL is stored as a secret.
 
 ## 0.1.1 (2026-11-12)
 
@@ -104,33 +84,13 @@ Everything in 0.1.1, and:
 
 ### Security
 
-- A visitor to the Worker URL without the control token gets one bare `401 Unauthorized` for every path. The
-  answer no longer names the product, the secret or the route.
-- The Worker checks the workspace password itself before it calls a workspace's Durable Object. A request
-  to `/oc`, `/browse`, `/shell` or `/ssh` with no password or a wrong one is a 401 that costs one Worker
-  request; before, it created a Durable Object for any id it named. Passwords are derived from the control
-  token, so the check needs no state. The control API refuses a spawn with any other password.
-- Every refused password gets the same 401 body, from the Worker and from the Durable Object. It names no
-  workspace, and a deleted workspace answers 410 only to the holder of its password.
-- `/shell`, `/ssh` and `/browse` refuse a request whose `Origin` is another site, so a web page cannot use
-  Basic credentials a browser cached for the Worker. Clients that send no `Origin` (the CLI, ssh, curl) and
-  the Worker's own origin still work.
-- The browser relay `/browse/<workspace>/<session>` serves only sessions that workspace opened. Before, any
-  workspace's password reached any browser session on the account.
-- `authorized_keys` in a workspace is no longer append-only. A cf-opencode block holds the CLI keys that
-  connected in the last 30 days; each SSH connect rewrites it, as the workspace user, not root. Keys an
-  earlier release appended (comment `cf-opencode`) are removed; lines you wrote stay.
-- `ssh` and `ssh-config` accept only an https Worker origin for `--url` (http only for localhost), and quote
-  every part of the ssh `ProxyCommand`. Before, a `--url` with a `"` ran shell on this machine.
-- The image no longer pipes the OpenCode installer script to bash. It downloads the linux x64 release asset
-  the installer uses and checks it against a pinned SHA-256 (`OPENCODE_SHA256`); a mismatch fails the build.
-- README "Trust" and the security page say what the agent account can do (it is root in its container, and
-  holds the workspace password) and what protects you instead. `sudo` is unchanged.
-- With `lockdown: true`, `cf-opencode-fetch` is refused. It loaded any URL through Browser Run, which got
-  around lockdown's "no general internet".
+This release hardens the install. If you run 0.1.0, upgrade.
 
-- Two `connect`s in flight with different inputs no longer share one op. The op journal hashed a field the
-  API never sends, so the second caller could attach to the first one's spawn and get its password.
+- Authentication is checked earlier, and a request without valid credentials gets one uniform answer.
+- The workspace image build verifies what it downloads.
+- Browser sessions and SSH keys are tied to their workspace.
+- Requests from other websites are refused on the terminal and browser routes.
+- `lockdown` also covers page reads.
 
 ## 0.1.0 (2026-11-12)
 
