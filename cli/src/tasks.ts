@@ -1,6 +1,6 @@
 // `cf-opencode tasks`: the tasks `run` handed off, across the workspaces this machine connected to.
 // Every read is one short request, so a paused workspace answers from its saved copy and wakes nothing.
-import type { ControlClient, RemoteTask, TaskResult, TaskState } from "./api.js";
+import { type ControlClient, NotTheWorker, type RemoteTask, type TaskResult, type TaskState } from "./api.js";
 import { CliError, toFailedLine } from "./errors.js";
 import { leftWork, renderResult, resultOf } from "./task-result.js";
 import { fmtAge, table, terminalSafe } from "./ui.js";
@@ -137,8 +137,13 @@ export interface WaitOptions {
 
 export const WAIT_INTERVAL_MS = 10_000;
 export const WAIT_TIMEOUT_MS = 60 * 60_000;
-/** Polls in a row that may fail (network, a deploy, OpenCode busy) before --wait gives up. */
+/** Polls in a row that may fail (a deploy, OpenCode busy, a workspace that is not running) before --wait gives up. */
 const MAX_MISSES = 3;
+/**
+ * How long --wait goes on when this machine cannot reach the Worker. A dropped connection is common on a
+ * laptop and passes in seconds; the task runs in the workspace all the while, so it is not a failed task.
+ */
+export const UNREACHABLE_MS = 5 * 60_000;
 
 /**
  * Poll until the task leaves running. Each poll is one short request; nothing is held open while the
@@ -157,10 +162,16 @@ export async function waitTask(
   const until = now() + timeout;
   let misses = 0;
   let lastError = "";
+  /** When the Worker was first not reachable, in the current run of such polls. */
+  let unreachableSince: number | undefined;
   o.onLine?.(`waiting for ${sessionId} in ${workspace} (a check every ${Math.round(interval / 1000)} s)`);
   for (;;) {
     try {
       const r = await client.task(workspace, sessionId);
+      if (unreachableSince !== undefined) {
+        o.onLine?.("the Worker answers again");
+        unreachableSince = undefined;
+      }
       if (r.task.state !== "running") return { workspace, ...r };
       if (r.live) misses = 0;
       else {
@@ -170,16 +181,35 @@ export async function waitTask(
     } catch (e) {
       // A task that is gone stays gone; anything else may pass.
       if (/no task ses/.test(toFailedLine(e))) throw e;
-      misses++;
       lastError = toFailedLine(e)
         .replace(/^Failed: /, "")
         .replace(/ — fix: .*$/, "");
+      if (e instanceof NotTheWorker) {
+        // This machine's network, or Cloudflare's edge just after a deploy. Not the task: keep waiting.
+        if (unreachableSince === undefined) {
+          unreachableSince = now();
+          o.onLine?.(
+            `${lastError.replace(/; workspaces and their tasks are not affected$/, "")}; the task goes on in the workspace; trying again`,
+          );
+        } else if (now() - unreachableSince >= UNREACHABLE_MS)
+          throw new WaitTimeout(
+            `no answer from the Worker for ${Math.round((now() - unreachableSince) / 60_000)} min; the state of task ${sessionId} is not known, and the task goes on in the workspace`,
+            `check the network, then wait again: cf-opencode tasks ${sessionId} --workspace ${workspace} --wait`,
+          );
+      } else misses++;
     }
-    if (misses >= MAX_MISSES)
+    if (misses >= MAX_MISSES) {
+      // Only a workspace that is not running cannot finish its task. Any other error says nothing about the task.
+      if (/is not running$/.test(lastError))
+        throw new CliError(
+          `${lastError}, so task ${sessionId} cannot finish`,
+          `cf-opencode connect ${workspace} --session ${sessionId}`,
+        );
       throw new CliError(
-        `${lastError}, so task ${sessionId} cannot finish`,
-        `cf-opencode connect ${workspace} --session ${sessionId}`,
+        `${lastError}; the state of task ${sessionId} is not known`,
+        `check again: cf-opencode tasks ${sessionId} --workspace ${workspace}`,
       );
+    }
     if (now() + interval > until)
       throw new WaitTimeout(
         `task ${sessionId} still runs after ${Math.round(timeout / 60_000)} min`,

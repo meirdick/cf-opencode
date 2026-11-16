@@ -227,9 +227,11 @@ export class ControlClient {
         ...(body ? { body: JSON.stringify(body) } : {}),
       });
     } catch (e) {
+      // A dropped connection on this machine's side is the usual cause. It says nothing about the
+      // workspaces: a task there goes on. Say so, or the line reads as lost work.
       throw new NotTheWorker(
-        `cannot reach ${this.url} (${e instanceof Error ? e.message : String(e)})`,
-        "check the URL with cf-opencode doctor",
+        `cannot reach ${this.url} from this machine (${e instanceof Error ? e.message : String(e)}); workspaces and their tasks are not affected`,
+        "run the command again; if it repeats, check the network and the URL with cf-opencode doctor",
       );
     }
     const text = await res.text();

@@ -31,6 +31,7 @@ The CLI:
 - The preflight failure of `run` names the local checkout and its path. The check reads your machine, not the workspace.
 - `cf-opencode ssh`, `ssh-config` and `preview` set `ConnectTimeout 120`. Before, the first connection to a paused workspace could stop with `Connection timed out during banner exchange`. Replace a Host block that an older `ssh-config` printed.
 - `connect` and `run` refuse a session ID in the place of a workspace ID.
+- A dropped connection from your machine does not read as a lost task. `--wait` and `--follow` try again for 5 minutes, then stop with exit code 3. The `cannot reach` line says that workspaces and their tasks are not affected. See [Troubleshooting](/troubleshooting/).
 
 Docs: [Move a file between workspaces](/guides/hand-off-a-task/#move-a-file-between-workspaces).
 

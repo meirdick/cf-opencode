@@ -225,6 +225,8 @@ cf-opencode tasks ses_4f2a… --wait
 
 An agent that watches a task should wait in short steps, for example `--wait --timeout 5` in a loop. Exit code 3 means "check again later".
 
+A dropped connection on your machine does not end the wait. `--wait` and `--follow` print `the task goes on in the workspace; trying again` and continue. After 5 minutes with no answer they stop with exit code 3: the state is not known, and the task is not affected.
+
 ## Follow a task live
 
 ```sh

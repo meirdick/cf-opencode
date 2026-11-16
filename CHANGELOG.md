@@ -48,6 +48,11 @@ The CLI:
   printed.
 - `connect` and `run` refuse a session id (`ses_…`) given in the place of a workspace id. Before, that made a
   new, empty workspace with the name of the session.
+- A dropped connection from your machine no longer reads as a lost task. `--wait` and `--follow` try again
+  for 5 minutes and say `the task goes on in the workspace`; then they stop with exit code 3, not 1. Before,
+  three failed checks ended the wait with `cannot reach … so task … cannot finish`, while the task ran on.
+  That text is now only for a workspace that is not running. The `cannot reach` line of every command says
+  that workspaces and their tasks are not affected.
 
 Docs: how to write a task for a long job, and how to move a large file between two workspaces over a Git
 branch.

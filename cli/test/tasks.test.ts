@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { RemoteTask, RemoteTasks, TaskState } from "../src/api.js";
+import { NotTheWorker, type RemoteTask, type RemoteTasks, type TaskState } from "../src/api.js";
 import { CliError } from "../src/errors.js";
 import {
   exitCodeFor,
@@ -157,6 +157,38 @@ describe("waitTask", () => {
       /^Failed: workspace app is not running, so task ses_1 cannot finish — fix: cf-opencode connect app --session ses_1$/,
     );
     expect(stopped.calls()).toBe(3);
+  });
+
+  it("rides out a network failure of minutes, says the task goes on, and never calls it a failed task", async () => {
+    const down = new NotTheWorker("cannot reach https://w.example from this machine (fetch failed)", "x");
+    // 50 s with no answer: more polls than MAX_MISSES allows for other errors. Then the task is done.
+    const blip = poll([down, down, down, down, down, { state: "done" }]);
+    const lines: string[] = [];
+    const v = await waitTask(blip.c, "app", "ses_1", {
+      ...blip.o,
+      timeoutMs: 3_600_000,
+      onLine: (l) => lines.push(l),
+    });
+    expect(v.task.state).toBe("done");
+    expect(lines.filter((l) => /the task goes on in the workspace; trying again/.test(l))).toHaveLength(1);
+    expect(lines).toContain("the Worker answers again");
+
+    // No answer for 5 minutes: exit code 3 (not known), not 1 (failed), and no "cannot finish".
+    const dead = poll([down]);
+    const e = await waitTask(dead.c, "app", "ses_1", { ...dead.o, timeoutMs: 3_600_000 }).catch(
+      (x: unknown) => x,
+    );
+    expect(e).toBeInstanceOf(WaitTimeout);
+    expect((e as Error).message).toBe(
+      "Failed: no answer from the Worker for 5 min; the state of task ses_1 is not known, and the task goes on in the workspace — fix: check the network, then wait again: cf-opencode tasks ses_1 --workspace app --wait",
+    );
+  });
+
+  it("does not say cannot finish for an error that is not about the workspace", async () => {
+    const busy = poll([new CliError("OpenCode did not answer", "retry")]);
+    await expect(waitTask(busy.c, "app", "ses_1", busy.o)).rejects.toThrow(
+      /^Failed: OpenCode did not answer; the state of task ses_1 is not known — fix: check again: cf-opencode tasks ses_1 --workspace app$/,
+    );
   });
 
   it("stops at once on a task that is gone", async () => {

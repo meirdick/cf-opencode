@@ -64,7 +64,9 @@ On a first run that failed after it created the Worker, `~/.cf-opencode/deployin
 | `--wait needs one task` or `--follow needs one task` | Give a `ses_…` ID. |
 | `no task <ses_…> in the workspaces of this machine` | Run `cf-opencode tasks`. Pass `--workspace <id>` for another workspace. |
 | `task <ses_…> is in <a> and <b>` | Pass `--workspace <id>`. |
-| `<cause>, so task <ses_…> cannot finish` | Run `cf-opencode connect <workspace> --session <ses_…>`. |
+| `workspace <workspace> is not running, so task <ses_…> cannot finish` | The workspace stopped under the task. Run `cf-opencode connect <workspace> --session <ses_…>`. |
+| `<cause>; the state of task <ses_…> is not known` | The Worker gave an error three times. The task is not lost. Run `cf-opencode tasks <ses_…>` again. |
+| `no answer from the Worker for N min; the state of task <ses_…> is not known, and the task goes on in the workspace` | Your machine could not reach the Worker for 5 minutes. The task is not affected. Check the network, then run the `--wait` command again. The exit code is 3. |
 | `task <ses_…> still runs after N min` | Wait again with the same command. The exit code is 3. |
 | `--reply needs one task` | Give a `ses_…` ID: `cf-opencode tasks <session> --reply "<text>"`. |
 | `the reply is empty` or `the reply is over 20000 characters` | Change the text of the reply. |
@@ -127,7 +129,8 @@ On a first run that failed after it created the Worker, `~/.cf-opencode/deployin
 | `no Worker URL` | Run `cf-opencode init`, or pass `--url`. |
 | `no control token` | Run `cf-opencode init`. It writes `~/.cf-opencode/control-token`. |
 | `OpenCode is not installed here` | Install OpenCode 2: `curl -fsSL https://opencode.ai/v2/install \| bash`. |
-| `cannot reach <url> …` | Run `cf-opencode doctor`. Check the URL. |
+| `cannot reach <url> from this machine (fetch failed); workspaces and their tasks are not affected` | A connection from your machine dropped. Tasks in the workspaces go on. Run the command again. If it repeats, check the network and run `cf-opencode doctor`. `--wait` and `--follow` try again by themselves for 5 minutes. |
+| Every command fails with `cannot reach <url>` after the workers.dev subdomain of the account changed | The install on this machine has the old URL. Run `cf-opencode init --url https://<worker>.<new subdomain>.workers.dev`. The control token does not change. Then replace each Host block that `ssh-config` printed. |
 | `the Worker refused the control token on this machine` | The control token on this machine differs from the Worker. Copy `~/.cf-opencode/control-token` from the machine that ran `init`, or run `cf-opencode init --adopt`. |
 | `N/M workspaces already running` | Pause an idle workspace with `cf-opencode pause <workspace>`. Or raise `maxRunning` in `~/.cf-opencode/config.json` and run `cf-opencode upgrade`. |
 | `spawn did not finish in 4 min 30 s` | Retry. Check `cf-opencode status <workspace>`. |

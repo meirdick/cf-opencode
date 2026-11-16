@@ -54,7 +54,8 @@ Do not hold one long command. Check in a loop with a short timeout:
 cf-opencode tasks <session> --workspace <workspace> --wait --timeout 5 --json
 ```
 
-Exit code 3 means it still runs: do other work, then check again. Use `--follow` instead of `--wait` to
+Exit code 3 means it still runs, or this machine could not reach the Worker: do other work, then check again.
+A line with `cannot reach` is about this machine's network. The task is not lost; do not start it again. Use `--follow` instead of `--wait` to
 show the user the agent's progress live. Both end when this terminal ends; the task does not.
 
 ## 6. Read the result
