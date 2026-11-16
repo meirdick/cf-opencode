@@ -17,6 +17,7 @@ import {
   MAX_UPLOAD_BYTES,
   type StatResult,
 } from "./orb/copy";
+import { STORE_OFF, type StoreBucket, storeRoute, storeToWorkspace, workspaceToStore } from "./store";
 
 /** Same rule as WORKSPACE_ID_RE in api.ts; a copy here keeps the import one way. */
 const ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
@@ -51,12 +52,18 @@ export function copyRoute(
   req: Request,
   stubOf: (id: string) => CopyStub,
   parts: string[],
+  store?: StoreBucket,
 ): Promise<Response> | undefined {
   const [, a, b, c, ...rest] = parts;
   const method = req.method.toUpperCase();
   if (a === "copy" && b === undefined) {
     if (method !== "POST") return Promise.resolve(fail(405, `${method} /v1/copy is not allowed`, "use POST"));
-    return copyBetween(req, stubOf);
+    return copyBetween(req, stubOf, store);
+  }
+  if (a === "store") {
+    const key = parts.length > 2 ? decode(parts.slice(2).join("/")) : undefined;
+    if (key === null) return Promise.resolve(fail(400, "bad store name", "check the name"));
+    return storeRoute(req, store, key);
   }
   if (a === "workspaces" && b && c === "files" && rest.length === 0) {
     const id = decode(b);
@@ -73,7 +80,11 @@ export function copyRoute(
 }
 
 /** Workspace to workspace. Progress lines go out while the copy runs, so the client sees each step. */
-async function copyBetween(req: Request, stubOf: (id: string) => CopyStub): Promise<Response> {
+async function copyBetween(
+  req: Request,
+  stubOf: (id: string) => CopyStub,
+  store: StoreBucket | undefined,
+): Promise<Response> {
   let body: Record<string, unknown>;
   try {
     const text = await req.text();
@@ -91,9 +102,12 @@ async function copyBetween(req: Request, stubOf: (id: string) => CopyStub): Prom
   if (!from || !to)
     return fail(
       400,
-      "from and to need a workspace id and a path",
+      "from and to need a workspace id and a path, or a store name",
       "send { from: {workspace, path}, to: {workspace, path} }",
     );
+  if ("store" in from && "store" in to)
+    return fail(400, "both sides are the store", "copy from the store to a workspace or to this machine");
+  if (("store" in from || "store" in to) && !store) return json(404, { error: STORE_OFF });
   const force = body.force === true;
   const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
   const w = writable.getWriter();
@@ -102,7 +116,15 @@ async function copyBetween(req: Request, stubOf: (id: string) => CopyStub): Prom
   const say = (line: string) => void send({ line });
   void (async () => {
     try {
-      const r = await runBetween(stubOf, from, to, force, say);
+      let r: { ok: true; result: CopyResult } | CopyFail;
+      if ("store" in from) {
+        const dst = to as Side;
+        await sayWake(stubOf(dst.workspace), dst.workspace, "write", say);
+        r = await storeToWorkspace(store as StoreBucket, stubOf(dst.workspace), from.store, dst, force, say);
+      } else if ("store" in to) {
+        await sayWake(stubOf(from.workspace), from.workspace, "read", say);
+        r = await workspaceToStore(store as StoreBucket, stubOf(from.workspace), from, to.store, say);
+      } else r = await runBetween(stubOf, from, to, force, say);
       await send(r.ok ? { ok: true, result: r.result } : { ok: false, error: r.error });
     } catch (e) {
       await send({
@@ -305,9 +327,10 @@ function result(from: string, to: string, s: GuardStats, t0: number): CopyResult
   return { from, to, ...s, seconds: Math.round((Date.now() - t0) / 100) / 10 };
 }
 
-function side(v: unknown): Side | undefined {
+function side(v: unknown): Side | { store: string } | undefined {
   if (!v || typeof v !== "object") return undefined;
   const o = v as Record<string, unknown>;
+  if (typeof o.store === "string") return { store: o.store };
   if (typeof o.workspace !== "string" || !ID_RE.test(o.workspace) || typeof o.path !== "string")
     return undefined;
   return { workspace: o.workspace, path: o.path };

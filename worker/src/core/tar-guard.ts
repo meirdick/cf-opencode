@@ -235,6 +235,11 @@ function* header(
   yield ustar(name.slice(0, 100), type, size, mode, mtime, link.slice(0, 100));
 }
 
+/** The header of a one-file archive whose root is ROOT_NAME. The store sends files in this form. */
+export function fileHeader(size: number, mtime: number): Uint8Array {
+  return ustar(ROOT_NAME, "0", size, 0o644, Math.min(Math.max(Math.floor(mtime), 0), OCTAL_MAX), "");
+}
+
 function ustar(
   name: string,
   type: string,

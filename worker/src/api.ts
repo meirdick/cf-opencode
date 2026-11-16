@@ -21,6 +21,7 @@ import type { SessionList } from "./orb/sessions";
 import type { CancelResult } from "./orb/task-cancel";
 import type { StartResult, TaskInput, TaskList, TaskOne } from "./orb/tasks";
 import { isPreviewPath, previewControl, previewFallback, previewIngress } from "./preview-ingress";
+import { r2Store } from "./store";
 import { tasksRoute } from "./tasks-api";
 
 export const API_VERSION = "0.3.0";
@@ -141,6 +142,7 @@ async function route(req: Request, env: Env): Promise<Response> {
     req,
     (id) => env.WORKSPACE.getByName(workspaceDoName(id)) as unknown as CopyStub,
     parts,
+    env.STORE ? r2Store(env.STORE) : undefined,
   );
   if (cp) return cp;
   const [, a, b, c, ...rest] = parts;
@@ -164,6 +166,7 @@ async function route(req: Request, env: Env): Promise<Response> {
       browser: Boolean(env.BROWSER),
       github: Boolean(env.GITHUB_TOKEN),
       notify: Boolean(env.NOTIFY_URL),
+      store: Boolean(env.STORE),
     };
     return json(200, {
       name: "cf-opencode",

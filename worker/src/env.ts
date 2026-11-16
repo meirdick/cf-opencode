@@ -23,6 +23,8 @@ export interface Env {
   AI?: Ai;
   /** Browser Run. Sessions bill to the account; no token exists. */
   BROWSER?: import("./orb/browse").BrowserBinding;
+  /** The store (setting `store`): an R2 bucket for files that outlive a workspace. Absent when off. */
+  STORE?: R2Bucket;
 }
 
 /** DO name for a workspace. The `ws:` prefix keeps workspace ids from naming the registry. */
