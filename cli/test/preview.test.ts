@@ -71,6 +71,18 @@ describe("cf-opencode preview", () => {
     expect(r.opened[0]).not.toContain(PASSWORD);
   });
 
+  it("works the same on a Custom Domain", async () => {
+    const host = "https://code.example.com";
+    const r = run(
+      { target: () => ({ url: host, id: "demo", password: PASSWORD }) },
+      { url: `${host}/preview/demo/3000/`, link: `${host}/preview/demo/3000/?cf_opencode_ticket=1.n.m` },
+    );
+    expect(await r.done).toBe(0);
+    expect(r.out).toEqual([`${host}/preview/demo/3000/`]);
+    expect(r.requests[0]?.url).toBe(`${host}/preview/demo/link`);
+    expect(r.opened[0]).toBe(`${host}/preview/demo/3000/?cf_opencode_ticket=1.n.m`);
+  });
+
   it("opens only a link on this Worker's preview path with plain characters", async () => {
     // On Windows the opener is `cmd /c start`, which reads & | < > ^ % as commands.
     for (const link of [

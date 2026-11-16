@@ -151,6 +151,13 @@ describe("Agent Card", () => {
     expect(JSON.stringify(card)).not.toContain(TOKEN);
   });
 
+  it("on a Custom Domain, points at that hostname", async () => {
+    const { env: e } = env({});
+    const res = await handleApi(new Request("https://code.example.com/.well-known/agent-card.json"), e);
+    const card = (await res.json()) as ReturnType<typeof agentCard> & Record<string, any>;
+    expect(card.supportedInterfaces[0].url).toBe("https://code.example.com/a2a");
+  });
+
   it("answers only GET and HEAD", async () => {
     const { env: e } = env({});
     const res = await handleApi(new Request(`${ORIGIN}/.well-known/agent-card.json`, { method: "POST" }), e);
