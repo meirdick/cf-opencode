@@ -172,6 +172,7 @@ export type DeployFailure =
   | "buildx"
   | "auth"
   | "subdomain"
+  | "zone"
   | "other";
 
 const PUSH_MARKERS = /Pushed|Layer already exists|already exists remotely|registry\.cloudflare\.com/;
@@ -208,6 +209,8 @@ export function classifyDeployFailure(output: string): DeployFailure {
   if (/unknown flag: --load|buildx/i.test(output)) return "buildx";
   if (/not logged in|wrangler login|Authentication error|code: 10000\b/i.test(output)) return "auth";
   if (/workers\.dev subdomain/i.test(output)) return "subdomain";
+  // A --domain hostname with no zone in the account (getZoneIdFromHost in wrangler 4.156.0).
+  if (/Could not find zone for/i.test(output)) return "zone";
   return "other";
 }
 
@@ -230,13 +233,18 @@ export function deployFailureError(kind: DeployFailure, output: string): CliErro
       );
     case "auth":
       return new CliError(
-        "wrangler is not logged in, or the token lacks Workers Scripts Write and Workers Containers Write",
+        "wrangler is not logged in, or the token lacks Workers Scripts Write and Workers Containers Write (and Workers Routes Write on the zone, for --domain)",
         "run npx wrangler login, then rerun cf-opencode init",
       );
     case "subdomain":
       return new CliError(
         "this account has no workers.dev subdomain yet",
         "open https://dash.cloudflare.com/?to=/:account/workers-and-pages once (it creates one), then rerun",
+      );
+    case "zone":
+      return new CliError(
+        "wrangler found no zone for the --domain hostname in this account",
+        "add the domain to this Cloudflare account, or pass another --domain",
       );
     case "timeout":
       return new CliError(
@@ -290,12 +298,21 @@ export function lastErrorLine(output: string): string {
   return (pick ?? "no output").replace(/\s+/g, " ").slice(0, 300);
 }
 
-/** `wrangler deploy` with up to two retries for the registry flake. Plan, Docker and auth failures do not retry. */
+/**
+ * `wrangler deploy` with up to two retries for the registry flake. Plan, Docker and auth failures do not retry.
+ * `url` is https://<domain> with a Custom Domain, else the workers.dev URL. `workersDev` is the workers.dev URL
+ * when wrangler printed one.
+ */
 export async function deployWithRetry(
   w: Wrangler,
   name: string,
-  o: { onOutput?: (s: string) => void; onRetry?: (attempt: number) => void; retries?: number } = {},
-): Promise<{ url: string; attempts: number }> {
+  o: {
+    onOutput?: (s: string) => void;
+    onRetry?: (attempt: number) => void;
+    retries?: number;
+    domain?: string;
+  } = {},
+): Promise<{ url: string; workersDev?: string; attempts: number }> {
   const retries = o.retries ?? 2;
   for (let attempt = 1; ; attempt++) {
     const r = await w.run(["deploy", "--config", "worker/wrangler.jsonc"], {
@@ -304,14 +321,16 @@ export async function deployWithRetry(
     });
     const output = `${r.stdout}\n${r.stderr}`;
     if (r.code === 0) {
-      const url = parseWorkerUrl(output, name);
-      if (!url) {
+      const workersDev = parseWorkerUrl(output, name);
+      if (o.domain)
+        return { url: `https://${o.domain}`, ...(workersDev ? { workersDev } : {}), attempts: attempt };
+      if (!workersDev) {
         throw new CliError(
           "wrangler deploy did not print a workers.dev URL",
-          "enable workers.dev for the Worker in the dashboard, then cf-opencode init --url <url>",
+          "enable workers.dev for the Worker in the dashboard, then cf-opencode init --url <url>, or deploy with --domain <hostname>",
         );
       }
-      return { url, attempts: attempt };
+      return { url: workersDev, workersDev, attempts: attempt };
     }
     const kind = classifyDeployFailure(output);
     if (kind !== "retry" || attempt > retries) throw deployFailureError(kind, output);

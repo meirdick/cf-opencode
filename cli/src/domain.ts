@@ -154,7 +154,9 @@ export function domainCheck(
       warnings.push(
         `! could not read the DNS records of ${host} (${p.records.reason}); the deploy replaces a record on that name`,
       );
-  } else if (p.records.value.length > 0 && !p.owner.value && !adopt)
+  } else if (p.records.value.length > 0 && !adopt && p.owner.kind === "unknown")
+    warnings.push(`! ${host} has DNS records (${p.records.value.join(", ")}); the deploy replaces them`);
+  else if (p.records.value.length > 0 && !adopt && p.owner.kind === "known" && !p.owner.value)
     errors.push(
       new CliError(
         `${host} has DNS records (${p.records.value.join(", ")}), and the deploy replaces them`,

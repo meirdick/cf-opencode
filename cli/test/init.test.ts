@@ -2,6 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { readInstall, writeInstall } from "../src/config.js";
 import { init, type Probes, preflight } from "../src/init.js";
 import { selectResources } from "../src/manage.js";
 import type { Ui } from "../src/ui.js";
@@ -33,6 +34,7 @@ function fakeRun(o: { workerExists?: boolean; deploys?: RunResult[]; loggedIn?: 
       );
     }
     if (sub === "containers") return ok("[]");
+    if (sub === "auth") return ok('{"type":"oauth","token":"oauth-tok"}');
     if (sub === "deployments") {
       return o.workerExists
         ? ok("[{}]")
@@ -254,13 +256,170 @@ describe("init", () => {
     ).rejects.toThrow(/did not accept the control token/);
   });
 
-  it("rejects a URL that is not a workers.dev host", async () => {
+  it("takes a Custom Domain URL, and refuses a URL with a path or without https", async () => {
+    const deps = { run: fakeRun().run, ui: quiet, fetch: healthy, env: { CF_OPENCODE_CONTROL_TOKEN: "x" } };
+    await expect(init({ url: "https://code.example.com/" }, deps)).resolves.toMatchObject({
+      url: "https://code.example.com",
+      name: "cf-opencode",
+    });
+    for (const bad of ["http://code.example.com", "https://code.example.com/oc", "code.example.com"])
+      await expect(init({ url: bad }, deps)).rejects.toThrow(
+        /^Failed: .* — fix: pass (the Worker URL, )?https:/,
+      );
+  });
+
+  it("--url repairs the recorded URL after a rename, and keeps the account and the Custom Domain", async () => {
+    writeInstall({
+      url: "https://cf-opencode.old.workers.dev",
+      name: "cf-opencode",
+      accountId: "acc1",
+      domain: "code.example.com",
+    });
+    const lines: string[] = [];
+    const ui: Ui = { ...quiet, step: (l) => lines.push(l) };
+    const env = { CF_OPENCODE_CONTROL_TOKEN: "ctl" };
+    await init(
+      { url: "https://cf-opencode.new.workers.dev" },
+      { run: fakeRun().run, ui, fetch: healthy, env },
+    );
+    expect(readInstall()).toEqual({
+      url: "https://cf-opencode.new.workers.dev",
+      name: "cf-opencode",
+      accountId: "acc1",
+      domain: "code.example.com",
+    });
+    expect(lines.join("\n")).toContain("Replaced the recorded URL https://cf-opencode.old.workers.dev");
+  });
+
+  it("refuses --url with --domain", async () => {
     await expect(
       init(
-        { url: "https://example.com" },
-        { run: fakeRun().run, ui: quiet, env: { CF_OPENCODE_CONTROL_TOKEN: "x" } },
+        { url: "https://code.example.com", domain: "code.example.com" },
+        { run: fakeRun().run, ui: quiet, env: {} },
       ),
-    ).rejects.toThrow(/workers\.dev/);
+    ).rejects.toThrow(/--url and --domain do not go together/);
+  });
+});
+
+describe("init --domain", () => {
+  const API = "https://api.cloudflare.com/client/v4";
+  const zone = { id: "z1", name: "example.com", status: "active", name_servers: ["ns1.example.net"] };
+  /** The Cloudflare API by path, the Worker for every other URL. */
+  function router(o: { zones?: unknown[]; owner?: string; records?: unknown[]; domainUp?: boolean } = {}) {
+    const seen: string[] = [];
+    const f = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      seen.push(url);
+      const answer = (result: unknown) => new Response(JSON.stringify({ success: true, result }));
+      if (url.startsWith(API)) {
+        expect(new Headers(init?.headers).get("authorization")).toBe("Bearer oauth-tok");
+        const u = new URL(url);
+        if (u.pathname.endsWith("/zones"))
+          return answer(u.searchParams.get("name") === "example.com" ? (o.zones ?? [zone]) : []);
+        if (u.pathname.endsWith("/workers/domains"))
+          return answer(o.owner ? [{ hostname: "code.example.com", service: o.owner }] : []);
+        if (u.pathname.endsWith("/dns_records")) return answer(o.records ?? []);
+        return new Response("{}", { status: 404 });
+      }
+      if (url.startsWith("https://code.example.com") && o.domainUp === false) throw new Error("ENOTFOUND");
+      return healthy(input as string, init);
+    }) as typeof fetch;
+    return { seen, f };
+  }
+
+  it("deploys with the route in the copied config and records https://<domain>", async () => {
+    const { calls, run } = fakeRun();
+    const { seen, f } = router();
+    const r = await init(
+      { domain: "code.example.com", nonInteractive: true },
+      { run, ui: quiet, env: {}, fetch: f, resolveDns: async () => ({ kind: "known", value: [] }) },
+    );
+    expect(r.url).toBe("https://code.example.com");
+    expect(readInstall()).toEqual({
+      url: "https://code.example.com",
+      name: "cf-opencode",
+      accountId: "acc1",
+      domain: "code.example.com",
+    });
+    const dir = calls.find((c) => c.args.includes("deploy"))?.opts.cwd as string;
+    const cfg = JSON.parse(
+      readFileSync(join(dir, "worker", "wrangler.jsonc"), "utf8").replace(/^\s*\/\/.*$/gm, ""),
+    ) as Record<string, unknown>;
+    expect(cfg.routes).toEqual([{ pattern: "code.example.com", custom_domain: true }]);
+    expect(cfg.workers_dev).toBe(true);
+    expect(cfg.name).toBe("cf-opencode");
+    // The deploy is proven on workers.dev; the domain is asked after.
+    expect(seen.some((u) => u.startsWith("https://cfo.sub.workers.dev/v1/health"))).toBe(true);
+    expect(seen.some((u) => u.startsWith("https://code.example.com/v1/health"))).toBe(true);
+    // The token for the checks came from wrangler on stdout, never from argv.
+    expect(calls.map((c) => c.args.join(" ")).join("\n")).not.toContain("oauth-tok");
+  });
+
+  it("stops before any deploy when the account has no zone for the hostname", async () => {
+    const { calls, run } = fakeRun();
+    const { f } = router({ zones: [] });
+    const err = await init(
+      { domain: "code.example.com", nonInteractive: true },
+      { run, ui: quiet, env: {}, fetch: f },
+    ).catch((e: Error) => e);
+    expect(String((err as Error).message)).toMatch(
+      /^Failed: no zone for code\.example\.com in this Cloudflare account — fix: [^\n]+$/,
+    );
+    expect(calls.some((c) => c.args.includes("deploy"))).toBe(false);
+    expect(readInstall()).toBeUndefined();
+  });
+
+  it("does not replace DNS records or another Worker's domain without --adopt", async () => {
+    const records = router({ records: [{ name: "code.example.com", type: "A" }] });
+    await expect(
+      init(
+        { domain: "code.example.com", nonInteractive: true },
+        { run: fakeRun().run, ui: quiet, env: {}, fetch: records.f },
+      ),
+    ).rejects.toThrow(/has DNS records \(A\)/);
+    const other = router({ owner: "blog" });
+    await expect(
+      init(
+        { domain: "code.example.com", nonInteractive: true },
+        { run: fakeRun().run, ui: quiet, env: {}, fetch: other.f },
+      ),
+    ).rejects.toThrow(/Custom Domain of the Worker blog/);
+  });
+
+  it("a rerun keeps the recorded domain, and a domain that does not answer yet is a warning", async () => {
+    await init(
+      { domain: "code.example.com", nonInteractive: true },
+      { run: fakeRun().run, ui: quiet, env: {}, fetch: router().f },
+    );
+    const lines: string[] = [];
+    const { calls, run } = fakeRun({ workerExists: true });
+    const later = router({
+      owner: "cf-opencode",
+      records: [{ name: "code.example.com", type: "AAAA" }],
+      domainUp: false,
+    });
+    const r = await init(
+      { nonInteractive: true },
+      { run, ui: { ...quiet, step: (l) => lines.push(l) }, env: {}, fetch: later.f, domainMs: 0 },
+    );
+    expect(r.url).toBe("https://code.example.com");
+    const dir = calls.find((c) => c.args.includes("deploy"))?.opts.cwd as string;
+    expect(readFileSync(join(dir, "worker", "wrangler.jsonc"), "utf8")).toContain(
+      '"pattern": "code.example.com"',
+    );
+    expect(lines.join("\n")).toMatch(
+      /! https:\/\/code\.example\.com does not answer yet .*cf-opencode doctor/,
+    );
+    expect(readInstall()?.domain).toBe("code.example.com");
+  });
+
+  it("refuses a value that is not a hostname in preflight", async () => {
+    await expect(
+      init(
+        { domain: "https://code.example.com", nonInteractive: true },
+        { run: fakeRun().run, ui: quiet, env: {}, fetch: healthy },
+      ),
+    ).rejects.toThrow(/is not a hostname/);
   });
 });
 
