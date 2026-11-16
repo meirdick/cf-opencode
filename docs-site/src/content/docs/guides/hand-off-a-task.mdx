@@ -56,11 +56,24 @@ The agent did not see your local conversation. Put everything it needs in the ta
 
 1. start from your current branch as it is on `origin`,
 2. commit the work if it changed files, on a new branch if it is on the default branch,
-3. push the branch,
+3. push the branch, also when the work is not complete,
 4. open a pull request if `gh auth status` succeeds,
-5. end with one line: `Result: <what changed>; branch <name>; pull request <URL or none>`.
+5. not end its turn while a process that it started still runs,
+6. end with one line: `Result: <what changed>; branch <name>; pull request <URL or none>`.
 
 A task that changes no files, for example research, does not need a commit. It ends `done` with no commits.
+
+### Long jobs
+
+A job that runs for hours (a build, an import, a batch of model calls) needs care. The workspace pauses `idlePauseMinutes` after the agent's last message, and a pause stops every process. An agent that starts the job in the background and ends its turn loses the job.
+
+Write these in the task for a long job:
+
+- "Do not end your turn while the job runs. Check it in a loop until it ends."
+- "Make the job able to continue from where it stopped", for example with a checkpoint file for each unit of work.
+- "Commit and push at each checkpoint", so the work is on the remote before the job ends.
+
+`run` puts the first rule in each task. If the agent ends its turn anyway, the result says so. See [Work that is not safe](#work-that-is-not-safe).
 
 ## Ask for a structured result
 
@@ -103,8 +116,10 @@ The schema is kept with the task in the Worker. `tasks` on another machine shows
 The error is one line, for example:
 
 ```text
-Failed: 1 commit on feat not pushed to origin/feat; the workspace clones from the Git remote and would not see this — fix: commit and git push, or pass --allow-dirty
+Failed: local checkout /home/you/my-app: 1 commit on feat not pushed to origin/feat; the workspace clones from the Git remote and would not see this — fix: commit and git push on this machine, or pass --allow-dirty
 ```
+
+The preflight reads the checkout on your machine, the one in the path of the message. It does not read the workspace. This is also true when you name another workspace as the target of `run`.
 
 `--allow-dirty` starts the task anyway. It prints what the workspace will not see. A directory that is not a git checkout has no preflight.
 
@@ -171,6 +186,24 @@ Open: cf-opencode connect my-app --session ses_19c0…
 If the same session ID is in two workspaces, add `--workspace <id>`.
 
 `tasks` wakes nothing. A running workspace answers with the current states. A paused workspace answers with the states that it saved when it paused.
+
+### Work that is not safe
+
+A task can end `done` while its work is only in the workspace. The Worker checks two facts when a task ends:
+
+- `unpushed`: commits that no remote branch has. They are only on the workspace disk.
+- `processes`: processes that the agent left running in the checkout. The next pause stops them.
+
+`cf-opencode tasks` marks such a task with `!` after the state. `tasks <ses_…>` shows the facts and the command that tells the agent to finish:
+
+```text
+Not pushed ! 13 commits are only on the workspace disk
+Processes  ! left running, a pause stops them: node build.js
+
+The task ended with work that is not safe. Tell the agent: cf-opencode tasks ses_19c0… --reply "Wait for your process to end, then commit and push."
+```
+
+The result record has the same two fields, so a script and the notify URL get them too. The facts are from the time the task ended. A later end of the same task (after a reply) reads them again.
 
 ## Wait for a task
 
@@ -291,16 +324,18 @@ The result record:
 | `state` | `running`, `done`, `failed`, `waiting` or `stopped`. |
 | `summary` | The last message of the agent that has text (the end of it). |
 | `branch` | The branch of the workspace checkout. |
-| `commits` | `[{ "sha", "subject" }]`, the commits made after the task started. At most 30. An empty list means no commit. |
+| `commits` | `[{ "sha", "subject" }]`, the commits made after the task started that no other remote branch has. At most 30. An empty list means no commit. |
 | `pullRequest` | The pull request of the branch, when `gh pr view` finds one. |
-| `changedFiles` | The files that differ from the start of the task, committed or not. At most 100. |
+| `changedFiles` | The files of the task's commits, and the files with changes that are not committed. At most 100. |
+| `unpushed` | The count of commits that no remote branch has. Left out when it is 0. |
+| `processes` | The processes left running in the checkout: the program name and its first plain argument. At most 5. Left out when there are none. |
 | `question` | When `waiting`: the open permission request or question. |
 | `error` | When `failed` or `stopped`: why. |
 | `structured`, `structuredError` | With `--schema`: the checked value, or why there is none. |
 | `notified`, `notifyError` | With a notify URL: the last delivery, or why it failed. |
 | `started`, `updated` | ISO times. |
 
-Fields that are not known are left out. The Worker reads `branch`, `commits` and `changedFiles` while a task runs, and once more with `pullRequest` when the task ends.
+Fields that are not known are left out. The Worker reads `branch`, `commits`, `changedFiles`, `unpushed` and `processes` while a task runs, and once more with `pullRequest` when the task ends.
 
 A failure is one line, `Failed: <cause> — fix: <action>`. With `--json` it is `{"ok":false,"error":"…"}`.
 
@@ -332,4 +367,26 @@ A handed-off session gets a Handoff block before the task. See [What the agent k
 - One workspace runs all the tasks of a checkout. Two tasks at the same time share the same files, and the same branch facts.
 - `run` never sends local files. Uncommitted work stays on your laptop.
 - A pause stops processes. A task that still runs when the workspace pauses is `stopped`. Continue it with `connect`.
-- `changedFiles` compares with the commit at the start. When the agent checks out another branch, the files of that branch count too.
+- `commits` and `changedFiles` do not count what a merge or a new branch brings from the remote. A commit that two remote branches have is not counted.
+- `processes` lists a process only when nothing watches it. A process that runs in a terminal (`cf-opencode shell`, SSH) is not listed.
+- No command copies a file from one workspace to another. See the next section.
+
+## Move a file between workspaces
+
+Two workspaces share only the Git remote. To give a large file (a database, an export) to another workspace, put it on a branch with no history and fetch it there:
+
+```sh
+# In the workspace that has the file
+git checkout --orphan data-snapshot
+git rm -rf --cached . > /dev/null
+git add -f export.json.gz
+git commit -m "Data snapshot"
+git push -f origin data-snapshot
+git checkout -f <your branch>
+
+# In the other workspace
+git fetch origin data-snapshot
+git show FETCH_HEAD:export.json.gz | gunzip > export.json
+```
+
+Name the branch and the two commands in the task. An agent that is told only "get the export" must ask where it is. GitHub refuses a file over 100 MB, so compress or split a larger file.

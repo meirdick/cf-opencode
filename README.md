@@ -61,7 +61,7 @@ prints the next command:
 … deploying Worker cf-opencode and building the workspace image (the first build takes a few minutes)
 ✓ Deployed https://cf-opencode.example.workers.dev in 190s (log: ~/.cf-opencode/deploy.log)
 ✓ Control token stored in ~/.cf-opencode/control-token and on the Worker
-✓ Worker healthy (API 0.2.2)
+✓ Worker healthy (API 0.3.0)
 ✓ GITHUB_TOKEN stored on cf-opencode (GitHub user you)
 
 Ready: https://cf-opencode.example.workers.dev
@@ -333,9 +333,10 @@ Shell, SSH, OpenCode, and the clone all run as `user` (uid 1000), so one owner
 holds every file in `/home/user`. `user` has passwordless `sudo` for
 `apt-get install`.
 
-The image is small on purpose: Debian with git, `gh`, python3, curl, ripgrep,
-jq and tmux. It has no Node, compiler or other language toolchain. The agent
-installs what a project needs with `apt-get`, and the snapshot keeps it.
+The image is small on purpose: Debian with git, `gh`, python3, Node 22, mise,
+curl, ripgrep, jq and tmux. It has no compiler. `mise install` gets the Node
+version a project pins. The agent installs what else a project needs with
+`apt-get`, and the snapshot keeps it.
 
 ## How it is put together
 

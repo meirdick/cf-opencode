@@ -2,7 +2,7 @@
   "name": "@cf-opencode/worker",
   "private": true,
   "type": "module",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "scripts": {
     "typecheck": "tsc -p .",
     "dev": "wrangler dev"

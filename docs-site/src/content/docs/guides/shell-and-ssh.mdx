@@ -49,6 +49,8 @@ scp file.txt cf-opencode-my-repo:
 
 The host name is `cf-opencode-<workspace>`. No other setup is needed.
 
+The block sets `ConnectTimeout 120`, because the first connection to a paused workspace waits for the wake. A block from before 0.3.0 does not have it. If `ssh` stops with `Connection timed out during banner exchange`, replace the block.
+
 To use herdr, add the workspace as a machine, then run herdr:
 
 ```sh

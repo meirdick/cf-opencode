@@ -53,7 +53,8 @@ On a first run that failed after it created the Worker, `~/.cf-opencode/deployin
 
 | Cause | What to do |
 | --- | --- |
-| `… not pushed to origin/<branch>`, `branch <branch> is not pushed (no upstream)`, `HEAD is not on a branch`, `N files with changes not committed` or `N untracked files`, followed by `the workspace clones from the Git remote and would not see this` | Commit and `git push`, or pass `--allow-dirty`. These are the preflight failures of `run`. |
+| `local checkout <path>: …` with `… not pushed to origin/<branch>`, `branch <branch> is not pushed (no upstream)`, `HEAD is not on a branch`, `N files with changes not committed` or `N untracked files`, followed by `the workspace clones from the Git remote and would not see this` | Commit and `git push` in that checkout on your machine, or pass `--allow-dirty`. These are the preflight failures of `run`. The preflight reads your machine, not the workspace: a clean tree in the workspace does not change it. |
+| `tasks` shows `done !`, or a task shows `Not pushed !` or `Processes  !` | The task ended with commits that are only in the workspace, or with a process that the next pause stops. Run the `--reply` command that `tasks <ses_…>` prints. See [Work that is not safe](/guides/hand-off-a-task/#work-that-is-not-safe). |
 | `the task is empty` or `run needs a task` | Give the task as one quoted argument. |
 | `run takes the task as one argument` | Put the task in quotes. |
 | `<file> is outside the supported JSON Schema subset (…)` | Use only `type`, `properties`, `required`, `items`, `enum` and `additionalProperties: false` in `--schema`. |
@@ -144,9 +145,12 @@ A deploy restarts the Durable Object of a workspace. If that interrupts a connec
 | Cause | What to do |
 | --- | --- |
 | `no local password for <workspace>` | Run `cf-opencode connect <workspace>`. |
+| `<ses_…> is a session id, not a workspace` | Give the workspace first: `cf-opencode connect <workspace> --session <ses_…>`. To read a task: `cf-opencode tasks <ses_…>`. |
 | `the workspace refused the password for <workspace>` | Run `cf-opencode connect <workspace>`. |
 | `<workspace> was deleted` | Start a new workspace with `cf-opencode connect`. |
 | `<workspace> did not wake (<status>)` | Run `cf-opencode logs <workspace>`. |
+| `Connection timed out during banner exchange` from `ssh` or `scp` | Your SSH config has a short `ConnectTimeout` for all hosts, and the wake of a paused workspace takes longer. `cf-opencode ssh` sets 120 seconds from 0.3.0. For a Host block that an older version printed, remove it from `~/.ssh/config` and run `cf-opencode ssh-config <workspace> >> ~/.ssh/config` again. |
+| `the Origin header is not this Worker's origin` (HTTP 403 on a websocket) | Your client library adds an `Origin` header by itself. Send none. In Python: `websocket.create_connection(url, header=[…], suppress_origin=True)`. A workspace made before 0.3.0 has the old Python library: use `suppress_origin=True` there, or run `cf-opencode rebuild <workspace>`. |
 | `the shell websocket was refused (<code>)` | Run `cf-opencode logs <workspace>`. |
 | `the ssh websocket was refused (<code>)` | Run `cf-opencode logs <workspace>`. |
 | `<workspace> is paused, and a dev server does not survive a pause` | A `--web` preview does not wake a paused workspace. Run `cf-opencode connect <workspace>`, start the dev server, then retry. The default `cf-opencode preview` wakes it. |

@@ -28,13 +28,14 @@ The notes list what the agent can do:
 | Topic | What the notes say |
 | --- | --- |
 | Packages | `sudo apt-get install <package>` works without a password. Installed packages stay on the disk. |
+| Node | `node` and `npm` are installed (Node 22). When the project pins another version (`mise.toml`, `.tool-versions`, `.nvmrc`, `.node-version`), run `mise trust && mise install` in the project. `mise` installs other tools the same way. |
 | GitHub | `git clone`, `pull`, `push` and `gh` work for the user's repositories. The agent must not ask for a token and must not run `gh auth login`. The credential is added outside the machine. |
 | Web search | Run `cf-opencode-search "<query>"`. It runs on the user's Cloudflare account. |
 | Read a page | Run `cf-opencode-fetch <url>`. A real browser loads the page. `--links`, `--screenshot` and `--pdf` are options. |
-| Browser | No browser is installed. `cf-opencode-browse` opens a remote browser session and prints a Chrome DevTools Protocol websocket address. Python has the `websocket` module. |
+| Browser | No browser is installed. `cf-opencode-browse` opens a remote browser session and prints a Chrome DevTools Protocol websocket address, and a Python line that connects to it. Python has the `websocket` module. |
 | Dev server | Start it on `0.0.0.0`. Run `cf-opencode-preview <port>`. Give the user the line it prints. They open it with `cf-opencode preview`. Nothing is public. The agent can check its own frontend with `cf-opencode-fetch http://p<port>.preview.internal/` or `cf-opencode-browse --preview <port>`. |
 | Notes to the user | `cf-opencode-notify "<text>"` posts the text to the user's notify URL. Use it for a blocker or a result that the user must see soon, not for progress. |
-| Disk | The disk is saved when the workspace is idle. Processes do not survive that. Files do. |
+| Disk | The disk is saved when the workspace is idle. Processes do not survive that. Files do. The workspace is idle some minutes after the agent's last message when nobody is attached, also while a process still runs. For a long job the agent stays in its turn and checks the job in a loop. |
 
 ## The Handoff block
 

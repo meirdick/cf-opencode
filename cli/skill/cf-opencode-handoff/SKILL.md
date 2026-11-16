@@ -30,6 +30,9 @@ Write the task as if to a new colleague. Include:
 - **Constraints**: files or areas not to touch, style rules, things that need no change.
 - **Proof**: the commands that show the change works (tests, a build, a script), and what they must print.
 - **Context**: facts from this conversation the agent needs. Paths, error messages, decisions.
+- **Long jobs**: for a job that runs longer than some minutes (a build, an import), say: do not end your
+  turn while it runs, make it able to continue from a checkpoint, and commit and push at each checkpoint.
+  The workspace pauses some minutes after the agent's last message, and the pause stops every process.
 
 Keep it in one quoted argument. Put long details in a file in the repository, push it, and name the file.
 
@@ -57,12 +60,18 @@ show the user the agent's progress live. Both end when this terminal ends; the t
 ## 6. Read the result
 
 The last JSON object is the result record: `state`, `summary`, `branch`, `commits`, `pullRequest`,
-`changedFiles`, `question`, `error`, `structured`. `branch`, `commits` and `pullRequest` come from git,
-not from the agent's words.
+`changedFiles`, `unpushed`, `processes`, `question`, `error`, `structured`. `branch`, `commits`,
+`pullRequest`, `unpushed` and `processes` are facts the Worker read in the workspace, not the agent's words.
+
+Check `unpushed` and `processes` before you report a `done` task. `unpushed` is the count of commits that are
+only on the workspace disk. `processes` are jobs the agent left running; the next pause stops them. When one
+of them is present, the work is not safe. Send
+`cf-opencode tasks <session> --workspace <workspace> --reply "Wait for your process to end, then commit and push."`
+and watch again. Tell the user what you did.
 
 | Exit | State | Do |
 | --- | --- | --- |
-| 0 | `done` | Report the summary, the branch and the pull request. `commits: []` is normal for research. |
+| 0 | `done` | First check `unpushed` and `processes` (above). Then report the summary, the branch and the pull request. `commits: []` is normal for research. |
 | 1 | `failed` | Report `error`. Offer to retry with a clearer brief, or to open the session. |
 | 2 | `waiting` | The agent asks a question or a permission (`question`). Ask the user. Send the answer to a question with `cf-opencode tasks <session> --workspace <workspace> --reply "<answer>"`. A permission request is answered in OpenCode: `cf-opencode connect <workspace> --session <session>`. Then watch again. |
 | 4 | `stopped` | The workspace paused under the task. Tell the user; `cf-opencode connect <workspace> --session <session>` continues it. |

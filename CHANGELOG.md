@@ -1,5 +1,57 @@
 # Changelog
 
+## 0.3.0 (2026-11-16)
+
+From a first long run of handed-off tasks: several workspaces, with the laptop closed.
+
+After `cf-opencode upgrade`, a workspace made before 0.3.0 keeps its old image. Run `cf-opencode rebuild
+<workspace>` to get Node, mise and the browser fix on it.
+
+Work that a task leaves in the workspace:
+
+- A task could end `done` with commits that were not pushed, or with a build that the agent started in the
+  background. The idle pause then stopped the build, and nothing said so. The result record now has
+  `unpushed` (the count of commits that no remote branch has) and `processes` (the processes left running in
+  the checkout). `cf-opencode tasks` shows `done !` for such a task, `tasks <ses_…>` shows the two facts and
+  the `--reply` command that tells the agent to finish, and the notify URL gets the same fields. The state
+  stays `done`.
+- The instruction that `run` adds to each task now says: push also when the work is not complete, and do
+  not end your turn while a process you started still runs. The notes for the agent in the workspace say how
+  to run a long job.
+- `commits` and `changedFiles` no longer count what a merge or a new branch brings from the remote. Before, a
+  task that merged the default branch after others pushed to it listed their commits and files as its own.
+
+The workspace image:
+
+- Node 22 (`node`, `npm`, `npx`, `corepack`) is installed. Before, each new workspace for a Node project
+  spent about 10 minutes on the install.
+- `mise` is installed, for a project that pins another version of Node or another tool. `mise trust && mise
+  install` in the project reads `mise.toml`, `.tool-versions`, `.nvmrc` and `.node-version`. Both downloads
+  are pinned by SHA-256.
+- `cf-opencode-browse` now works from in the workspace with Python's `websocket` module. Debian's version of
+  the module sent an `http://` Origin for a `wss://` address, and the Worker refused it with 403. The image
+  changes that one line; the command also prints a Python line that connects. The 403 for a wrong Origin now
+  says the fix.
+- `cf-opencode-fetch` takes its options before or after the URL, and refuses an unknown option. Before,
+  `cf-opencode-fetch <url> --screenshot f.png` printed Markdown and saved no file.
+- `PORT` is no longer in the environment of the tools the agent runs. A dev server that reads `PORT` tried to
+  take 4096, OpenCode's own port.
+
+The CLI:
+
+- The preflight of `run` names the local checkout and its path: `Failed: local checkout /home/you/app: 3
+  files with changes not committed; …`. The check always read your machine, but the message did not say so,
+  and it looked like a wrong answer about the workspace.
+- `cf-opencode ssh`, `ssh-config` and `preview` set `ConnectTimeout 120`. On a machine with a short
+  `ConnectTimeout` for all hosts, the first connection to a paused workspace stopped with `Connection timed
+  out during banner exchange`, because the wake takes longer. Replace a Host block that an older `ssh-config`
+  printed.
+- `connect` and `run` refuse a session id (`ses_…`) given in the place of a workspace id. Before, that made a
+  new, empty workspace with the name of the session.
+
+Docs: how to write a task for a long job, and how to move a large file between two workspaces over a Git
+branch.
+
 ## 0.2.2 (2026-11-12)
 
 - Just after a deploy, Cloudflare can answer for some seconds with its own page. The CLI now tries a read or

@@ -327,6 +327,19 @@ task, git runs only on the read that shows it (`tasks <ses_…>`, not a `--wait`
 poll); it runs once more, with `gh`, when the task ends.
 A task that ends with no commit is `done`: many tasks are research.
 
+`done` is what OpenCode says about the session, not a statement that the work is safe. An agent can end its
+turn with commits that are not pushed, or with a build it started in the background; the idle pause then
+stops the build, since a process with no pty output and no active session is not use. The git script reads
+two more facts for that: `unpushed` (commits on HEAD that no remote branch has) and `processes` (processes
+in the checkout that are not under OpenCode, tmux or sshd, so nothing watches them). The state stays `done`;
+the clients show a `!` and the reply that fixes it. Only the program name and its first plain argument are
+kept from a command line, because the record goes to the notify URL. A process left running does not keep
+the workspace awake: a forgotten dev server would then cost until `maxAwakeHours`.
+
+The task's commits are also limited to those that no other remote branch has. The commit time alone is not
+enough: a task that runs for a day, or gets a reply a day later, merges commits that others made after its
+start.
+
 `run --schema` keeps the schema with the task in the Durable Object, so
 validation does not depend on the machine that started it. The subset
 (`core/json-subset.ts`) is small on purpose and refuses every other keyword,

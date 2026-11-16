@@ -7,6 +7,33 @@ sidebar:
 
 The full history is in [CHANGELOG.md](https://github.com/meirdick/cf-opencode/blob/main/CHANGELOG.md) in the repository.
 
+## 0.3.0 (2026-11-16)
+
+Fixes from a first long run of handed-off tasks with the laptop closed.
+
+After `cf-opencode upgrade`, run `cf-opencode rebuild <workspace>` for each workspace made before 0.3.0. A rebuild puts Node, mise and the browser fix on its disk.
+
+Tasks:
+
+- The result record has `unpushed` and `processes`. A task can end `done` with commits that are only in the workspace, or with a process that the next pause stops. `cf-opencode tasks` shows `done !` for such a task. `tasks <ses_…>` shows the facts and the `--reply` command that tells the agent to finish. See [Work that is not safe](/guides/hand-off-a-task/#work-that-is-not-safe).
+- The instruction that `run` adds to each task tells the agent to push work that is not complete, and not to end its turn while a process that it started still runs. See [Long jobs](/guides/hand-off-a-task/#long-jobs).
+- `commits` and `changedFiles` do not count what a merge or a new branch brings from the remote.
+
+The workspace image:
+
+- Node 22 is installed. `mise` is installed for a project that pins another version: run `mise trust && mise install`. See [The workspace image](/reference/image/).
+- `cf-opencode-browse` works from the workspace with Python's `websocket` module. Before, the Worker refused the connection with HTTP 403.
+- `cf-opencode-fetch` takes its options before or after the URL. Before, an option after the URL was ignored.
+- `PORT` is not in the environment of the tools that the agent runs.
+
+The CLI:
+
+- The preflight failure of `run` names the local checkout and its path. The check reads your machine, not the workspace.
+- `cf-opencode ssh`, `ssh-config` and `preview` set `ConnectTimeout 120`. Before, the first connection to a paused workspace could stop with `Connection timed out during banner exchange`. Replace a Host block that an older `ssh-config` printed.
+- `connect` and `run` refuse a session ID in the place of a workspace ID.
+
+Docs: [Move a file between workspaces](/guides/hand-off-a-task/#move-a-file-between-workspaces).
+
 ## 0.2.2 (2026-11-12)
 
 - Just after a deploy, Cloudflare can answer for some seconds with its own page. The CLI now tries the request again. If it stops, it prints one line with the HTTP status. Before, `connect` could stop with `Failed: <!DOCTYPE html>`.

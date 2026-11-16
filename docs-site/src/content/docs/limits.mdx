@@ -12,7 +12,8 @@ sidebar:
 - **A redeploy reaches a running workspace late.** The control code of a running workspace changes after its container next stops. Pause the workspace to move it sooner.
 - **One container size per install.** The default is 2 vCPU, 6 GiB of memory and a 20 GB disk. Change it with `instance`.
 - **A limit on running workspaces.** `maxRunning` is 10 by default. A connect past the limit fails with `N/M workspaces already running`.
-- **The image has no Node and no compilers.** See [The workspace image](/reference/image/).
+- **The image has Node 22 and no compilers.** A workspace made before 0.3.0 has no Node until you run `cf-opencode rebuild <workspace>`. See [The workspace image](/reference/image/).
+- **No file copy between workspaces.** Two workspaces share only the Git remote. See [Move a file between workspaces](/guides/hand-off-a-task/#move-a-file-between-workspaces).
 - **Local OpenCode must be version 2** for `connect`.
 - **Sessions list.** `cf-opencode sessions` shows at most 50 sessions per workspace.
 - **A deploy needs Docker.** Wrangler builds the image on your machine on each deploy.
