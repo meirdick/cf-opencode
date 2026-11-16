@@ -15,7 +15,7 @@ sidebar:
 - **A limit on running workspaces.** `maxRunning` is 10 by default. A connect past the limit fails with `N/M workspaces already running`. A workspace from `run --new` counts too.
 - **One task at a time in a checkout.** A second `run` into a workspace where a task is `running` or `waiting` fails. Give it its own checkout with `--worktree` or `--new`. See [Run two tasks at once](/guides/hand-off-a-task/#run-two-tasks-at-once).
 - **The image has Node 22 and no compilers.** A workspace made before 0.3.0 has no Node until you run `cf-opencode rebuild <workspace>`. See [The workspace image](/reference/image/).
-- **No file copy between workspaces.** Two workspaces share only the Git remote. See [Move a file between workspaces](/guides/hand-off-a-task/#move-a-file-between-workspaces).
+- **File copy limits.** `cf-opencode cp` moves at most 4 GB and 200,000 entries in one copy. It runs at most 30 minutes in each workspace. A copy from this machine is one request, and Cloudflare accepts at most 100 MB in one request on `workers.dev`. A copy wakes a paused workspace. An agent in a workspace cannot start a copy. See [Move a file between workspaces](/guides/hand-off-a-task/#move-a-file-between-workspaces).
 - **Local OpenCode must be version 2** for `connect`.
 - **Sessions list.** `cf-opencode sessions` shows at most 50 sessions per workspace.
 - **A deploy needs Docker.** Wrangler builds the image on your machine on each deploy.
@@ -43,8 +43,9 @@ Everything is billed to your Cloudflare account. cf-opencode has no fee.
 | Workers AI models (`@cf/...`) | Workers Paid usage |
 | Third-party models through AI Gateway | AI Gateway credits (Unified Billing) |
 | Browser sessions | Per browser hour, through Browser Run |
+| The store (`store`, off by default) | R2 storage per GB-month and operations; no egress fee |
 
-For current prices, see the Cloudflare pricing pages for [Containers](https://developers.cloudflare.com/containers/pricing/), [Workers AI](https://developers.cloudflare.com/workers-ai/platform/pricing/) and [Browser Run](https://developers.cloudflare.com/browser-run/).
+For current prices, see the Cloudflare pricing pages for [Containers](https://developers.cloudflare.com/containers/pricing/), [Workers AI](https://developers.cloudflare.com/workers-ai/platform/pricing/), [Browser Run](https://developers.cloudflare.com/browser-run/) and [R2](https://developers.cloudflare.com/r2/pricing/).
 
 How to keep costs low:
 
@@ -53,6 +54,7 @@ How to keep costs low:
 - A long job keeps the workspace awake. Give `cf-opencode-job start` a `--max-minutes` near the time that the job needs.
 - Run `cf-opencode pause <workspace>` to stop a workspace now.
 - A browser session closes after 10 minutes without activity.
+- Files in the store stay until you remove them, also after a workspace is deleted. List them with `cf-opencode store`. Remove one with `cf-opencode store rm <name>`.
 - Run `cf-opencode uninstall --yes` to delete the Worker, the container application and the images. Snapshot data stays up to 30 days; Cloudflare has no API to delete it. Files in `~/.cf-opencode` stay, except `install.json`.
 
 Containers need the Workers Paid plan.

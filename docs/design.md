@@ -489,6 +489,46 @@ it for a few seconds (no internet, nothing started), which starts a new 30
 days. `list` and `status` flag a snapshot under two days out, which only happens
 when refresh is failing or off.
 
+## Copy between workspaces
+
+`cf-opencode cp` uses the rebuild path: `tar c` in one container, a stream over Workers RPC, `tar x` in
+another. The Worker route (`copy-api.ts`) drives it, so the CLI sees progress lines (NDJSON) while it runs.
+
+- Only the control token starts a copy (`/v1/copy`, `/v1/workspaces/<id>/files`). The agent has its workspace
+  password, which reaches no other workspace.
+- The source is not trusted. `tar-guard.ts` reads every header in the Worker, refuses an absolute name, `..`,
+  a symlink target that is absolute or has `..`, a hard link out of the tree and a device, and writes new
+  headers itself. The receiving tar never parses a header from the source. The root gets a fixed name; the
+  target side renames it.
+- The target side unpacks as `user` into a stage under `~/.cache/cf-opencode/cp`, and moves it into place only
+  after the Worker saw the whole stream pass. A copy that fails changes nothing.
+- A paused or warm workspace wakes (derived password, as A2A). A warm container would lose writes when it stops.
+  The copy sets the last use to its time limit, so the idle pause waits, and back to now when it ends.
+- Limits, from the docs and a measure: a Durable Object call has no wall time limit while the caller is
+  connected; a stream over RPC has no size limit; a Worker request has 30 s of CPU. The guard costs about 0.3 s of
+  CPU per GiB in 64 KiB chunks (1.1 s in 4 KiB chunks) and 32 µs per small file, measured in Node. So one copy is
+  at most 4 GB and 200,000 entries, and `timeout 1800` stops each tar. An upload is one request body: 100 MB on
+  `workers.dev`.
+- No command in the workspace. An agent that could pull from another workspace would break the first rule, and a
+  grant that the owner opens with the control token is new state and a new auth path.
+
+## The store
+
+`store: true` adds an R2 bucket, `<worker>-store`, for files that outlive a workspace. Off by default: it is a
+cost that grows, and a place every agent can read.
+
+- init makes the bucket with `wrangler r2 bucket create` before the deploy, then adds an `r2_buckets` binding
+  with that name to the copied `wrangler.jsonc`. A fixed name, not wrangler's provisioning: uninstall and the
+  docs must name it. uninstall keeps it and says how to delete it; its files are the user's.
+- The CLI reaches it through `/v1` (`store:` sides of `cp`, `cf-opencode store`). A workspace side goes through
+  the cp path and the tar guard; the store holds files only. R2 needs the length of a stream, so the Worker
+  holds back the last chunk until the guard has checked the end of the archive.
+- The agent reaches it through the intercepted AI host (`cf-opencode-store`), as `cf-opencode-notify` does. No
+  R2 key enters the container. It reads every name, and writes and removes only `<its workspace>/…`, so it
+  cannot replace a file of the user or of another workspace. The workspace id comes from the egress props,
+  which only the Worker sets. One upload is at most 100 MB, the documented limit for one request body.
+- lockdown does not turn it off: the bucket is in the account, not on the internet.
+
 ## Rebuild, not in-place upgrades
 
 Cloudflare snapshots are tied to the image they came from, so an upgrade never

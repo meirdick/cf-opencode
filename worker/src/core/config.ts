@@ -77,6 +77,11 @@ export function parseConfig(raw: string | undefined): ProviderConfig {
       "Failed: autoReply must be true or false — fix: set it in ~/.cf-opencode/config.json, then cf-opencode upgrade",
     );
   }
+  if (typeof cfg.store !== "boolean") {
+    throw new Error(
+      "Failed: store must be true or false — fix: set it in ~/.cf-opencode/config.json, then cf-opencode upgrade",
+    );
+  }
   // One way only: the URL is the Worker secret NOTIFY_URL. A key left in the settings file must not be ignored.
   if (o.notifyUrl !== undefined) {
     throw new Error(
@@ -137,6 +142,7 @@ function pick(o: Record<string, unknown>): Partial<ProviderConfig> {
   if (o.searchProvider !== undefined) out.searchProvider = o.searchProvider as string;
   if (o.a2a !== undefined) out.a2a = o.a2a as boolean;
   if (o.autoReply !== undefined) out.autoReply = o.autoReply as boolean;
+  if (o.store !== undefined) out.store = o.store as boolean;
   return out;
 }
 

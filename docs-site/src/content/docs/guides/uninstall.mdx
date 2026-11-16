@@ -32,6 +32,7 @@ Pass `--token-file <path>` if you use a Cloudflare API token file.
 - Cloudflare has no API to delete a snapshot. Cloudflare keeps snapshot data up to 30 days after the last restore.
 - `uninstall` removes `~/.cf-opencode/install.json`. It keeps the other files in `~/.cf-opencode`, such as the control token and the workspace passwords. Delete the folder to remove them. See [Files on your machine](/reference/files/).
 - The GitHub token and any provider keys were Worker secrets. They go with the Worker.
+- The store bucket, `<worker>-store`, stays with its files. R2 bills for them until you delete them. `uninstall` names the bucket when it exists. To delete it, empty it in the dashboard (R2 Object Storage), then run `npx wrangler r2 bucket delete <worker>-store`.
 
 ## Delete one workspace
 

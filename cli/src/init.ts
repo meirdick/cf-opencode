@@ -23,6 +23,7 @@ import { domainCheck, hostnameError, probeDomain, type ResolveDns } from "./doma
 import { CliError, toFailedLine } from "./errors.js";
 import { type GithubOutcome, setupGithub } from "./github.js";
 import { setupSkill } from "./skill.js";
+import { addStoreBinding, ensureStoreBucket, storeBucketName } from "./store.js";
 import { proxyUrl } from "./terminal.js";
 import { ask, readSecret, type Ui } from "./ui.js";
 import {
@@ -314,6 +315,8 @@ export async function init(o: InitOptions, deps: InitDeps): Promise<InitResult> 
   if (Object.keys(settings).length > 0)
     ui.step(`✓ Settings from ${settingsPath()}: ${Object.keys(settings).join(", ")}`);
   await materialize(deps.sources ?? sourcesDir(), deployDir, name, settings, domain);
+  // The store's bucket has a fixed name, so it exists before the deploy binds it (cli/src/store.ts).
+  if (settings.store === true) await ensureStoreBucket(w, storeBucketName(name), (l) => ui.step(l));
   const logPath = join(stateDir(), "deploy.log");
   let log = "";
   const started = Date.now();
@@ -593,7 +596,11 @@ export async function materialize(
   const named = text.replace(/("name"\s*:\s*)"[^"]*"/, `$1"${name}"`);
   if (named === text && !text.includes(`"name": "${name}"`))
     throw new CliError(`no "name" in ${cfg}`, "reinstall cf-opencode");
-  writeFileSync(cfg, applySettings(withDomain(named, domain), settings));
+  const configured = applySettings(withDomain(named, domain), settings);
+  writeFileSync(
+    cfg,
+    settings.store === true ? addStoreBinding(configured, storeBucketName(name)) : configured,
+  );
 }
 
 /**

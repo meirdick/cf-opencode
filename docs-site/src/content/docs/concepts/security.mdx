@@ -44,6 +44,21 @@ A preview shows a dev server that the agent runs. Treat its pages as code you di
 - Every preview is on the Worker's origin. A page in one preview can read another preview that the same browser is signed in to. It cannot open `/shell`, `/ssh` or `/browse`. It can call `/oc` only if your browser has a workspace password cached for the Worker, which happens only when you type one into a browser prompt. Do not do that, and open a preview of code you do not trust in a separate browser profile.
 - The Worker drops `Service-Worker-Allowed` and `Clear-Site-Data` from preview responses, so a preview cannot put a service worker over the whole origin or sign the browser out of other previews.
 
+## File copies
+
+- Only the control token starts `cf-opencode cp`. The agent in a workspace has only that workspace's password, so it cannot read another workspace's files.
+- The source workspace is not trusted. The Worker reads every entry of the stream. It refuses an absolute path, a `..`, a symlink that points out of the copied tree, a hard link out of the tree and a device file. It writes new archive headers itself, so the receiving `tar` never reads a header from the source. This check also runs for a copy to your machine.
+- The receiving workspace unpacks as `user`, never as root, into a stage folder. The Worker moves the result into place only after the whole stream passed its check.
+- A workspace path must stay under `/home/user`. The Worker checks the path, and the workspace checks it again after it follows symlinks.
+
+## The store
+
+The store is off by default (`store`). When it is on:
+
+- The R2 bucket is a binding of the Worker. No R2 key enters a workspace. `cf-opencode-store` sends its requests to the same intercepted host as the models.
+- Every agent in the install can read every file in the store. An agent writes and removes only names under `<its workspace>/`, so it cannot replace a file that you or another workspace put there. Put no secret in the store.
+- `lockdown` does not turn the store off. The store is in your account, not on the internet.
+
 ## Handed-off tasks, MCP and A2A
 
 - Task text goes to the workspace in the environment of a script, never in a command line.

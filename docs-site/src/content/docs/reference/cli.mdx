@@ -371,6 +371,44 @@ cf-opencode rebuild <workspace>
 
 Move a workspace onto the deployed image. It keeps `/home/user`. It stops the agent. See [Upgrade and rebuild](/guides/upgrade-and-rebuild/).
 
+### cp
+
+```text
+cf-opencode cp <from> <to>
+```
+
+Copy a file or a folder. A side is `<workspace>:<path>` or a local path. At least one side is a workspace. A workspace path is relative to the checkout, or starts with `/` or `~` inside `/home/user`. See [Move a file between workspaces](/guides/hand-off-a-task/#move-a-file-between-workspaces).
+
+```sh
+cf-opencode cp app:export.json.gz api:data/   # workspace to workspace
+cf-opencode cp app:build ./build              # workspace to this machine
+cf-opencode cp ./fixtures app:test/           # this machine to a workspace
+```
+
+An existing folder, or a path that ends in `/`, takes the item inside it. A paused workspace wakes, and pauses again when it is idle. The target changes only when the copy ends without an error.
+
+| Flag | Meaning |
+| --- | --- |
+| `--force` | Replace a target that exists. Without it, `cp` refuses. |
+| `--json` | One JSON document with `from`, `to`, `bytes`, `files`, `dirs`, `links` and `seconds`. |
+
+Limits: 4 GB and 200,000 entries in one copy, 30 minutes in each workspace, and 100 MB for a copy from this machine.
+
+With the store on (`store`), a side can be `store:<name>`. `store:` alone takes the name of the source. The store holds files, not folders.
+
+### store
+
+```text
+cf-opencode store [rm <name>...]
+```
+
+List the files in the store, with size and age, or remove files. The store is off unless `store` is `true`. See [Share files through the store](/guides/hand-off-a-task/#through-the-store).
+
+| Flag | Meaning |
+| --- | --- |
+| `--prefix <text>` | List only the names that start with the text. |
+| `--json` | One JSON document with the list. |
+
 ## Terminal
 
 ### shell

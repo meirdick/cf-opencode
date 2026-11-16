@@ -4,6 +4,7 @@ import { WorkerEntrypoint } from "cloudflare:workers";
 import { parseConfig } from "../core/config";
 import type { EgressRoute } from "../core/container-port";
 import { type Env, workspaceDoName } from "../env";
+import { r2Store, storeEgress } from "../store";
 import { type AiRunner, handleAi, type PageRunner, type PreviewPageReader } from "./ai";
 import { rewriteEgress } from "./egress";
 import { type PreviewBrowser, readPreviewPage } from "./preview-browser";
@@ -44,6 +45,13 @@ export class AiEgress extends WorkerEntrypoint<Env, { gateway: string; workspace
   }
 
   override fetch(req: Request): Promise<Response> {
+    // cf-opencode-store (store.ts). Not the internet, so lockdown does not turn it off.
+    if (new URL(req.url).pathname.startsWith("/store/"))
+      return storeEgress(
+        req,
+        this.env.STORE ? r2Store(this.env.STORE) : undefined,
+        this.ctx.props.workspaceId,
+      );
     if (req.method === "POST" && new URL(req.url).pathname === NOTE_PATH)
       return handleNote(req, {
         workspaceId: this.ctx.props.workspaceId,
