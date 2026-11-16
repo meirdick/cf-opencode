@@ -6,14 +6,27 @@
 /**
  * Start a session with a first prompt, and return without waiting for the agent. Env: PORT,
  * OPENCODE_SERVER_PASSWORD, TASK (JSON: { create: <session.create body>, prompt: <session.prompt body>,
- * context?: <session.synthetic body> }),
+ * context?: <session.synthetic body>, auto?: true, worktree?: { parent, branch? } }),
  * DIRECTORY (optional: the checkout, whose HEAD is the task's base).
- * Prints {"id", "title", "base"?} on success, plus "error" when the prompt was refused, or {"error"} alone
- * when the session was not made.
+ * Prints {"id", "title", "base"?, "worktree"?, "auto"?} on success, plus "error" when the prompt was refused,
+ * or {"error"} alone when the session was not made.
+ *
+ * auto: the session gets a permission ruleset (OpenCode 2.2 Permission.Ruleset, on POST /api/session) that
+ * allows every action, followed by the deny rules of the agents, so an explicit deny still wins (OpenCode
+ * takes the last rule that matches). This is what `opencode run --auto` does, but on the server: that flag
+ * answers each request from its own client, and here no client stays attached. "auto": "rules" says the
+ * ruleset was set. "auto": "reply" says the agents could not be read; the Worker then answers each open
+ * request with "once" when it reads the task state (TASK_STATUS_SH), as `opencode run --auto` does.
+ *
+ * worktree: the session starts in a new git worktree, so it does not share the checkout with another task.
+ * The start point is origin/<branch> after a fetch, else origin's default branch, else HEAD. The worktree is
+ * made with OpenCode's own worktree API (POST /api/worktree, which `opencode run --worktree` uses), in the
+ * folder "parent", then moved to the start point on a detached HEAD. When that API does not answer, it is
+ * made with `git worktree add --detach`. The base is the start point.
  */
 export const TASK_START_SH = `
 exec python3 - <<'PY'
-import base64, json, os, subprocess, urllib.error, urllib.request
+import base64, json, os, secrets, subprocess, urllib.error, urllib.parse, urllib.request
 base = "http://127.0.0.1:%s" % os.environ.get("PORT", "4096")
 auth = "Basic " + base64.b64encode(("opencode:" + os.environ["OPENCODE_SERVER_PASSWORD"]).encode()).decode()
 def call(path, body):
@@ -21,6 +34,12 @@ def call(path, body):
                                  headers={"authorization": auth, "content-type": "application/json"})
     with urllib.request.urlopen(req, timeout=15) as r:
         return json.load(r)
+def get(path):
+    req = urllib.request.Request(base + path, headers={"authorization": auth})
+    with urllib.request.urlopen(req, timeout=10) as r:
+        return json.load(r)
+def data(r):
+    return r.get("data", r) if isinstance(r, dict) else r
 def why(e):
     if isinstance(e, urllib.error.HTTPError):
         try:
@@ -29,21 +48,75 @@ def why(e):
         except Exception:
             return "HTTP %s" % e.code
     return str(e)
-spec = json.loads(os.environ["TASK"])
-# HEAD before the agent starts: the commits made after it are the task's. Read before the prompt is sent.
-base_sha = ""
-if os.environ.get("DIRECTORY"):
+def git(d, *args, timeout=10):
     try:
-        base_sha = subprocess.run(["git", "-C", os.environ["DIRECTORY"], "rev-parse", "--verify", "-q", "HEAD"],
-                                  capture_output=True, text=True, timeout=10).stdout.strip()
+        r = subprocess.run(["git", "-C", d] + list(args), capture_output=True, text=True, timeout=timeout)
     except Exception:
-        base_sha = ""
+        return None
+    return r.stdout.strip() if r.returncode == 0 else None
+def fail(msg):
+    print(json.dumps({"error": msg}))
+    raise SystemExit(0)
+def at_location(d):
+    return "location%5Bdirectory%5D=" + urllib.parse.quote(d, safe="")
+spec = json.loads(os.environ["TASK"])
+directory = os.environ.get("DIRECTORY") or ""
+out = {}
+# HEAD before the agent starts: the commits made after it are the task's. Read before the prompt is sent.
+base_sha = (git(directory, "rev-parse", "--verify", "-q", "HEAD") or "") if directory else ""
+wt = spec.get("worktree")
+if wt:
+    if not directory or git(directory, "rev-parse", "--is-inside-work-tree") != "true":
+        fail("worktree: %s is not a git checkout" % (directory or "the workspace directory"))
+    branch = wt.get("branch") or ""
+    if branch:
+        if git(directory, "fetch", "-q", "origin", "+refs/heads/%s:refs/remotes/origin/%s" % (branch, branch), timeout=60) is None:
+            fail("worktree: branch %s is not on origin, or origin did not answer" % branch)
+        start = git(directory, "rev-parse", "--verify", "-q", "refs/remotes/origin/%s^{commit}" % branch)
+    else:
+        git(directory, "fetch", "-q", "origin", timeout=60)
+        start = git(directory, "rev-parse", "--verify", "-q", "refs/remotes/origin/HEAD^{commit}") or base_sha
+    if not start or len(start) != 40:
+        fail("worktree: no commit to start from")
+    parent = wt.get("parent") or "/home/user/worktrees"
+    path = ""
+    try:
+        loc = data(get("/api/location?" + at_location(directory)))
+        made = data(call("/api/worktree", {"projectID": loc["project"]["id"], "directory": parent}))
+        path = made["directory"]
+        if git(path, "checkout", "-q", "--detach", start) is None:
+            fail("worktree: git checkout %s failed in %s" % (start[:12], path))
+        out["worktreeVia"] = "opencode"
+    except SystemExit:
+        raise
+    except Exception:
+        path = os.path.join(parent, "task-" + secrets.token_hex(4))
+        os.makedirs(parent, exist_ok=True)
+        if git(directory, "worktree", "add", "-q", "--detach", path, start, timeout=60) is None:
+            fail("worktree: git worktree add failed in %s" % parent)
+        out["worktreeVia"] = "git"
+    spec["create"]["location"] = {"directory": path}
+    out["worktree"] = path
+    base_sha = start
+if spec.get("auto"):
+    try:
+        loc = spec["create"]["location"]["directory"]
+        agents = data(get("/api/agent?" + at_location(loc)))
+        denies = []
+        for a in agents if isinstance(agents, list) else []:
+            for rule in a.get("permissions") or []:
+                if rule.get("effect") == "deny" and rule not in denies:
+                    denies.append({"action": rule["action"], "resource": rule["resource"], "effect": "deny"})
+        spec["create"]["permissions"] = [{"action": "*", "resource": "*", "effect": "allow"}] + denies
+        out["auto"] = "rules"
+    except Exception:
+        out["auto"] = "reply"
 try:
     s = call("/api/session", spec["create"])["data"]
 except Exception as e:
-    print(json.dumps({"error": "session.create: " + why(e)}))
+    print(json.dumps({"error": "session.create: " + why(e), **({"worktree": out["worktree"]} if "worktree" in out else {})}))
     raise SystemExit(0)
-out = {"id": s["id"], "title": s.get("title") or ""}
+out = {"id": s["id"], "title": s.get("title") or "", **out}
 if len(base_sha) == 40:
     out["base"] = base_sha
 prompt = spec["prompt"]
@@ -67,19 +140,33 @@ PY
 
 /**
  * Read what decides each task's state. Env: PORT, OPENCODE_SERVER_PASSWORD, IDS (session ids, space
- * separated). Prints {"active": [ids], "sessions": {id: {...}}}. A session OpenCode does not know is
- * {"found": false}; one that could not be read is {"error": "..."}, and the Worker keeps its last state.
+ * separated), AUTO (the ids of `run --auto` tasks, space separated). Prints {"active": [ids], "sessions":
+ * {id: {...}}}. A session OpenCode does not know is {"found": false}; one that could not be read is
+ * {"error": "..."}, and the Worker keeps its last state.
  * "question" is the text of the first open permission request (Permission.Request) or form (Form.Info).
+ * For an AUTO task, each open permission request is answered "once" (POST
+ * /api/session/{id}/permission/{request}/reply), as `opencode run --auto` does, and only the ones that could
+ * not be answered count. "replied" is the count answered. A form is a question for a person: it stays open.
  */
 export const TASK_STATUS_SH = `
 exec python3 - <<'PY'
 import base64, json, os, urllib.error, urllib.request
 base = "http://127.0.0.1:%s" % os.environ.get("PORT", "4096")
 auth = "Basic " + base64.b64encode(("opencode:" + os.environ["OPENCODE_SERVER_PASSWORD"]).encode()).decode()
+auto = set(os.environ.get("AUTO", "").split())
 def get(path):
     req = urllib.request.Request(base + path, headers={"authorization": auth})
     with urllib.request.urlopen(req, timeout=5) as r:
         return json.load(r)
+def reply_once(sid, rid):
+    req = urllib.request.Request(base + "/api/session/%s/permission/%s/reply" % (sid, rid),
+                                 data=json.dumps({"decision": "once"}).encode(), method="POST",
+                                 headers={"authorization": auth, "content-type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=5):
+            return True
+    except Exception:
+        return False
 def text_of(m):
     return "".join(c.get("text", "") for c in m.get("content", []) if c.get("type") == "text").strip()
 def ask_permission(p):
@@ -108,6 +195,10 @@ for sid in os.environ.get("IDS", "").split():
     s = {"found": True, "title": info.get("title") or "", "outcome": info.get("outcome"), "time": info.get("time", {})}
     try:
         perms = get("/api/session/%s/permission" % sid).get("data", [])
+        if sid in auto and perms:
+            left = [p for p in perms if not (isinstance(p.get("id"), str) and reply_once(sid, p["id"]))]
+            s["replied"] = len(perms) - len(left)
+            perms = left
         forms = get("/api/session/%s/form" % sid).get("data", [])
         s["permissions"] = len(perms)
         s["forms"] = len(forms)

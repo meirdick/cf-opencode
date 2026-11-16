@@ -5,7 +5,7 @@
 //
 // An A2A task is one handed-off OpenCode session. Its id is "<workspace>:<ses_…>", so GetTask and CancelTask
 // find the workspace without a lookup. The contextId is the workspace id. The workspace comes from the
-// message metadata: { workspace, title?, model?, branch? }.
+// message metadata: { workspace, title?, model?, branch?, auto?, worktree? }.
 //
 // Spec: https://a2a-protocol.org/v1.0.0/specification (sections cited as §).
 import type { WorkspaceSessionApi } from "./api";
@@ -80,7 +80,7 @@ export function agentCard(origin: string, version: string): Record<string, unkno
         name: "Run a coding task in a workspace",
         description: [
           "Starts an OpenCode session in an existing workspace with the message text as the task. The workspace must have been connected once with cf-opencode connect; a paused one is woken.",
-          "Set message.metadata.workspace to the workspace id (required). Optional: metadata.title (one line), metadata.model (provider/model), metadata.branch (the branch to start from).",
+          "Set message.metadata.workspace to the workspace id (required). Optional: metadata.title (one line), metadata.model (provider/model), metadata.branch (the branch to start from), metadata.auto (true: no permission prompts), metadata.worktree (true: a new git worktree, so the task does not share the checkout with another task).",
           "Send the text in text parts only. The workspace clones from the Git remote: it cannot see changes that are not committed and pushed.",
           "The agent commits, pushes a branch, opens a pull request when GitHub access works, and ends with a Result line.",
           "The task id is <workspace>:<session>. Poll it with GetTask; stop it with CancelTask. A task in TASK_STATE_INPUT_REQUIRED waits for an answer in OpenCode.",
@@ -263,6 +263,9 @@ async function sendMessage(id: RpcId, params: Record<string, unknown>, deps: A2a
     );
   if (meta.branch !== undefined && (typeof meta.branch !== "string" || !BRANCH_RE.test(meta.branch)))
     return invalid(id, "message.metadata.branch", "branch names are letters, digits, . _ / -");
+  for (const key of ["auto", "worktree"] as const)
+    if (meta[key] !== undefined && typeof meta[key] !== "boolean")
+      return invalid(id, `message.metadata.${key}`, `${key} is true or false`);
 
   const parts = m.parts;
   if (!Array.isArray(parts) || parts.length === 0 || parts.length > 100)
@@ -288,9 +291,11 @@ async function sendMessage(id: RpcId, params: Record<string, unknown>, deps: A2a
   }
   const task = texts.join("\n\n").trim();
   const parsed = parseTaskInput({
-    text: task ? closingInstruction(task, meta.branch as string | undefined) : "",
+    text: task ? closingInstruction(task, meta.branch as string | undefined, meta.worktree === true) : "",
     ...(meta.title !== undefined ? { title: meta.title } : {}),
     ...(meta.model !== undefined ? { model: meta.model } : {}),
+    ...(meta.auto === true ? { auto: true } : {}),
+    ...(meta.worktree === true ? { worktree: true } : {}),
     // The session is told that an A2A agent started it and that nobody is attached.
     handoff: {
       origin: "a2a",
@@ -524,17 +529,21 @@ export function toA2aTask(
 }
 
 /** The text sent to OpenCode: the task, then the same closing instruction `cf-opencode run` adds. */
-export function closingInstruction(task: string, branch?: string): string {
+export function closingInstruction(task: string, branch?: string, worktree = false): string {
   return [
     task,
     "",
     "---",
     "This task came from another agent over A2A. Nobody watches this session. When you finish:",
-    ...(branch
+    ...(worktree
       ? [
-          `- Start from branch \`${branch}\` as it is on origin: run \`git fetch origin\`, check out \`${branch}\`, and fast-forward it to \`origin/${branch}\`.`,
+          `- This worktree starts at ${branch ? `\`origin/${branch}\`` : "the default branch of origin"} on a detached HEAD. Make a new branch for the work before you commit.`,
         ]
-      : []),
+      : branch
+        ? [
+            `- Start from branch \`${branch}\` as it is on origin: run \`git fetch origin\`, check out \`${branch}\`, and fast-forward it to \`origin/${branch}\`.`,
+          ]
+        : []),
     "- Commit the work. If you are on the default branch, first make a new branch for it.",
     "- Push the branch to origin.",
     "- If `gh auth status` succeeds, open a pull request for the branch, or update the open one.",

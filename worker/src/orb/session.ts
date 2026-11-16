@@ -130,12 +130,20 @@ export class OpNotifier {
 export interface OpRuntime {
   queue: ExclusiveQueue;
   openLock: ExclusiveQueue;
+  /** Task starts, one at a time: the check for a task in the checkout and the start are one step. */
+  taskLock: ExclusiveQueue;
   notifier: OpNotifier;
   log: (line: string) => void;
 }
 
 export function newRuntime(log: (line: string) => void = () => {}): OpRuntime {
-  return { queue: new ExclusiveQueue(), openLock: new ExclusiveQueue(), notifier: new OpNotifier(), log };
+  return {
+    queue: new ExclusiveQueue(),
+    openLock: new ExclusiveQueue(),
+    taskLock: new ExclusiveQueue(),
+    notifier: new OpNotifier(),
+    log,
+  };
 }
 
 const TERMINAL = new Set(["succeeded", "failed"]);
@@ -426,9 +434,13 @@ export class WorkspaceSession extends DurableObject<Env> implements WorkspaceSes
     return readSessions(this.base(await this.workspaceId()));
   }
 
-  /** Start a handed-off task. The CLI wakes the workspace first; this never does. */
+  /**
+   * Start a handed-off task. The CLI wakes the workspace first; this never does. One start at a time, so two
+   * clients cannot both find the checkout free (tasks.ts checkoutHolder).
+   */
   async startTask(input: TaskInput): Promise<StartResult> {
-    return startTask(this.base(await this.workspaceId()), input);
+    const ctx = this.base(await this.workspaceId());
+    return this.rt.taskLock.run(() => startTask(ctx, input));
   }
 
   /** Handed-off tasks: live from a running workspace, else the copy kept at the last refresh. Wakes nothing. */
