@@ -2,7 +2,7 @@
 // Every read is one short request, so a paused workspace answers from its saved copy and wakes nothing.
 import type { ControlClient, RemoteTask, TaskResult, TaskState } from "./api.js";
 import { CliError, toFailedLine } from "./errors.js";
-import { renderResult, resultOf } from "./task-result.js";
+import { leftWork, renderResult, resultOf } from "./task-result.js";
 import { fmtAge, table, terminalSafe } from "./ui.js";
 
 export interface TaskRow extends RemoteTask {
@@ -27,6 +27,7 @@ export interface TaskView {
 export const looksLikeSession = (s: string) => /^ses_/.test(s);
 
 const iso = (ms: number) => new Date(ms).toISOString();
+const ended = (t: RemoteTask) => t.state !== "running" && t.state !== "waiting";
 
 /** Ask each workspace for its tasks, and merge them: tasks that ended and nobody read first, then newest first. */
 export async function listTasks(client: Pick<ControlClient, "tasks">, ids: string[]): Promise<TasksResult> {
@@ -74,13 +75,18 @@ export function renderTasks(r: TasksResult, now = Date.now(), o: { unseen?: bool
           t.unseen ? "*" : "",
           t.workspace,
           t.id,
-          t.state,
+          ended(t) && leftWork(t) ? `${t.state} !` : t.state,
           fmtAge(iso(t.started), now),
           short(t.title, 60),
         ]),
       ),
     );
     if (r.rows.some((t) => t.unseen)) lines.push("", "* ended, not read yet. Reading one marks it read.");
+    if (r.rows.some((t) => ended(t) && leftWork(t)))
+      lines.push(
+        "",
+        "! ended with commits that are not pushed, or with a process left running. Show the task for the fix.",
+      );
     lines.push("", "Show one: cf-opencode tasks <session> --workspace <workspace>");
   }
   const saved = r.workspaces.filter((w) => !w.live && w.at && !w.error);

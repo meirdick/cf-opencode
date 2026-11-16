@@ -1,5 +1,8 @@
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { httpsRemote, workspaceIdFrom } from "../src/connect.js";
+import { connect, httpsRemote, workspaceIdFrom } from "../src/connect.js";
 
 describe("workspaceIdFrom", () => {
   it("uses the directory name, lowercased and scrubbed", () => {
@@ -8,6 +11,22 @@ describe("workspaceIdFrom", () => {
 
   it("prefixes a name that would not be a legal id", () => {
     expect(workspaceIdFrom("/tmp/-bad")).toBe("w--bad");
+  });
+});
+
+describe("connect", () => {
+  it("refuses a session id in the place of a workspace id, before any request", async () => {
+    const home = process.env.HOME;
+    process.env.HOME = mkdtempSync(join(tmpdir(), "cfoc-connect-"));
+    try {
+      await expect(
+        connect({ url: "http://127.0.0.1:9", token: "t", id: "ses_e2c6abc", attach: false }),
+      ).rejects.toThrow(
+        /^Failed: ses_e2c6abc is a session id, not a workspace — fix: cf-opencode connect <workspace> --session ses_e2c6abc, or cf-opencode tasks ses_e2c6abc$/,
+      );
+    } finally {
+      process.env.HOME = home;
+    }
   });
 });
 

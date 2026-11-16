@@ -22,6 +22,24 @@ describe("image/Dockerfile OpenCode pin", () => {
     expect(run.indexOf("sha256sum -c")).toBeLessThan(run.indexOf("tar -xzf"));
   });
 
+  it("pins Node and mise by sha256, checks each before it is installed, and puts the mise shims first on PATH", () => {
+    expect(code).toMatch(/^ARG NODE_VERSION=22\.\d+\.\d+$/m);
+    expect(code).toMatch(/^ARG NODE_SHA256=[0-9a-f]{64}$/m);
+    expect(code).toMatch(/^ARG MISE_VERSION=\d+\.\d+\.\d+$/m);
+    expect(code).toMatch(/^ARG MISE_SHA256=[0-9a-f]{64}$/m);
+    const node = code.slice(code.indexOf("ARG NODE_SHA256"), code.indexOf("ARG MISE_VERSION"));
+    expect(node).toContain(
+      `nodejs.org/dist/v${"$"}{NODE_VERSION}/node-v${"$"}{NODE_VERSION}-linux-x64.tar.gz`,
+    );
+    expect(node.indexOf("sha256sum -c")).toBeGreaterThan(-1);
+    expect(node.indexOf("sha256sum -c")).toBeLessThan(node.indexOf("tar -xzf"));
+    const mise = code.slice(code.indexOf("ARG MISE_SHA256"), code.indexOf("ENV PATH="));
+    expect(mise).toContain(`releases/download/v${"$"}{MISE_VERSION}/mise-v${"$"}{MISE_VERSION}-linux-x64`);
+    expect(mise.indexOf("sha256sum -c")).toBeGreaterThan(-1);
+    expect(mise.indexOf("sha256sum -c")).toBeLessThan(mise.indexOf("install -m 755"));
+    expect(code).toMatch(/^ENV PATH=\/home\/user\/\.local\/share\/mise\/shims:/m);
+  });
+
   it("pipes nothing it downloaded into a shell", () => {
     expect(code).not.toMatch(/\|\s*(ba)?sh\b/);
     expect(code).not.toContain("opencode.ai/v2/install");

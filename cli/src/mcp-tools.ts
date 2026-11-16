@@ -114,6 +114,16 @@ const RESULT_SCHEMA = {
     commits: { type: "array", items: { type: "object" } },
     pullRequest: { type: "string" },
     changedFiles: { type: "array", items: { type: "string" } },
+    unpushed: {
+      type: "number",
+      description:
+        "Commits that are only on the workspace disk. The work is not on the remote until the agent pushes: cf-opencode tasks <id> --reply.",
+    },
+    processes: {
+      type: "array",
+      items: { type: "string" },
+      description: "Processes the task left running in the checkout. The next pause stops them.",
+    },
     question: { type: "string" },
     error: { type: "string" },
     started: { type: "string", description: "ISO 8601." },

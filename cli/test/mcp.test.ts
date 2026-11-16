@@ -493,7 +493,7 @@ describe.skipIf(process.platform === "win32")("local backend", () => {
     writeFileSync(join(work, "a.txt"), "changed\n");
     const b = localBackend({ cwd: work, log: () => {}, install, connect: async () => ({}) as never });
     await expect(b.start({ task: "x", allowDirty: false })).rejects.toThrow(
-      /^Failed: 1 file with changes not committed; .* — fix: commit and git push, or set allowDirty to true$/,
+      /^Failed: local checkout .*: 1 file with changes not committed; .* — fix: commit and git push, or set allowDirty to true$/,
     );
   });
 

@@ -68,16 +68,21 @@ export function preflightProblems(p: Preflight): string[] {
   return out;
 }
 
-/** Fails, or with allowDirty returns the warning to print. undefined when there is nothing to say. */
-export function checkPreflight(p: Preflight, allowDirty: boolean): string | undefined {
+/**
+ * Fails, or with allowDirty returns the warning to print. undefined when there is nothing to say.
+ * The MCP tool matches the end of the fix text (mcp-tools.ts).
+ */
+export function checkPreflight(p: Preflight, allowDirty: boolean, dir?: string): string | undefined {
   const problems = preflightProblems(p);
   if (problems.length === 0) return undefined;
+  // Say which side: the check reads this machine's checkout, never the workspace.
+  const where = dir ? `local checkout ${dir}` : "local checkout";
   if (!allowDirty)
     throw new CliError(
-      `${problems.join("; ")}; the workspace clones from the Git remote and would not see this`,
-      "commit and git push, or pass --allow-dirty",
+      `${where}: ${problems.join("; ")}; the workspace clones from the Git remote and would not see this`,
+      "commit and git push on this machine, or pass --allow-dirty",
     );
-  return `! the workspace will not see: ${problems.join("; ")}`;
+  return `! the workspace will not see, from the ${where}: ${problems.join("; ")}`;
 }
 
 /**
@@ -97,7 +102,8 @@ export function taskPrompt(task: string, branch?: string, schema?: unknown): str
     "This task was handed off with cf-opencode run. Nobody watches this session. When you finish:",
     ...start,
     "- If you changed files, commit the work. If you are on the default branch, first make a new branch for it. A task with nothing to commit (research, a question) needs no commit.",
-    "- Push the branch to origin.",
+    "- Push the branch to origin. Push also when the work is not complete: a commit that is not pushed is only on this machine's disk.",
+    "- Do not end your turn while a process you started still runs (a build, an import, a long script). This machine pauses some minutes after your last message, and the pause stops every process. Wait for the process in your turn: check it in a loop with `sleep`, then do the steps above.",
     "- If `gh auth status` succeeds, open a pull request for the branch, or update the open one.",
     "- End your last message with one line: `Result: <what changed>; branch <name>; pull request <URL or none>`.",
     ...(schema === undefined ? [] : schemaInstruction(schema)),
@@ -141,7 +147,7 @@ export async function runTask(input: RunInput, deps: RunDeps): Promise<RunResult
   if (!input.task.trim()) throw new CliError("the task is empty", 'cf-opencode run "<task>"');
   const dir = input.dir ?? process.cwd();
   const p = preflight(dir);
-  const warning = checkPreflight(p, input.allowDirty === true);
+  const warning = checkPreflight(p, input.allowDirty === true, dir);
   if (warning) input.onLine?.(warning);
   const woke = await deps.connect({
     url: input.url,

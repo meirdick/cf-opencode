@@ -36,6 +36,8 @@ describe.skipIf(process.platform === "win32")("SERVE_SH agent notes", () => {
     serve(home, {});
     expect(readFileSync(notes, "utf8")).toMatch(/cf-opencode-browse/);
     expect(readFileSync(notes, "utf8")).toContain("`sudo apt-get install <package>`");
+    expect(readFileSync(notes, "utf8")).toContain("`mise trust && mise install`");
+    expect(readFileSync(notes, "utf8")).toContain("For a long job, stay in your turn");
 
     writeFileSync(notes, "# mine\n");
     serve(home, {});

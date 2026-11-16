@@ -111,6 +111,9 @@ The user made it from their machine with the cf-opencode CLI.
 # This machine
 
 - Tools: \`sudo apt-get install <package>\` works without a password. Installed packages stay on the disk.
+- Node: \`node\` and \`npm\` are installed (Node 22). If the project pins another version (\`mise.toml\`,
+  \`.tool-versions\`, \`.nvmrc\`, \`.node-version\`), run \`mise trust && mise install\` in the project first.
+  \`mise\` installs other tools the same way (\`mise use python@3.13\`).
 - GitHub: \`git clone\`, \`pull\`, \`push\` and \`gh\` work for the user's repositories. Do not ask for a token
   and do not run \`gh auth login\`; the credential is added outside this machine.
 - Web search: run \`cf-opencode-search "<query>"\` (\`-n 10\` for more results, \`--json\` for the raw answer).
@@ -125,7 +128,10 @@ The user made it from their machine with the cf-opencode CLI.
   \`cf-opencode-browse --preview <port>\` and open that address.
 - Tell the user something while they are away: \`cf-opencode-notify "<text>"\` posts the text to the user's notify URL.
   Use it for a blocker or a result they must see soon, not for progress.
-- The disk is saved when the workspace is idle. Processes do not survive that; files do.
+- The disk is saved when the workspace is idle. Processes do not survive that; files do. The workspace is idle
+  some minutes after your last message when nobody is attached, also while a process you started still runs.
+  For a long job, stay in your turn: start it with its output in a log file, then check it in a loop with
+  \`sleep\` until it ends. Make the job able to continue from where it stopped.
 CF_OPENCODE_NOTES
 fi
 SHA=\${PASSWORD_SHA:-unknown}

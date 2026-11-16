@@ -60,6 +60,10 @@ export interface TaskRecord {
   commits?: Commit[];
   pullRequest?: string;
   changedFiles?: string[];
+  /** Commits on HEAD that no remote branch has, when the facts were read. */
+  unpushed?: number;
+  /** Processes left running in the checkout that nothing watches, when the facts were read. A pause stops them. */
+  processes?: string[];
   structured?: unknown;
   structuredError?: string;
   /** Set when the task leaves running; cleared when a client reads this one task. */
@@ -381,6 +385,8 @@ export function applyStatus(
 interface GitOut {
   branch?: string;
   pullRequest?: string;
+  unpushed?: unknown;
+  processes?: unknown;
   tasks: Record<string, { commits?: unknown; changedFiles?: unknown }>;
 }
 
@@ -422,6 +428,18 @@ export function applyFacts(tasks: TaskRecord[], facts: GitOut, ids: Set<string>)
     if (typeof facts.branch === "string" && facts.branch) next.branch = facts.branch.slice(0, 200);
     if (typeof facts.pullRequest === "string" && /^https:\/\//.test(facts.pullRequest))
       next.pullRequest = facts.pullRequest.slice(0, 500);
+    // Facts of the checkout at this read, so a later read replaces them: a push or an ended process clears them.
+    delete next.unpushed;
+    delete next.processes;
+    if (typeof facts.unpushed === "number" && Number.isInteger(facts.unpushed) && facts.unpushed > 0)
+      next.unpushed = Math.min(facts.unpushed, 100_000);
+    if (Array.isArray(facts.processes)) {
+      const ps = facts.processes
+        .filter((x): x is string => typeof x === "string" && x.length > 0)
+        .slice(0, 5)
+        .map((x) => x.slice(0, 60));
+      if (ps.length > 0) next.processes = ps;
+    }
     return next;
   });
 }

@@ -1,7 +1,7 @@
 # cf-opencode workspace image. Built by `cf-opencode init` (wrangler deploy) under the image key "orb".
 #
 # A snapshot only restores onto the image it was taken from, so every input here is pinned:
-# the Debian digest, the tini package version, and the OpenCode version. Bump them together
+# the Debian digest, the tini package version, the OpenCode version, Node and mise. Bump them together
 # and treat the result as a new image. Paused workspaces keep restoring onto the old one
 # until their next pause.
 #
@@ -42,6 +42,7 @@ RUN apt-get update \
       ripgrep \
       jq \
       unzip \
+      xz-utils \
       less \
       libnss-myhostname \
  && rm -rf /var/lib/apt/lists/* \
@@ -57,6 +58,33 @@ RUN curl -fsSL -o /tmp/opencode.tgz \
  && install -D -m 755 /tmp/package/bin/opencode /usr/local/lib/cf-opencode/opencode \
  && rm -rf /tmp/opencode.tgz /tmp/package \
  && /usr/local/lib/cf-opencode/opencode --version | grep -qx "opencode v${OPENCODE_VERSION}"
+
+# Node, because most projects and their tools need it, and a fresh workspace has no time to install it.
+# The hash is from https://nodejs.org/dist/v<version>/SHASUMS256.txt. Only bin, lib and include are kept.
+ARG NODE_VERSION=22.23.5
+ARG NODE_SHA256=c54118104acc524633b5abe106bbf44a53126ec8b4e5fa105cb92b5d7de8a1a1
+RUN curl -fsSL -o /tmp/node.tgz "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.gz" \
+ && echo "${NODE_SHA256}  /tmp/node.tgz" | sha256sum -c - \
+ && tar -xzf /tmp/node.tgz -C /usr/local --strip-components=1 --no-same-owner \
+      "node-v${NODE_VERSION}-linux-x64/bin" "node-v${NODE_VERSION}-linux-x64/lib" "node-v${NODE_VERSION}-linux-x64/include" \
+ && rm -f /tmp/node.tgz \
+ && node --version | grep -qx "v${NODE_VERSION}" \
+ && npm --version >/dev/null
+
+# mise, for a project that pins another version of Node or another tool (mise.toml, .tool-versions,
+# .nvmrc, .node-version). It installs nothing by itself: the agent or the user runs `mise install`.
+# The hash is from the release's SHASUMS256.txt. Its shims come first on PATH, so a pinned version wins.
+ARG MISE_VERSION=2026.11.2
+ARG MISE_SHA256=62cad463c1413f05398ca339168a8f655120b6f0b0b8adce3bc6758bafaf0602
+RUN curl -fsSL -o /tmp/mise \
+      "https://github.com/jdx/mise/releases/download/v${MISE_VERSION}/mise-v${MISE_VERSION}-linux-x64" \
+ && echo "${MISE_SHA256}  /tmp/mise" | sha256sum -c - \
+ && install -m 755 /tmp/mise /usr/local/bin/mise \
+ && rm -f /tmp/mise \
+ && mkdir -p /etc/mise \
+ && printf '%s\n' '[settings]' 'idiomatic_version_file_enable_tools = ["node"]' > /etc/mise/config.toml \
+ && mise --version | grep -q "^${MISE_VERSION} "
+ENV PATH=/home/user/.local/share/mise/shims:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 # `user` runs everything in the workspace: opencode serve, the shell, the SSH login.
 # Password "*" is no password, but not a locked account, so sshd accepts its keys.
@@ -75,8 +103,11 @@ COPY sshd.conf /etc/ssh/sshd_config.d/cf-opencode.conf
 
 # gh reads GH_TOKEN. It holds a placeholder: the Worker puts the real token on requests to
 # api.github.com, so no token is on this disk. opencode serve gets it from the Worker; this
-# gives it to login shells and to tmux panes. sshd.conf does the same for `ssh host command`.
-RUN printf '%s\n' 'export GH_TOKEN="${GH_TOKEN:-cf-opencode-egress}"' > /etc/profile.d/cf-opencode.sh \
+# gives it to login shells and to tmux panes, with the mise shims on PATH. sshd.conf does the same for
+# `ssh host command`.
+RUN printf '%s\n' 'export GH_TOKEN="${GH_TOKEN:-cf-opencode-egress}"' \
+      'case ":$PATH:" in *:/home/user/.local/share/mise/shims:*) ;; *) PATH="/home/user/.local/share/mise/shims:$PATH"; export PATH ;; esac' \
+      > /etc/profile.d/cf-opencode.sh \
  && printf '%s\n' '. /etc/profile.d/cf-opencode.sh' >> /etc/bash.bashrc
 
 # The platform injects an egress CA at /etc/cloudflare/certs when outbound HTTPS is

@@ -21,6 +21,10 @@ export function resultOf(workspace: string, one: Pick<RemoteTaskOne, "task" | "r
   };
 }
 
+/** True when the task left commits that are not pushed, or processes that a pause will stop. */
+export const leftWork = (t: { unpushed?: number; processes?: string[] }) =>
+  (t.unpushed ?? 0) > 0 || (t.processes?.length ?? 0) > 0;
+
 const MAX_SUMMARY_LINES = 30;
 const MAX_FILES_SHOWN = 8;
 
@@ -58,6 +62,12 @@ function resultLines(r: TaskResult, o: { live?: boolean; at?: string; now?: numb
     const more = r.changedFiles.length > MAX_FILES_SHOWN ? `, … (${r.changedFiles.length} files)` : "";
     facts.push(`Changed    ${shown}${more}`);
   }
+  if (r.unpushed)
+    facts.push(
+      `Not pushed ! ${r.unpushed} ${r.unpushed === 1 ? "commit is" : "commits are"} only on the workspace disk`,
+    );
+  if (r.processes?.length)
+    facts.push(`Processes  ! left running, a pause stops them: ${r.processes.join(", ")}`);
   if (r.structured !== undefined) facts.push(`Structured ${JSON.stringify(r.structured).slice(0, 200)}`);
   if (r.structuredError) facts.push(`Structured ! ${r.structuredError}`);
   if (r.notified) facts.push(`Notified   ${fmtAge(r.notified.at, now)} (HTTP ${r.notified.status})`);
@@ -69,6 +79,12 @@ function resultLines(r: TaskResult, o: { live?: boolean; at?: string; now?: numb
     lines.push("The agent waits for an answer. Answer it in OpenCode:");
   } else if (r.state === "stopped")
     lines.push("The workspace paused under the task. Continue it in OpenCode:");
+  if (leftWork(r) && r.state !== "running" && r.state !== "waiting")
+    lines.push(
+      `The task ended with work that is not safe. Tell the agent: cf-opencode tasks ${r.id} --reply "${
+        r.processes?.length ? "Wait for your process to end, then commit and push." : "Push your branch."
+      }"`,
+    );
   lines.push(`Open: cf-opencode connect ${r.workspace} --session ${r.id}`);
   return lines;
 }

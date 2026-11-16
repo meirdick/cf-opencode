@@ -139,14 +139,19 @@ PY
  * TASKS (JSON list of {"id", "base", "since"}: the HEAD sha and the epoch seconds when the task started),
  * GH ("1": ask gh for the branch's pull request; it goes over the network, so only when a task ends),
  * GH_TOKEN (the placeholder; the Worker adds the real token on egress).
- * Prints {"branch"?, "pullRequest"?, "tasks": {id: {"commits": [{sha, subject}], "changedFiles": [...]}}}.
+ * Prints {"branch"?, "pullRequest"?, "unpushed"?, "processes"?, "tasks": {id: {"commits": [{sha, subject}],
+ * "changedFiles": [...]}}}.
+ * "unpushed" is the count of commits on HEAD that no remote branch has: work that is only on this disk.
+ * "processes" are the processes that run in the checkout and that nothing watches (started in the background
+ * and left): a pause stops them. Not OpenCode and what it runs now, not a terminal (tmux, sshd) and what runs
+ * in one. Only the program name and its first plain argument are kept, since a command line can hold a secret.
  * A task with no base (started before 0.2) or a base git does not know gets no entry.
  * Commits are base..HEAD with a commit time at or after the start, so commits that a checkout of the task's
  * branch brings from origin do not count as the agent's.
  */
 export const TASK_GIT_SH = `
 exec python3 - <<'PY'
-import json, os, subprocess
+import json, os, re, subprocess
 d = os.environ.get("DIRECTORY") or "/home/user/project"
 MAX_COMMITS, MAX_FILES = 30, 100
 def git(*args):
@@ -162,6 +167,61 @@ if git("rev-parse", "--is-inside-work-tree") is None:
 branch = (git("symbolic-ref", "--quiet", "--short", "HEAD") or "").strip()
 if branch:
     out["branch"] = branch
+if (git("remote") or "").strip():
+    n = (git("rev-list", "--count", "HEAD", "--not", "--remotes") or "").strip()
+    if n.isdigit():
+        out["unpushed"] = int(n)
+def stat(pid):
+    # (ppid, comm) from /proc/<pid>/stat. comm is in brackets and can hold spaces.
+    try:
+        with open("/proc/%s/stat" % pid) as f:
+            s = f.read()
+        return int(s[s.rindex(")") + 2:].split()[1]), s[s.index("(") + 1:s.rindex(")")]
+    except Exception:
+        return None
+def left_running():
+    root = os.path.realpath(d)
+    procs = {}
+    for x in os.listdir("/proc"):
+        if x.isdigit():
+            st = stat(x)
+            if st:
+                procs[int(x)] = st
+    def chain(pid):
+        seen = []
+        while pid in procs and pid not in seen:
+            seen.append(pid)
+            pid = procs[pid][0]
+        return seen
+    mine = set(chain(os.getpid()))
+    # OpenCode and what it runs now (language servers, a tool call), and terminals and what runs in them.
+    kept = ("opencode", "tmux", "sshd", "herdr")
+    found = []
+    for pid in sorted(procs):
+        if pid in mine or any(procs[a][1].startswith(kept) for a in chain(pid)):
+            continue
+        try:
+            cwd = os.readlink("/proc/%d/cwd" % pid)
+            with open("/proc/%d/cmdline" % pid, "rb") as f:
+                argv = [a.decode("utf-8", "replace") for a in f.read().split(b"\\0") if a]
+        except Exception:
+            continue
+        if not argv or not (cwd == root or cwd.startswith(root + "/")):
+            continue
+        # A child of a process already listed is the same job.
+        if any(a in listed for a in chain(pid)[1:]):
+            listed.add(pid)
+            continue
+        listed.add(pid)
+        # A plain word or a file name only: not an option, not inline code, not key=value.
+        arg = next((a for a in argv[1:3] if re.match(r"^[\\w./@+-]{1,60}$", a) and not a.startswith("-")), "")
+        found.append((os.path.basename(argv[0]) + (" " + os.path.basename(arg) if arg else ""))[:60])
+    return found[:5]
+listed = set()
+try:
+    out["processes"] = left_running()
+except Exception:
+    pass
 for t in json.loads(os.environ.get("TASKS") or "[]"):
     base, since = t.get("base") or "", int(t.get("since") or 0)
     if len(base) != 40 or git("cat-file", "-e", base + "^{commit}") is None:

@@ -87,9 +87,15 @@ describe.skipIf(process.platform === "win32")("preflight", () => {
     writeFileSync(join(work, "new.txt"), "n\n");
     const p = preflight(work);
     expect(() => checkPreflight(p, false)).toThrow(
-      /^Failed: 1 untracked file; the workspace clones from the Git remote and would not see this — fix: commit and git push, or pass --allow-dirty$/,
+      /^Failed: local checkout: 1 untracked file; the workspace clones from the Git remote and would not see this — fix: commit and git push on this machine, or pass --allow-dirty$/,
     );
-    expect(checkPreflight(p, true)).toBe("! the workspace will not see: 1 untracked file");
+    // The path says which side has the changes: the check never reads the workspace.
+    expect(() => checkPreflight(p, false, "/home/me/app")).toThrow(
+      /^Failed: local checkout \/home\/me\/app: 1 untracked file;/,
+    );
+    expect(checkPreflight(p, true)).toBe(
+      "! the workspace will not see, from the local checkout: 1 untracked file",
+    );
   });
 });
 
@@ -103,6 +109,9 @@ describe("taskPrompt", () => {
     expect(text).toContain("open a pull request");
     expect(text).toMatch(/one line: `Result: .*`\.$/);
     expect(taskPrompt("x")).not.toContain("Start from branch");
+    // A pause stops what the agent left running, and a commit that is not pushed is only on the disk.
+    expect(taskPrompt("x")).toContain("Do not end your turn while a process you started still runs");
+    expect(taskPrompt("x")).toContain("Push also when the work is not complete");
   });
 });
 
@@ -142,7 +151,7 @@ describe.skipIf(process.platform === "win32")("runTask", () => {
     writeFileSync(join(work, "a.txt"), "changed\n");
     const { calls, deps: d } = deps();
     await expect(runTask({ ...base, task: "do it", dir: work }, d)).rejects.toThrow(
-      /^Failed: 1 file with changes/,
+      /^Failed: local checkout .*: 1 file with changes/,
     );
     expect(calls.connect).toBeUndefined();
   });
@@ -168,7 +177,9 @@ describe.skipIf(process.platform === "win32")("runTask", () => {
       { ...base, task: "do it", dir: work, id: "other", allowDirty: true, onLine: (l) => lines.push(l) },
       d,
     );
-    expect(lines[0]).toBe("! the workspace will not see: branch feat is not pushed (no upstream)");
+    expect(lines[0]).toBe(
+      `! the workspace will not see, from the local checkout ${work}: branch feat is not pushed (no upstream)`,
+    );
     expect(calls.connect?.id).toBe("other");
     expect(r.warning).toBe(lines[0]);
   });

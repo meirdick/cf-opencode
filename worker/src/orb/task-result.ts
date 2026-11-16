@@ -16,6 +16,10 @@ export interface TaskResult {
   commits?: Commit[];
   pullRequest?: string;
   changedFiles?: string[];
+  /** Commits that are only on the workspace disk: no remote branch has them. Absent when there are none. */
+  unpushed?: number;
+  /** Processes the task left running in the checkout. The next pause stops them. Absent when there are none. */
+  processes?: string[];
   /** The open permission request or form, when the state is waiting. */
   question?: string;
   /** Why the task failed or stopped. */
@@ -47,6 +51,8 @@ export function taskResult(workspace: string, t: TaskRecord): TaskResult {
   if (t.commits) r.commits = t.commits;
   if (t.pullRequest) r.pullRequest = t.pullRequest;
   if (t.changedFiles) r.changedFiles = t.changedFiles;
+  if (t.unpushed) r.unpushed = t.unpushed;
+  if (t.processes?.length) r.processes = t.processes;
   if (t.state === "waiting" && t.question) r.question = t.question;
   if ((t.state === "failed" || t.state === "stopped") && t.reason) r.error = t.reason;
   if (t.structured !== undefined) r.structured = t.structured;

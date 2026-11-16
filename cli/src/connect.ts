@@ -56,6 +56,12 @@ export function restartedByDeploy(e: unknown): boolean {
 export async function connect(input: ConnectInput): Promise<ConnectResult> {
   const id = input.id ?? workspaceIdFrom(input.directory ?? process.cwd());
   const existing = readWorkspace(id);
+  // A session id in the place of a workspace id would make a new, empty workspace with that name.
+  if (!existing && input.id && /^ses_/.test(input.id))
+    throw new CliError(
+      `${id} is a session id, not a workspace`,
+      `cf-opencode connect <workspace> --session ${id}, or cf-opencode tasks ${id}`,
+    );
   const passwordFile = existing?.passwordFile ?? join(stateDir(), "workspaces", `${id}.password`);
   // Derived, so a second machine with the control token gets the same password instead of a new one, which
   // would restart opencode serve and lock out the first. A random password from before derivation is replaced

@@ -48,6 +48,37 @@ describe("result record", () => {
     expect(text).toMatch(/Open: cf-opencode connect app --session ses_1$/);
   });
 
+  it("warns about commits that are not pushed and processes left running, with the fix", () => {
+    const text = renderResult({ ...base, unpushed: 13, processes: ["node build.js"] }, { now });
+    expect(text).toContain("Not pushed ! 13 commits are only on the workspace disk");
+    expect(text).toContain("Processes  ! left running, a pause stops them: node build.js");
+    expect(text).toContain(
+      'cf-opencode tasks ses_1 --reply "Wait for your process to end, then commit and push."',
+    );
+    const one = renderResult({ ...base, unpushed: 1 }, { now });
+    expect(one).toContain("Not pushed ! 1 commit is only on the workspace disk");
+    expect(one).toContain('--reply "Push your branch."');
+    expect(renderResult(base, { now })).not.toContain("not safe");
+    // A running task is not told to push yet.
+    expect(renderResult({ ...base, state: "running", unpushed: 2 }, { now })).not.toContain("not safe");
+
+    const list = renderTasks(
+      {
+        rows: [
+          { id: "ses_1", workspace: "app", title: "a", started: now, state: "done", unpushed: 2 },
+          { id: "ses_2", workspace: "app", title: "b", started: now, state: "running", unpushed: 2 },
+          { id: "ses_3", workspace: "app", title: "c", started: now, state: "done" },
+        ],
+        workspaces: [{ id: "app", live: true }],
+      },
+      now,
+    );
+    expect(list).toMatch(/ses_1\s+done !/);
+    expect(list).toMatch(/ses_2\s+running\s/);
+    expect(list).toMatch(/ses_3\s+done\s/);
+    expect(list).toContain("! ended with commits that are not pushed");
+  });
+
   it("says none for no commits, shows the question of a waiting task and how to continue a stopped one", () => {
     expect(renderResult({ ...base, commits: [] }, { now })).toContain("Commits    none");
     const waiting = renderResult({ ...base, state: "waiting", question: "Permission: allow bash?" }, { now });

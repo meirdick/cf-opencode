@@ -485,7 +485,7 @@ export function toA2aTask(
       parts: [{ text: summary, mediaType: "text/plain" }],
     });
   const changes: Record<string, unknown> = {};
-  for (const k of ["branch", "commits", "pullRequest", "changedFiles"])
+  for (const k of ["branch", "commits", "pullRequest", "changedFiles", "unpushed", "processes"])
     if (r[k] !== undefined) changes[k] = r[k];
   if (Object.keys(changes).length > 0)
     artifacts.push({

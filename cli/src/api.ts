@@ -40,6 +40,10 @@ export interface RemoteTask {
   updated?: number;
   /** The task left running and no one read it yet (tasks <session>). */
   unseen?: boolean;
+  /** Commits that are only on the workspace disk. From a Worker of 0.3 or later. */
+  unpushed?: number;
+  /** Processes the task left running in the checkout. From a Worker of 0.3 or later. */
+  processes?: string[];
 }
 
 /** The result record the Worker builds (worker/src/orb/task-result.ts). */
@@ -53,6 +57,8 @@ export interface TaskResult {
   commits?: { sha: string; subject: string }[];
   pullRequest?: string;
   changedFiles?: string[];
+  unpushed?: number;
+  processes?: string[];
   question?: string;
   error?: string;
   structured?: unknown;

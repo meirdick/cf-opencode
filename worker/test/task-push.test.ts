@@ -164,6 +164,43 @@ describe("result record", () => {
     expect(JSON.stringify(withFacts).length).toBeLessThan(60_000);
   });
 
+  it("keeps commits that are not pushed and processes left running, bounded, and drops them when they are gone", () => {
+    const base: TaskRecord = { id: "ses_1", title: "t", started: 0, state: "done", base: SHA("a") };
+    const [left] = applyFacts(
+      [base],
+      {
+        unpushed: 13,
+        processes: [...Array.from({ length: 9 }, () => "x".repeat(500)), 7, ""],
+        tasks: { ses_1: { commits: [], changedFiles: [] } },
+      },
+      new Set(["ses_1"]),
+    );
+    expect(left?.unpushed).toBe(13);
+    expect(left?.processes).toHaveLength(5);
+    expect(left?.processes?.[0]).toHaveLength(60);
+    expect(taskResult("app", left as TaskRecord)).toMatchObject({ unpushed: 13 });
+
+    // The next read replaces them: the agent pushed, and the process ended.
+    const [clean] = applyFacts(
+      [left as TaskRecord],
+      { unpushed: 0, processes: [], tasks: { ses_1: { commits: [], changedFiles: [] } } },
+      new Set(["ses_1"]),
+    );
+    expect(clean?.unpushed).toBeUndefined();
+    expect(clean?.processes).toBeUndefined();
+    const r = taskResult("app", clean as TaskRecord);
+    expect("unpushed" in r || "processes" in r).toBe(false);
+
+    // Not a count: ignored.
+    const [bad] = applyFacts(
+      [base],
+      { unpushed: "13", processes: "node", tasks: { ses_1: { commits: [], changedFiles: [] } } },
+      new Set(["ses_1"]),
+    );
+    expect(bad?.unpushed).toBeUndefined();
+    expect(bad?.processes).toBeUndefined();
+  });
+
   it("a task with no commit is done with an empty list; waiting carries the question; failed the error", () => {
     const base: TaskRecord = { id: "ses_1", title: "t", started: 0, state: "running", base: SHA("a") };
     const [done] = applyFacts(
@@ -604,6 +641,36 @@ describe.skipIf(!hasTools || process.platform === "win32")("TASK_GIT_SH against 
     expect(out.tasks.ses_1.changedFiles.sort()).toEqual(["a.txt", "new.txt"]);
     expect(out.tasks.ses_old).toBeUndefined();
     expect(out.tasks.ses_bad).toBeUndefined();
+    // No remote: nothing to compare with, so no count. Nothing runs in the checkout.
+    expect(out.unpushed).toBeUndefined();
+    expect(out.processes).toEqual([]);
+
+    // With a remote: one commit is pushed, the next one is only on this disk.
+    const origin = join(root, "origin.git");
+    spawnSync("git", ["init", "-q", "--bare", origin]);
+    git(t0 + 20, "remote", "add", "origin", origin);
+    git(t0 + 20, "push", "-q", "-u", "origin", "fix-login");
+    expect(JSON.parse(await run(TASK_GIT_SH, { ...env, GH: "0" })).unpushed).toBe(0);
+    writeFileSync(join(repo, "a.txt"), "more\n");
+    git(t0 + 30, "commit", "-q", "-am", "Not pushed");
+
+    // A process started in the background in the checkout, with a secret on its command line.
+    // Its shell exits at once, so nothing watches it, as after an agent's `job &`.
+    const pid = spawnSync(
+      "bash",
+      [
+        "-c",
+        "setsid python3 -c 'import time; time.sleep(300)' token=hunter2 >/dev/null 2>&1 </dev/null & echo $!",
+      ],
+      { cwd: repo, encoding: "utf8" },
+    ).stdout.trim();
+    try {
+      const left = JSON.parse(await run(TASK_GIT_SH, { ...env, GH: "0" }));
+      expect(left.unpushed).toBe(1);
+      expect(left.processes).toEqual(["python3"]);
+    } finally {
+      process.kill(Number(pid), "SIGKILL");
+    }
 
     // Without GH, gh is not asked. Not a checkout: no facts.
     expect(JSON.parse(await run(TASK_GIT_SH, { ...env, GH: "0" })).pullRequest).toBeUndefined();
