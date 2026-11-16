@@ -203,10 +203,14 @@ List OpenCode sessions across your workspaces, newest first. The command wakes n
 cf-opencode run "<task>" [workspace]
 ```
 
-Give a task to OpenCode in the workspace of the current checkout, and return. The task runs as a new session in the workspace. `run` fails when the branch is not pushed or files have changes that are not committed. See [Hand off a task](/guides/hand-off-a-task/).
+Give a task to OpenCode in the workspace of the current checkout, and return. The task runs as a new session in the workspace. `run` fails when the branch is not pushed or files have changes that are not committed. One task at a time uses the checkout of a workspace: `run` fails when a task there is `running` or `waiting`. See [Hand off a task](/guides/hand-off-a-task/).
 
 | Flag | Meaning |
 | --- | --- |
+| `--branch <name>` | Start from this branch as it is on `origin`. The default is the branch of the checkout. The preflight then checks only that `origin` has the branch. |
+| `--worktree` | Start the task in a new git worktree in the workspace, so it does not share the checkout with another task. |
+| `--new` | Start the task in a new workspace, named `<checkout>-<short id>`. It pauses when idle. `maxRunning` counts it. Not with `--worktree` or a workspace argument. |
+| `--auto` | The agent runs with no permission prompts. A deny rule still applies. The default is off. |
 | `--title <text>` | The session title. The default comes from the task. |
 | `--model <provider/model>` | The model of the session. The default is the model of the workspace. |
 | `--allow-dirty` | Start anyway. Print what the workspace will not see. |
@@ -216,7 +220,7 @@ Give a task to OpenCode in the workspace of the current checkout, and return. Th
 | `--follow` | As `--wait`, and show the agent's tool calls and messages while it works. |
 | `--timeout <minutes>` | How long `--wait` and `--follow` wait. The default is 60. |
 
-`--wait` and `--follow` do not go together. With `--json`, stdout is `{"ok":true,"workspace":"…","session":"ses_…","title":"…","state":"running"}`. With `--wait --json`, stdout is the result record. With `--follow --json`, stdout is one JSON object for each event, one per line, then the result record. With `--wait` or `--follow`, the exit code is 0 for `done`, 1 for `failed`, 2 for `waiting`, 3 for a timeout and 4 for `stopped`. See [Hand off a task](/guides/hand-off-a-task/#output-for-agents).
+`--wait` and `--follow` do not go together. With `--json`, stdout is `{"ok":true,"workspace":"…","session":"ses_…","title":"…","state":"running"}`, plus `newWorkspace`, `worktree` and `auto` when they apply. With `--wait --json`, stdout is the result record. With `--follow --json`, stdout is one JSON object for each event, one per line, then the result record. With `--wait` or `--follow`, the exit code is 0 for `done`, 1 for `failed`, 2 for `waiting`, 3 for a timeout and 4 for `stopped`. See [Hand off a task](/guides/hand-off-a-task/#output-for-agents).
 
 ### tasks
 
@@ -236,10 +240,11 @@ The states are `running`, `done`, `failed`, `waiting` and `stopped`. `stopped` m
 | `--wait` | With a session ID: wait until the task is not `running`. The exit codes are the same as for `run --wait`. |
 | `--follow` | With a session ID: as `--wait`, and show the agent's progress live. |
 | `--timeout <minutes>` | How long `--wait` and `--follow` wait. The default is 60. |
+| `--pull` | With a session ID: fetch the task's branch from `origin` into the checkout in the current directory, and make or fast-forward a local branch that tracks it. Your files and your checked-out branch do not change, except a fast-forward of that branch when it has no changes. It fails when the task has no pushed branch or has `unpushed` commits. |
 
-With a session ID and `--json`, stdout is the result record. With `--reply --json` and no `--wait` or `--follow`, stdout is `{"ok":true,"workspace":"…","session":"ses_…","replied":true}`.
+With a session ID and `--json`, stdout is the result record. With `--pull --json`, stdout is `{"ok":true,"workspace":"…","session":"ses_…","branch":"…","commit":"…","local":"created","checkedOut":false}`. With `--reply --json` and no `--wait` or `--follow`, stdout is `{"ok":true,"workspace":"…","session":"ses_…","replied":true}`.
 
-`--reply`, `--wait` and `--follow` need a session ID. The exit codes of `--wait` and `--follow` are 0 for `done`, 1 for `failed`, 2 for `waiting`, 3 for a timeout and 4 for `stopped`.
+`--reply`, `--wait`, `--follow` and `--pull` need a session ID. `--pull` goes alone. The exit codes of `--wait` and `--follow` are 0 for `done`, 1 for `failed`, 2 for `waiting`, 3 for a timeout and 4 for `stopped`.
 
 ### mcp
 
@@ -247,7 +252,7 @@ With a session ID and `--json`, stdout is the result record. With `--reply --jso
 cf-opencode mcp
 ```
 
-Serve `run` and `tasks` to an agent as MCP tools over stdio: `handoff_task`, `get_task`, `wait_task` and `list_tasks`. stdout carries MCP messages only. Logs go to stderr. The tools use the install and the control token of this machine. `handoff_task` works on the directory that the client started the server in, or on its `directory` argument. The `directory` argument must be that folder or a folder under it. See [Hand off tasks over MCP](/guides/mcp/).
+Serve `run` and `tasks` to an agent as MCP tools over stdio: `handoff_task`, `get_task`, `wait_task`, `list_tasks` and `pull_task`. stdout carries MCP messages only. Logs go to stderr. The tools use the install and the control token of this machine. `handoff_task` works on the directory that the client started the server in, or on its `directory` argument. The `directory` argument must be that folder or a folder under it. See [Hand off tasks over MCP](/guides/mcp/).
 
 To add the server, run `claude mcp add cf-opencode -- cf-opencode mcp` for Claude Code. For other clients, add a stdio server with the command `cf-opencode mcp`.
 

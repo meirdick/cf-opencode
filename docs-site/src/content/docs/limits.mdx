@@ -11,7 +11,8 @@ sidebar:
 - **A restore keeps the old tools.** A snapshot is the whole disk. A restore keeps the tools of the image it first booted, even after `cf-opencode upgrade`. `cf-opencode status <workspace>` says when the image is older. `cf-opencode rebuild <workspace>` moves it. `rebuild` does not carry packages that you installed outside `/home/user`. It stops a running agent.
 - **A redeploy reaches a running workspace late.** The control code of a running workspace changes after its container next stops. Pause the workspace to move it sooner.
 - **One container size per install.** The default is 2 vCPU, 6 GiB of memory and a 20 GB disk. Change it with `instance`.
-- **A limit on running workspaces.** `maxRunning` is 10 by default. A connect past the limit fails with `N/M workspaces already running`.
+- **A limit on running workspaces.** `maxRunning` is 10 by default. A connect past the limit fails with `N/M workspaces already running`. A workspace from `run --new` counts too.
+- **One task at a time in a checkout.** A second `run` into a workspace where a task is `running` or `waiting` fails. Give it its own checkout with `--worktree` or `--new`. See [Run two tasks at once](/guides/hand-off-a-task/#run-two-tasks-at-once).
 - **The image has Node 22 and no compilers.** A workspace made before 0.3.0 has no Node until you run `cf-opencode rebuild <workspace>`. See [The workspace image](/reference/image/).
 - **No file copy between workspaces.** Two workspaces share only the Git remote. See [Move a file between workspaces](/guides/hand-off-a-task/#move-a-file-between-workspaces).
 - **Local OpenCode must be version 2** for `connect`.

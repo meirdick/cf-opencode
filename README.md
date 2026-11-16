@@ -160,6 +160,14 @@ not see. `run` adds a fixed instruction to each task: commit, push the branch,
 open a pull request when `gh` works, and end with a `Result:` line.
 `--schema <file.json>` also asks for a final `json` block that matches a JSON
 Schema (a small subset); the result then carries it as `structured`.
+`--branch <name>` starts from that branch on origin; the check is then only that
+origin has it. `--auto` lets the agent run with no permission prompts (a deny
+rule still applies).
+
+One task at a time uses the checkout of a workspace: a second `run` fails while
+a task there is `running` or `waiting`. `--worktree` gives the task a new git
+worktree in the same workspace; `--new` gives it a new workspace, named
+`<checkout>-<short id>`, which pauses when idle and counts toward `maxRunning`.
 
 `cf-opencode tasks` lists the tasks across workspaces, with their state:
 `running`, `done`, `failed`, `waiting` (the agent asks a question or a
@@ -173,7 +181,9 @@ stops running, with exit code 0 done, 1 failed, 2 waiting, 3 timed out
 (`--timeout`, default 60 minutes), 4 stopped. `--follow` does the same and
 shows the agent's tool calls and messages live. `--json` prints the result
 record. Like `sessions`, it wakes nothing: a paused workspace answers with the
-states saved at its pause.
+states saved at its pause. `cf-opencode tasks <ses_…> --pull` fetches the task's
+branch into your checkout and makes a local branch that tracks it; it does not
+change your files or your checked-out branch.
 
 With a notify URL set, the Worker POSTs the result record, signed
 (`cf-opencode notify-key`), when a task leaves `running`, and retries after 1,
@@ -192,7 +202,7 @@ tells a local agent when and how to hand off a task.
 ### Hand off from an agent: MCP and A2A
 
 `cf-opencode mcp` is an MCP server over stdio. A local agent gets the tools
-`handoff_task`, `get_task`, `wait_task` and `list_tasks`, and reads the task
+`handoff_task`, `get_task`, `wait_task`, `list_tasks` and `pull_task`, and reads the task
 record as structured data instead of shell output:
 
 ```sh
@@ -228,7 +238,7 @@ Other commands:
 | `cf-opencode connect [id] --session <ses_…>` | Same, and open that session |
 | `cf-opencode sessions [id]` | OpenCode sessions across your workspaces, newest first. Wakes nothing |
 | `cf-opencode run "<task>" [id]` | Hand a task to OpenCode in the workspace and return. It runs with the laptop closed |
-| `cf-opencode tasks [id \| ses_…]` | Handed-off tasks and their state, or one task's result. `--wait` or `--follow` waits for one. Wakes nothing |
+| `cf-opencode tasks [id \| ses_…]` | Handed-off tasks and their state, or one task's result. `--wait` or `--follow` waits for one, `--pull` fetches its branch. Wakes nothing |
 | `cf-opencode mcp` | Serve `run` and `tasks` to an agent as MCP tools over stdio |
 | `cf-opencode list` | Workspaces this machine connected to, with state and snapshot expiry |
 | `cf-opencode connect --no-attach` | Same, but print the server URL instead |

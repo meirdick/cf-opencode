@@ -314,6 +314,25 @@ the saved copy says `stopped`, not `running`. After the wake, OpenCode reports
 the session as interrupted; that keeps `stopped`, since it is the same stop.
 Continuing the session makes it `running` again.
 
+One task at a time uses the workspace checkout. The Durable Object refuses a
+start while a task in the checkout is `running` or `waiting` (`checkoutHolder`
+in `tasks.ts`); a `waiting` task counts, because its work is in the checkout
+and goes on after the answer. Starts run in one in-memory queue for each
+workspace (`taskLock` in `session.ts`), so two clients cannot both pass the
+check. The saved states decide first; a live read confirms before a refusal.
+A second task gets its own checkout: `run --worktree` makes a git worktree in
+`/home/user/worktrees` with OpenCode's worktree API (`POST /api/worktree`, as
+`opencode run --worktree` does), else `git worktree add`, detached at the start
+branch on origin; the session starts there, and `TASK_GIT_SH` reads that
+worktree. `run --new` makes a workspace `<checkout>-<short id>`; it pauses like
+any other, and `maxRunning` stays the cost guard.
+
+`run --auto` has no server flag in OpenCode 2.2: `opencode run --auto` answers
+each permission request from its own client. A handed-off session has no
+client, so the start script sends a permission ruleset on `POST /api/session`
+(allow all, then the agents' deny rules, since OpenCode takes the last rule that
+matches), and each status read answers what is still open with "once".
+
 ### The result record
 
 `task-result.ts` builds one record from the saved task, so a paused workspace

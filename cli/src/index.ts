@@ -212,7 +212,7 @@ const COMMANDS: Record<string, Command> = {
     usage: "mcp",
     summary: "Serve run and tasks to an agent as MCP tools, over stdio.",
     details: [
-      "Tools: handoff_task, get_task, wait_task, list_tasks. Each returns the task record as structured data.",
+      "Tools: handoff_task, get_task, wait_task, list_tasks, pull_task. Each returns structured data.",
       "stdout carries MCP messages only; logs go to stderr. The tools use this machine's install and control token.",
       "handoff_task works on the directory the client starts the server in, or on its directory argument.",
       "Claude Code:",
