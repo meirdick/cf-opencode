@@ -5,6 +5,7 @@ import { type FlagSpec, flagBool, flagString, type ParsedArgs, parseArgs } from 
 import { completeWords, completionScript, SHELLS } from "./completion.js";
 import { readControlToken, readInstall, readPassword, readWorkspace, workspacePath } from "./config.js";
 import { connect, workspaceIdFrom } from "./connect.js";
+import { cp, mb, parseSide } from "./cp.js";
 import { CliError, toFailedLine } from "./errors.js";
 import { forwardPreview, splitPreviewArgs } from "./forward.js";
 import { type InitOptions, init } from "./init.js";
@@ -571,6 +572,40 @@ COMMANDS.skills = {
       `unknown skills action ${verb}`,
       "use: cf-opencode skills [push|remove|default] [name...]",
     );
+  },
+};
+
+COMMANDS.cp = {
+  group: "Workspaces",
+  usage: "cp <from> <to>",
+  summary: "Copy a file or a folder between workspaces, or between a workspace and this machine.",
+  details: [
+    "A side is <workspace>:<path> or a local path. A workspace path is relative to the checkout,",
+    "or starts with / or ~ inside /home/user.",
+    "cf-opencode cp app:export.json.gz api:data/     to the folder data in the checkout of api",
+    "cf-opencode cp app:build ./build                 from a workspace to this machine",
+    "cf-opencode cp ./fixtures app:test/             from this machine (at most 100 MB)",
+    "An existing folder, or a path that ends in /, takes the item inside it. A paused workspace wakes;",
+    "it counts toward maxRunning and pauses again when idle. Files go through the Worker, which checks",
+    "every path. At most 4 GB and 200,000 entries in one copy. The target changes only when the copy ends.",
+    "--force   replace a target that exists",
+  ],
+  flags: { force: { type: "boolean" } },
+  run: async (args) => {
+    const [from, to, ...extra] = args.positionals;
+    if (!from || !to || extra.length)
+      throw new CliError("cp needs two sides", "cf-opencode cp <workspace>:<path> <workspace>:<path>");
+    const { url, token } = requireInstall(args);
+    const ui = makeUi(flagBool(args, "json"));
+    const r = await cp(parseSide(from), parseSide(to), {
+      url,
+      token,
+      force: flagBool(args, "force"),
+      err: (l) => ui.step(terminalSafe(l)),
+    });
+    ui.result({ ok: true, ...r });
+    ui.out(terminalSafe(`copied ${r.from} to ${r.to} (${mb(r.bytes)}, ${r.files} files, ${r.seconds} s)`));
+    return 0;
   },
 };
 
