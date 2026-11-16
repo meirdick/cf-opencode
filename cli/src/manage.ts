@@ -1,7 +1,8 @@
 // list, doctor and uninstall: commands about the install as a whole.
 import { readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { ControlClient } from "./api.js";
+import { ControlClient, NotTheWorker } from "./api.js";
+import { apiFor } from "./cloudflare-api.js";
 import {
   installPath,
   readControlToken,
@@ -106,6 +107,10 @@ export async function doctor(o: {
   cliVersion: string;
   run: Runner;
   fetch?: typeof fetch;
+  env?: NodeJS.ProcessEnv;
+  findWorker?: typeof findWorker;
+  /** The wait between tries of a request that did not reach the Worker. */
+  sleep?: (ms: number) => Promise<void>;
 }): Promise<Check[]> {
   const checks: Check[] = [];
   const add = (status: Check["status"], name: string, detail: string, fix?: string) =>
@@ -137,15 +142,25 @@ export async function doctor(o: {
   else add("warn", "ssh", "no ssh client; only ssh, ssh-config and herdr need it", "install OpenSSH");
 
   const install = readInstall();
-  const url = o.url ?? process.env.CF_OPENCODE_URL ?? install?.url;
-  const token = readControlToken() ?? process.env.CF_OPENCODE_CONTROL_TOKEN;
-  if (url) add("ok", "install", `${url}${install?.name ? ` (Worker ${install.name})` : ""}`);
-  else add("fail", "install", "no Worker URL", "cf-opencode init");
+  const env = o.env ?? process.env;
+  const [rawUrl, from] = o.url
+    ? [o.url, "--url"]
+    : env.CF_OPENCODE_URL
+      ? [env.CF_OPENCODE_URL, "CF_OPENCODE_URL"]
+      : [install?.url, installPath()];
+  const url = rawUrl?.replace(/\/+$/, "");
+  const token = readControlToken() ?? env.CF_OPENCODE_CONTROL_TOKEN;
+  if (url) {
+    const about = [`from ${from}`];
+    if (install?.name) about.push(`Worker ${install.name}`);
+    if (install?.domain) about.push(`Custom Domain ${install.domain}`);
+    add("ok", "url", `${url} (${about.join(", ")})`);
+  } else add("fail", "url", "no Worker URL", "cf-opencode init");
   if (token) add("ok", "control token", join(stateDir(), "control-token"));
   else add("fail", "control token", "missing", "cf-opencode init writes ~/.cf-opencode/control-token");
   if (!url || !token) return checks;
 
-  const client = new ControlClient(url, token, o.fetch);
+  const client = new ControlClient(url, token, o.fetch, o.sleep);
   try {
     const s = await client.installStatus();
     if (s.version === o.cliVersion) add("ok", "worker", `API ${s.version}, control token accepted`);
@@ -184,16 +199,84 @@ export async function doctor(o: {
         );
     }
   } catch (e) {
-    add(
-      "fail",
-      "worker",
-      toFailedLine(e)
-        .replace(/^Failed: /, "")
-        .replace(/ — fix: .*$/, ""),
-      "cf-opencode init, or check the URL",
-    );
+    const cause = toFailedLine(e)
+      .replace(/^Failed: /, "")
+      .replace(/ — fix: .*$/, "");
+    // A 401 is the Worker; its fix is the token. Anything else may be a URL that no longer leads to it.
+    const lost = e instanceof NotTheWorker || /did not answer JSON/.test(cause);
+    if (!lost) add("fail", "worker", cause, e instanceof CliError ? e.fix : "cf-opencode init");
+    else if (!install) add("fail", "worker", cause, "check the URL, then cf-opencode init --url <url>");
+    else {
+      const where = await (o.findWorker ?? findWorker)({
+        name: install.name,
+        ...(install.accountId ? { accountId: install.accountId } : {}),
+        current: url,
+        token,
+        run: o.run,
+        ...(o.fetch ? { fetch: o.fetch } : {}),
+      });
+      if (where.kind === "moved")
+        add(
+          "fail",
+          "worker",
+          `${cause}; Worker ${install.name} answers at ${where.url}`,
+          `cf-opencode init --url ${where.url}`,
+        );
+      else if (where.kind === "found")
+        add(
+          "fail",
+          "worker",
+          `${cause}; Worker ${install.name} is in the account`,
+          `find its URL in the dashboard (Workers & Pages > ${install.name} > Settings > Domains & Routes), then cf-opencode init --url <url>`,
+        );
+      else if (where.kind === "missing")
+        add("fail", "worker", `${cause}; Worker ${install.name} is not in the account`, "cf-opencode init");
+      else
+        add(
+          "fail",
+          "worker",
+          cause,
+          "check the network; if the Worker URL changed, cf-opencode init --url <new url>",
+        );
+    }
   }
   return checks;
+}
+
+export type WorkerWhere =
+  | { kind: "moved"; url: string }
+  | { kind: "found" }
+  | { kind: "missing" }
+  | { kind: "unknown" };
+
+/**
+ * Where is the recorded Worker, when its URL does not answer? Reads only: `wrangler deployments list` says
+ * whether it exists, and the account's workers.dev subdomain gives the URL it has there now. A renamed
+ * subdomain is the usual cause. The new URL counts only when it accepts this machine's control token.
+ */
+export async function findWorker(o: {
+  name: string;
+  accountId?: string;
+  current: string;
+  token: string;
+  run: Runner;
+  fetch?: typeof fetch;
+}): Promise<WorkerWhere> {
+  const w = makeWrangler(o.run, o.accountId ? { accountId: o.accountId } : {});
+  const found = await lookupWorker(w, o.name);
+  if (found.kind !== "found") return { kind: found.kind };
+  if (!o.accountId) return { kind: "found" };
+  const api = await apiFor(w, undefined, o.fetch);
+  const sub = await api?.get<{ subdomain?: string }>(`/accounts/${o.accountId}/workers/subdomain`);
+  if (sub?.kind !== "known" || !sub.value.subdomain) return { kind: "found" };
+  const url = `https://${o.name}.${sub.value.subdomain}.workers.dev`;
+  if (url === o.current.replace(/\/$/, "")) return { kind: "found" };
+  try {
+    await new ControlClient(url, o.token, o.fetch, async () => {}).health();
+    return { kind: "moved", url };
+  } catch {
+    return { kind: "found" };
+  }
 }
 
 export function renderChecks(checks: Check[]): string {

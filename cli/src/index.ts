@@ -910,7 +910,7 @@ async function doctorCommand(args: ParsedArgs): Promise<number> {
 function requireUrl(args: ParsedArgs): { url: string } {
   const url = flagString(args, "url") ?? process.env.CF_OPENCODE_URL ?? readInstall()?.url;
   if (!url) throw new CliError("no Worker URL", "run cf-opencode init, or pass --url");
-  return { url };
+  return { url: url.replace(/\/+$/, "") };
 }
 
 function requireInstall(args: ParsedArgs): { url: string; token: string } {
@@ -919,7 +919,7 @@ function requireInstall(args: ParsedArgs): { url: string; token: string } {
   const token = readControlToken() ?? process.env.CF_OPENCODE_CONTROL_TOKEN;
   if (!url) throw new CliError("no Worker URL", "run cf-opencode init, or pass --url");
   if (!token) throw new CliError("no control token", "cf-opencode init writes ~/.cf-opencode/control-token");
-  return { url, token };
+  return { url: url.replace(/\/+$/, ""), token };
 }
 
 function findCommand(argv: string[]): string | undefined {
