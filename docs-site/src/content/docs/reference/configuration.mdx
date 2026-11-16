@@ -45,6 +45,7 @@ The CLI stops before the deploy when the file is not one JSON object. A value ou
 | `searchProvider` | `"exa"` | A provider name of 1 to 32 characters: lowercase letters, digits, `.`, `_` and `-`, starting with a letter or digit | The Web Search API provider for `cf-opencode-search`. Known providers are `exa`, `linkup` and `ceramic`. |
 | `model` | `"cloudflare-workers-ai/@cf/zai-org/glm-5.3"` | `provider/model`, or `""` | The default OpenCode model. An empty value lets OpenCode choose. |
 | `a2a` | `false` | `true` or `false` | `true` serves the A2A Agent Card and the JSON-RPC endpoint `/a2a`. See [Hand off tasks over A2A](/guides/a2a/). |
+| `autoReply` | `true` | `true` or `false` | `true` sends one message to a handed-off session that ends its turn with commits that are not pushed or processes left running. See [The automatic reply](/guides/hand-off-a-task/#the-automatic-reply). |
 | `images` | `{}` | An object of image references | Extra image references mapped to image keys. For advanced use. |
 
 The notify URL is not a setting. A webhook URL often holds its own secret, and these settings are a plain Worker variable. It is the Worker secret `NOTIFY_URL`; set it with `cf-opencode notify-url`. A `notifyUrl` key in the settings file stops `init` and `upgrade` before the deploy with `Failed: notifyUrl in <path> is no longer a setting; the URL is a Worker secret now — fix: remove notifyUrl from the file, then run cf-opencode notify-url`.

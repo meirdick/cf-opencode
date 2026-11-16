@@ -66,7 +66,9 @@ The last JSON object is the result record: `state`, `summary`, `branch`, `commit
 
 Check `unpushed` and `processes` before you report a `done` task. `unpushed` is the count of commits that are
 only on the workspace disk. `processes` are jobs the agent left running; the next pause stops them. When one
-of them is present, the work is not safe. Send
+of them is present, the work is not safe. The Worker already sends the agent one automatic reply about it
+(`autoReply` in the record), and the task stays `running` until that turn ends. If the task is still `done`
+with one of them after that, send
 `cf-opencode tasks <session> --workspace <workspace> --reply "Wait for your process to end, then commit and push."`
 and watch again. Tell the user what you did.
 

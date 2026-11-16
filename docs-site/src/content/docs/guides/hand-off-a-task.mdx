@@ -205,6 +205,25 @@ The task ended with work that is not safe. Tell the agent: cf-opencode tasks ses
 
 The result record has the same two fields, so a script and the notify URL get them too. The facts are from the time the task ended. A later end of the same task (after a reply) reads them again.
 
+### The automatic reply
+
+You do not have to send that reply yourself. When a task changes to `done` and the facts show `unpushed` or `processes`, the Worker sends the session one message. The message says what the Worker found, and tells the agent to push the branch and not to end its turn while a process that it needs runs. The agent then goes on.
+
+- The Worker sends it one time for each task. A later turn, or your own `--reply`, does not send it again.
+- The alarm sends it, so it works with the laptop closed.
+- The task stays `running` until the agent ends the turn of the reply. `--wait` keeps waiting, and the notify URL gets one result: the one after the reply.
+- The Worker does not send it for a task that is `failed`, `waiting` or `stopped`.
+- The Worker does not wake a paused workspace for it. When the last read before a pause sees the change, the task is `done` and the record says that the reply was not sent. Send `--reply` yourself to wake the workspace.
+- With `--schema`, the message asks the agent to end with the `json` block again. If the answer has no block, the record keeps the block from before the reply.
+
+`tasks <ses_…>` shows it:
+
+```text
+Auto reply 12m ago: told the agent (2 commits not pushed)
+```
+
+The setting `autoReply` turns it off. See [Configuration](/reference/configuration/).
+
 ## Wait for a task
 
 ```sh
@@ -334,6 +353,7 @@ The result record:
 | `question` | When `waiting`: the open permission request or question. |
 | `error` | When `failed` or `stopped`: why. |
 | `structured`, `structuredError` | With `--schema`: the checked value, or why there is none. |
+| `autoReply` | When the task ended with work that is not safe: `{ "at", "sent", "found", "error"? }`. `found` says what the Worker saw. `sent` is `false` when the reply did not go out, and `error` says why. |
 | `notified`, `notifyError` | With a notify URL: the last delivery, or why it failed. |
 | `started`, `updated` | ISO times. |
 

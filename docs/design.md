@@ -336,6 +336,19 @@ the clients show a `!` and the reply that fixes it. Only the program name and it
 kept from a command line, because the record goes to the notify URL. A process left running does not keep
 the workspace awake: a forgotten dev server would then cost until `maxAwakeHours`.
 
+The automatic reply (`auto-reply.ts`) acts on those facts. The read that sees a task change to `done`
+with `unpushed` or `processes` sends the session one message, with OpenCode's prompt call, as `--reply`
+does. The decision and its mark are in the same storage write as the change, with no await between the
+read and the put, so exactly one read sends it; the mark is never cleared, so it cannot loop and a
+person's later reply does not reset it. That write holds the task at `running` and takes back the delivery
+the change queued: `--wait`, the inbox and the notify URL see one end, after the reply's turn. Until
+OpenCode shows the reply's turn (at most `START_GRACE_MS`), a `done` read is the turn before it. A send that
+fails lets the task be `done` with the delivery. Only a read of an awake workspace sends: the last read
+before a pause, and a read of a warm workspace, record the reply as not sent and wake nothing. Those reads
+see the change first only after a pause at `maxAwakeHours` or a person's pause, so a wake would undo the
+cost guard or the person's choice. `--schema` tasks get it too: the message asks for the block again, and
+the block from before the reply stays when the answer has none. `autoReply: false` turns it off.
+
 The task's commits are also limited to those that no other remote branch has. The commit time alone is not
 enough: a task that runs for a day, or gets a reply a day later, merges commits that others made after its
 start.

@@ -237,6 +237,8 @@ The states are `running`, `done`, `failed`, `waiting` and `stopped`. `stopped` m
 | `--follow` | With a session ID: as `--wait`, and show the agent's progress live. |
 | `--timeout <minutes>` | How long `--wait` and `--follow` wait. The default is 60. |
 
+A task that ends with commits that are not pushed or processes left running gets one automatic reply from the Worker. The task stays `running` until that turn ends. `tasks <ses_…>` shows the reply in the line `Auto reply`. See [The automatic reply](/guides/hand-off-a-task/#the-automatic-reply).
+
 With a session ID and `--json`, stdout is the result record. With `--reply --json` and no `--wait` or `--follow`, stdout is `{"ok":true,"workspace":"…","session":"ses_…","replied":true}`.
 
 `--reply`, `--wait` and `--follow` need a session ID. The exit codes of `--wait` and `--follow` are 0 for `done`, 1 for `failed`, 2 for `waiting`, 3 for a timeout and 4 for `stopped`.
