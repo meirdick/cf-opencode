@@ -4,6 +4,7 @@
 // Responses never carry stack traces. Errors are one line: "Failed: <cause> — fix: <action>".
 import { A2A_RPC_PATH, a2aCardRoute, a2aRpcRoute } from "./a2a";
 import { timingSafeEqualStr } from "./auth";
+import { type CopyStub, copyRoute } from "./copy-api";
 import { parseConfig } from "./core/config";
 import { PRUNE_DEFAULT_AGE_MS } from "./core/registry-core";
 import {
@@ -136,6 +137,12 @@ async function route(req: Request, env: Env): Promise<Response> {
   if (url.pathname === A2A_RPC_PATH)
     return (await a2aRpcRoute(req, env, { sessionOf: (id) => sessionOf(env, id) })) ?? notFound(req);
   if (parts[0] !== "v1") return notFound(req);
+  const cp = copyRoute(
+    req,
+    (id) => env.WORKSPACE.getByName(workspaceDoName(id)) as unknown as CopyStub,
+    parts,
+  );
+  if (cp) return cp;
   const [, a, b, c, ...rest] = parts;
   if (a === "workspaces" && b && c === "tasks" && rest.length <= 1)
     return tasksRoute(req, (id) => sessionOf(env, id), b, rest[0]);

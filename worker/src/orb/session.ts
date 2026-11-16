@@ -35,6 +35,19 @@ import { AI_HOST } from "./ai";
 import { idleTick, LAST_USE_KEY, runAlarm } from "./alarm";
 import { type BrowserSession, openBrowserSession, ownsSession, rememberSession } from "./browse";
 import type { OrbContext } from "./context";
+import {
+  type CopyDeps,
+  type CopyFail,
+  copyAbort,
+  copyCommit,
+  copyIn,
+  copyOut,
+  copyPrepare,
+  copyStat,
+  type PendingCopy,
+  type StatResult,
+  wakeForCopy,
+} from "./copy";
 import { runDelete } from "./delete";
 import { ExclusiveQueue } from "./exclusive";
 import {
@@ -573,6 +586,85 @@ export class WorkspaceSession extends DurableObject<Env> implements WorkspaceSes
       deadline: Date.now() + JOB_DEADLINE_MS,
     };
     return this.rt.queue.run(() => receiveRebuild(ctx, tar, o.instance));
+  }
+
+  // --- cf-opencode cp (copy.ts). Only the Worker's /v1 routes call these, after the control token check. ---
+
+  /** Copies between copyPrepare and copyCommit. In memory: a restart fails the copy, and the stage ages out. */
+  private readonly copies = new Map<string, PendingCopy>();
+
+  private copyDeps(id: string): CopyDeps {
+    const record = () => loadOrb(this.kv);
+    return {
+      workspaceId: id,
+      container: this.base(id).container,
+      kv: this.kv,
+      clock: realClock,
+      record,
+      wake: () =>
+        wakeForCopy({
+          workspaceId: id,
+          running: () => Boolean(this.ctx.container?.running),
+          record,
+          controlToken: this.env.CONTROL_TOKEN,
+          password: workspacePassword,
+          spawn: async (password, directory) => {
+            const { done } = await runOpWithJournal(
+              this.base(id),
+              this.kv,
+              { op: "spawn", password, ...(directory ? { directory } : {}) },
+              REAL_OPS,
+              this.rt,
+            );
+            const result = await done;
+            this.ctx.waitUntil(this.arm(this.config.alarmSeconds * 1000));
+            return result;
+          },
+        }),
+    };
+  }
+
+  async copyStat(path: string): Promise<StatResult> {
+    return copyStat(this.copyDeps(await this.workspaceId()), path);
+  }
+
+  async copyOut(path: string): Promise<{ ok: true; stream: ReadableStream<Uint8Array> } | CopyFail> {
+    return copyOut(this.copyDeps(await this.workspaceId()), path);
+  }
+
+  async copyPrepare(o: {
+    path: string;
+    name: string;
+    force: boolean;
+    bytes: number;
+  }): Promise<{ ok: true; token: string; target: string } | CopyFail> {
+    const r = await copyPrepare(this.copyDeps(await this.workspaceId()), o);
+    if (!r.ok) return r;
+    const token = crypto.randomUUID();
+    this.copies.set(token, r.pending);
+    return { ok: true, token, target: r.target };
+  }
+
+  async copyIn(token: string, tar: ReadableStream<Uint8Array>): Promise<{ ok: true } | CopyFail> {
+    const p = this.copies.get(token);
+    if (!p) {
+      await tar.cancel().catch(() => undefined);
+      return { ok: false, error: "Failed: the copy lost its place in the workspace — fix: retry" };
+    }
+    return copyIn(this.copyDeps(await this.workspaceId()), p, tar);
+  }
+
+  async copyCommit(token: string): Promise<{ ok: true; target: string } | CopyFail> {
+    const p = this.copies.get(token);
+    this.copies.delete(token);
+    if (!p) return { ok: false, error: "Failed: the copy lost its place in the workspace — fix: retry" };
+    return copyCommit(this.copyDeps(await this.workspaceId()), p);
+  }
+
+  async copyAbort(token: string): Promise<void> {
+    const p = this.copies.get(token);
+    this.copies.delete(token);
+    if (p) await copyAbort(this.copyDeps(await this.workspaceId()), p);
   }
 
   async authorize(password: string, browserSessionId?: string): Promise<boolean> {
