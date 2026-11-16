@@ -151,7 +151,9 @@ if ! command -v opencode >/dev/null 2>&1; then
   exit 1
 fi
 # setsid so the server survives this exec. The password is an env var, never an argument.
-setsid opencode serve --hostname 0.0.0.0 --port "$PORT" >>"$LOG" 2>&1 < /dev/null &
+# PORT is this script's input, not the project's: without -u, every tool the agent runs would see PORT=4096
+# and a dev server that reads PORT would try to take OpenCode's own port.
+setsid env -u PORT opencode serve --hostname 0.0.0.0 --port "$PORT" >>"$LOG" 2>&1 < /dev/null &
 pid=$!
 echo "$pid $BOOT $SHA" > "$STATE"
 disown "$pid" 2>/dev/null || true

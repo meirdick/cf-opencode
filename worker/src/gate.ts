@@ -66,10 +66,12 @@ export async function workspaceGate(
   opts: { sameOriginOnly?: boolean } = {},
 ): Promise<{ password: string } | Response> {
   if (opts.sameOriginOnly && (crossOrigin(req) || fromBrowser(req))) {
-    return Response.json(
-      { error: "Failed: a web page cannot open this — fix: use the cf-opencode CLI" },
-      { status: 403 },
-    );
+    // A client that is not a browser gets here when its library adds an Origin header by itself: an old
+    // Python websocket-client sends http://<host> for a wss URL. Say the fix; a page cannot use it.
+    const error = fromBrowser(req)
+      ? "Failed: a web page cannot open this — fix: use the cf-opencode CLI"
+      : "Failed: the Origin header is not this Worker's origin — fix: send no Origin header (Python websocket: suppress_origin=True)";
+    return Response.json({ error }, { status: 403 });
   }
   const password = basicPassword(req.headers.get("authorization"));
   if (!(await isWorkspacePassword(env.CONTROL_TOKEN, id, password))) return unauthorized();

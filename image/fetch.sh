@@ -14,19 +14,24 @@ format=markdown
 out=""
 max=60000
 usage="usage: cf-opencode-fetch [--links|--html|--screenshot <file>|--pdf <file>] [--max-chars <n>] <url>"
+# Options work before and after the URL. Before, one after the URL was ignored with no message, so
+# `cf-opencode-fetch <url> --screenshot f.png` printed Markdown and saved no file.
+url=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --links) format=links; shift ;;
     --html) format=html; shift ;;
-    --screenshot) format=screenshot; out="${2:-}"; shift 2 ;;
-    --pdf) format=pdf; out="${2:-}"; shift 2 ;;
-    --max-chars) max="${2:-}"; shift 2 ;;
+    --screenshot) format=screenshot; out="${2:-}"; shift; [ $# -gt 0 ] && shift ;;
+    --pdf) format=pdf; out="${2:-}"; shift; [ $# -gt 0 ] && shift ;;
+    --max-chars) max="${2:-}"; shift; [ $# -gt 0 ] && shift ;;
     -h|--help) echo "$usage"; exit 0 ;;
-    --) shift; break ;;
-    *) break ;;
+    --) shift; [ $# -gt 0 ] && [ -z "$url" ] && url="$1"; break ;;
+    -*) echo "Failed: unknown option $1 — fix: $usage" >&2; exit 2 ;;
+    *)
+      if [ -n "$url" ]; then echo "Failed: more than one URL ($url, $1) — fix: $usage" >&2; exit 2; fi
+      url="$1"; shift ;;
   esac
 done
-url="${1:-}"
 if [ -z "$url" ]; then
   echo "Failed: no URL — fix: cf-opencode-fetch https://example.com/page" >&2
   exit 2

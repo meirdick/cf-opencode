@@ -47,4 +47,5 @@ python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d["websocketU
 live=d.get("liveUrl")
 live and print("live: "+live, file=sys.stderr)' "$out"
 for p in ${ports//,/ }; do echo "dev server: http://p${p}.preview.internal/ (port ${p} in this workspace)" >&2; done
-echo "connect with header Authorization: Basic base64(opencode:\$OPENCODE_SERVER_PASSWORD); billed per browser hour; closes after 10 min idle" >&2
+echo "connect with header Authorization: Basic base64(opencode:\$OPENCODE_SERVER_PASSWORD), and no Origin header; billed per browser hour; closes after 10 min idle" >&2
+echo "Python: websocket.create_connection(url, header=[\"Authorization: Basic \" + base64.b64encode((\"opencode:\" + os.environ[\"OPENCODE_SERVER_PASSWORD\"]).encode()).decode()], suppress_origin=True)" >&2

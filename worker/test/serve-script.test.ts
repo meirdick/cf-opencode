@@ -29,6 +29,26 @@ describe.skipIf(process.platform === "win32")("SERVE_SH model config", () => {
   });
 });
 
+describe.skipIf(process.platform === "win32")("SERVE_SH environment", () => {
+  it("starts OpenCode on PORT, and does not give PORT to the tools OpenCode runs", async () => {
+    const home = mkdtempSync(join(tmpdir(), "cfoc-port-"));
+    const bin = join(home, "bin");
+    mkdirSync(bin);
+    const seen = join(home, "seen");
+    writeFileSync(
+      join(bin, "opencode"),
+      `#!/bin/sh\necho "args=$*" > "${seen}.tmp"\necho "PORT=\${PORT-unset}" >> "${seen}.tmp"\nmv "${seen}.tmp" "${seen}"\n`,
+      { mode: 0o755 },
+    );
+    const r = serve(home, { PATH: `${bin}:/usr/bin:/bin`, PORT: "4096" });
+    expect(r.stdout).toMatch(/started \d+/);
+    for (let i = 0; i < 50 && !existsSync(seen); i++) await new Promise((ok) => setTimeout(ok, 100));
+    const text = readFileSync(seen, "utf8");
+    expect(text).toContain("--port 4096");
+    expect(text).toContain("PORT=unset");
+  });
+});
+
 describe.skipIf(process.platform === "win32")("SERVE_SH agent notes", () => {
   it("writes the notes for the agent, and leaves a file the user wrote alone", () => {
     const home = mkdtempSync(join(tmpdir(), "cfoc-notes-"));

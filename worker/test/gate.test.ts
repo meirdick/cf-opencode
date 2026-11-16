@@ -106,6 +106,8 @@ describe("cross-site requests", () => {
         const r = req(path, { ...init, headers: { ...(init.headers as object), origin } }, basic(pw));
         const res = await handleApi(r, env);
         expect(res.status, `${origin} ${path}`).toBe(403);
+        // No Sec-Fetch-Site: a library added the Origin, so the answer names the fix for a script.
+        expect(((await res.json()) as { error: string }).error).toMatch(/fix: send no Origin header/);
       }
     }
     expect(getByName).not.toHaveBeenCalled();
@@ -119,6 +121,7 @@ describe("cross-site requests", () => {
         const headers = { ...(init.headers as object), origin: "https://w.example", "sec-fetch-site": site };
         const res = await handleApi(req(path, { ...init, headers }, basic(pw)), env);
         expect(res.status, `${site} ${path}`).toBe(403);
+        expect(((await res.json()) as { error: string }).error).toMatch(/a web page cannot open this/);
       }
     }
     expect(getByName).not.toHaveBeenCalled();

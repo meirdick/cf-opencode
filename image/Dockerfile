@@ -48,6 +48,15 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/* \
  && rm -f /etc/ssh/ssh_host_*
 
+# Debian's python3-websocket (1.2.3) sends "Origin: http://<host>" also for a wss URL. The Worker refuses a
+# websocket with an Origin that is not its own (https), so cf-opencode-browse failed from in here with 403.
+# Newer releases of the library send https for wss; this is that one-line change. The grep fails the build
+# when a new Debian package no longer has the line.
+RUN f=/usr/lib/python3/dist-packages/websocket/_handshake.py \
+ && grep -q 'headers.append("Origin: http://%s" % hostport)' "$f" \
+ && sed -i 's|headers.append("Origin: http://%s" % hostport)|headers.append("Origin: %s://%s" % ("https" if port == 443 else "http", hostport))|' "$f" \
+ && python3 -c 'import websocket._handshake as h; assert "Origin: https://w.example" in h._get_handshake_headers("/", "w.example", 443, {})[0]'
+
 # The hash is checked before tar reads the file; a mismatch fails the build.
 # `opencode` on PATH is opencode.sh (copied below), which adds the model config and runs this binary.
 # The version check fails the build if the pin and the binary disagree.

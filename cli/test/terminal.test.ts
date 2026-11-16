@@ -35,6 +35,11 @@ describe("proxyUrl", () => {
 });
 
 describe("sshOptions", () => {
+  it("waits for a wake longer than a machine's own short ConnectTimeout", () => {
+    expect(sshOptions("demo", "/k")).toContainEqual(["ConnectTimeout", "120"]);
+    expect(sshConfigBlock("demo", "/k")).toContain("  ConnectTimeout 120");
+  });
+
   it("refuses a hostile --url and a hostile workspace id", () => {
     expect(() => sshOptions("demo", "/k", 'https://x" ; touch pwned ; "')).toThrow();
     expect(() => sshOptions("demo; touch pwned", "/k")).toThrow();

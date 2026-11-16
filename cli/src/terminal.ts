@@ -238,6 +238,10 @@ export function sshOptions(id: string, keyPath: string, url?: string): [string, 
     // Plain names in our own known_hosts file, so forgetHostKey can find a workspace's line.
     ["HashKnownHosts", "no"],
     ["ServerAliveInterval", "30"],
+    // The ProxyCommand wakes a paused workspace before sshd can answer, which takes 10 to 60 seconds. A
+    // machine with a short ConnectTimeout for all hosts (10 is a common default) gave up first, with
+    // "Connection timed out during banner exchange".
+    ["ConnectTimeout", "120"],
   ];
 }
 
