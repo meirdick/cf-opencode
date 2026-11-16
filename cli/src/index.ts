@@ -36,9 +36,10 @@ import {
   sshRun,
   writeDefaults,
 } from "./skills-sync.js";
+import { listStore, removeStore } from "./store.js";
 import { notifyKeyCommand, runCommand, skillCommand, tasksCommand } from "./task-commands.js";
 import { forgetHostKey, shell, ssh, sshConfigBlock, sshKey, sshProxy, target } from "./terminal.js";
-import { fmtAge, makeUi, readSecret, terminalSafe } from "./ui.js";
+import { fmtAge, makeUi, readSecret, table, terminalSafe } from "./ui.js";
 import { runProcess } from "./wrangler.js";
 
 const VERSION = "0.3.0";
@@ -588,6 +589,8 @@ COMMANDS.cp = {
     "An existing folder, or a path that ends in /, takes the item inside it. A paused workspace wakes;",
     "it counts toward maxRunning and pauses again when idle. Files go through the Worker, which checks",
     "every path. At most 4 GB and 200,000 entries in one copy. The target changes only when the copy ends.",
+    "store:<name> is a file in the store, when store is true (see cf-opencode store). store: alone takes",
+    "the source's name. The store holds files, not folders.",
     "--force   replace a target that exists",
   ],
   flags: { force: { type: "boolean" } },
@@ -605,6 +608,47 @@ COMMANDS.cp = {
     });
     ui.result({ ok: true, ...r });
     ui.out(terminalSafe(`copied ${r.from} to ${r.to} (${mb(r.bytes)}, ${r.files} files, ${r.seconds} s)`));
+    return 0;
+  },
+};
+
+COMMANDS.store = {
+  group: "Workspaces",
+  usage: "store [rm <name>]",
+  summary: "List the files in the store, or remove one. The store is off unless store is true.",
+  details: [
+    "The store is an R2 bucket of the install. Its files outlive a pause and a delete, and R2 bills for them.",
+    "Copy in and out with cp: cf-opencode cp app:export.gz store:   cf-opencode cp store:export.gz api:",
+    "In a workspace, the agent runs cf-opencode-store put, get, list and rm.",
+    "--prefix <text>   list only the names that start with it",
+  ],
+  flags: { prefix: { type: "string" } },
+  run: async (args) => {
+    const [verb, ...names] = args.positionals;
+    const d = requireInstall(args);
+    const ui = makeUi(flagBool(args, "json"));
+    if (verb === "rm") {
+      if (names.length === 0) throw new CliError("store rm needs a name", "cf-opencode store rm <name>");
+      for (const n of names) await removeStore(d, n);
+      ui.result({ ok: true, removed: names });
+      ui.out(`removed ${names.join(", ")}`);
+      return 0;
+    }
+    if (verb !== undefined && verb !== "list")
+      throw new CliError(`unknown store action ${verb}`, "use: cf-opencode store [rm <name>]");
+    const objects = await listStore(d, flagString(args, "prefix"));
+    ui.result({ ok: true, objects });
+    if (!ui.json) {
+      const total = objects.reduce((n, o) => n + o.size, 0);
+      ui.out(
+        objects.length
+          ? `${table(
+              ["NAME", "SIZE", "SAVED"],
+              objects.map((o) => [terminalSafe(o.key), mb(o.size), fmtAge(o.uploaded)]),
+            )}\n${objects.length} files, ${mb(total)}`
+          : "The store is empty.",
+      );
+    }
     return 0;
   },
 };

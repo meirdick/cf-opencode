@@ -12,6 +12,7 @@ import {
 } from "./config.js";
 import { CliError, toFailedLine } from "./errors.js";
 import { checkNotifyUrl } from "./notify-key.js";
+import { storeBucketNote } from "./store.js";
 import { fmtAge, table, type Ui } from "./ui.js";
 import { lastErrorLine, lookupWorker, makeWrangler, type Runner } from "./wrangler.js";
 
@@ -307,6 +308,8 @@ export async function uninstall(o: {
       await del(["containers", "images", "delete", i, "--skip-confirmation"], `image ${i}`);
   } else ui.out("Dry run. cf-opencode uninstall --yes deletes them.");
   ui.out(RETENTION_NOTE);
+  const kept = await storeBucketNote(w, res.worker);
+  if (kept) ui.out(kept);
   if (errors.length > 0) {
     for (const e of errors) ui.step(`✗ ${e}`);
     throw new CliError(

@@ -5,10 +5,12 @@
 // this side only reads and writes local files. Only the control token can start a copy.
 import { spawn } from "node:child_process";
 import {
+  createWriteStream,
   existsSync,
   lstatSync,
   mkdtempSync,
   readdirSync,
+  readFileSync,
   realpathSync,
   renameSync,
   rmSync,
@@ -16,16 +18,24 @@ import {
 } from "node:fs";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import { CliError } from "./errors.js";
+import { encodeKey, storeCall } from "./store.js";
 
 /** The Worker's limit for one upload (MAX_UPLOAD_BYTES in worker/src/orb/copy.ts). */
 export const MAX_UPLOAD_BYTES = 100_000_000;
 /** The name the Worker gives the root of every archive it sends (ROOT_NAME in worker/src/core/tar-guard.ts). */
 export const ROOT_NAME = "data";
 
-export type CpSide = { kind: "workspace"; workspace: string; path: string } | { kind: "local"; path: string };
+export type CpSide =
+  | { kind: "workspace"; workspace: string; path: string }
+  | { kind: "local"; path: string }
+  | { kind: "store"; key: string };
 
-/** <workspace>:<path> is a workspace; /x, ./x, ../x, ~/x, C:\x and a name with no colon are local. */
+/**
+ * store:<name> is the store; <workspace>:<path> is a workspace; /x, ./x, ../x, ~/x, C:\x and a name with no
+ * colon are local. A workspace named store cannot be a cp side.
+ */
 export function parseSide(s: string): CpSide {
+  if (s.startsWith("store:")) return { kind: "store", key: s.slice(6) };
   if (/^(\/|\.\.?($|[/\\])|~|[A-Za-z]:[\\/])/.test(s)) return { kind: "local", path: s };
   const m = /^([A-Za-z0-9][A-Za-z0-9_-]{0,127}):(.*)$/s.exec(s);
   if (m) return { kind: "workspace", workspace: m[1] as string, path: m[2] as string };
@@ -59,21 +69,28 @@ export async function cp(src: CpSide, dst: CpSide, d: CpDeps): Promise<CpResult>
       "both sides are on this machine",
       "name a workspace side, such as app:data/export.json",
     );
-  if (src.kind === "workspace" && dst.kind === "workspace") return between(src, dst, d);
+  if (src.kind === "store" && dst.kind === "store")
+    throw new CliError("both sides are the store", "copy from the store to a workspace or to this machine");
+  if (src.kind === "store" && dst.kind === "local") return storeDownload(src.key, dst.path, d);
+  if (src.kind === "local" && dst.kind === "store") return storeUpload(src.path, dst.key, d);
+  if (src.kind !== "local" && dst.kind !== "local") return between(src, dst, d);
   if (src.kind === "workspace" && dst.kind === "local") return download(src, dst.path, d);
   return upload((src as { path: string }).path, dst as CpSide & { kind: "workspace" }, d);
 }
 
-/** Workspace to workspace: one request, NDJSON progress lines, one result line. */
-async function between(
-  src: CpSide & { kind: "workspace" },
-  dst: CpSide & { kind: "workspace" },
-  d: CpDeps,
-): Promise<CpResult> {
+const wire = (s: CpSide) =>
+  s.kind === "store"
+    ? { store: s.key }
+    : s.kind === "workspace"
+      ? { workspace: s.workspace, path: s.path }
+      : {};
+
+/** Between workspaces, or a workspace and the store: one request, NDJSON progress lines, one result line. */
+async function between(src: CpSide, dst: CpSide, d: CpDeps): Promise<CpResult> {
   const res = await call(d, "POST", "/v1/copy", {
     body: JSON.stringify({
-      from: { workspace: src.workspace, path: src.path },
-      to: { workspace: dst.workspace, path: dst.path },
+      from: wire(src),
+      to: wire(dst),
       force: d.force,
     }),
     headers: { "content-type": "application/json" },
@@ -154,6 +171,66 @@ async function upload(local: string, dst: CpSide & { kind: "workspace" }, d: CpD
   });
   const body = (await res.json()) as { result: CpResult };
   return { ...body.result, from: local, seconds: secs(t0) };
+}
+
+/** This machine to the store: one file, one request body. */
+async function storeUpload(local: string, key: string, d: CpDeps): Promise<CpResult> {
+  const t0 = Date.now();
+  const abs = resolve(local);
+  if (!isFile(abs))
+    throw new CliError(
+      `${local} is not a file; the store holds files`,
+      "pack a folder first: tar czf x.tgz <folder>",
+    );
+  const size = statSync(abs).size;
+  if (size > MAX_UPLOAD_BYTES)
+    throw new CliError(
+      `${local} is ${mb(size)}; one upload through the Worker takes at most ${mb(MAX_UPLOAD_BYTES)}`,
+      "split the file, or copy it from a workspace to the store",
+    );
+  const name = key || basename(abs);
+  const body = new Uint8Array(readFileSync(abs));
+  d.err(`copying ${local} (${mb(size)}) to store:${name}`);
+  await call(d, "PUT", `/v1/store/${encodeKey(name)}`, {
+    body,
+    headers: { "content-type": "application/octet-stream", "content-length": String(body.byteLength) },
+  });
+  return { from: local, to: `store:${name}`, bytes: size, files: 1, dirs: 0, links: 0, seconds: secs(t0) };
+}
+
+/** The store to this machine: into a temp file next to the target, then a rename. */
+async function storeDownload(key: string, local: string, d: CpDeps): Promise<CpResult> {
+  const t0 = Date.now();
+  if (!key) throw new CliError("store: needs a name", "list the names with cf-opencode store");
+  const target = localTarget(local, basename(key));
+  if (!existsSync(dirname(target)))
+    throw new CliError(
+      `the folder ${dirname(target)} does not exist`,
+      `make it first: mkdir -p ${dirname(target)}`,
+    );
+  if (exists(target) && !d.force)
+    throw new CliError(`${target} exists`, "pass --force to replace it, or pick another target");
+  const res = await call(d, "GET", `/v1/store/${encodeKey(key)}`);
+  const stage = mkdtempSync(join(dirname(target), ".cf-opencode-cp-"));
+  try {
+    const tmp = join(stage, ROOT_NAME);
+    const out = createWriteStream(tmp);
+    let bytes = 0;
+    try {
+      for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
+        bytes += chunk.byteLength;
+        if (!out.write(chunk)) await new Promise((r) => out.once("drain", r));
+      }
+    } catch {
+      throw new CliError("the download broke off", "run the command again; nothing on this machine changed");
+    } finally {
+      await new Promise((r) => out.end(r));
+    }
+    replace(tmp, target, d.force, stage);
+    return { from: `store:${key}`, to: target, bytes, files: 1, dirs: 0, links: 0, seconds: secs(t0) };
+  } finally {
+    rmSync(stage, { recursive: true, force: true });
+  }
 }
 
 /** Kind and size of a workspace path. It wakes a paused workspace; say so first. */
@@ -276,40 +353,12 @@ async function pack(real: string, d: CpDeps): Promise<Uint8Array> {
   return new Uint8Array(Buffer.concat(parts));
 }
 
-async function call(
+const call = (
   d: CpDeps,
   method: string,
   path: string,
-  init: { body?: string | Uint8Array; headers?: Record<string, string> } = {},
-): Promise<Response> {
-  let res: Response;
-  try {
-    res = await (d.fetchFn ?? fetch)(`${d.url.replace(/\/$/, "")}${path}`, {
-      method,
-      ...(init.body !== undefined ? { body: init.body } : {}),
-      headers: { authorization: `Bearer ${d.token}`, ...(init.headers ?? {}) },
-    });
-  } catch (e) {
-    throw new CliError(
-      `cannot reach ${d.url} from this machine (${e instanceof Error ? e.message : String(e)})`,
-      "run the command again; if it repeats, check the network with cf-opencode doctor",
-    );
-  }
-  if (res.status === 401)
-    throw new CliError(
-      "the Worker refused the control token on this machine",
-      "copy ~/.cf-opencode/control-token from the machine that ran cf-opencode init",
-    );
-  if (!res.ok) {
-    const body = (await res.json().catch(() => undefined)) as { error?: string } | undefined;
-    if (body?.error) throw new CliError(body.error, "see the line above");
-    throw new CliError(
-      `${d.url} answered HTTP ${res.status}${res.status === 404 ? "; the Worker is older than this CLI" : ""}`,
-      res.status === 404 ? "cf-opencode upgrade" : "retry",
-    );
-  }
-  return res;
-}
+  init?: { body?: string | Uint8Array; headers?: Record<string, string> },
+) => storeCall(d, method, path, init);
 
 async function* lines(res: Response): AsyncGenerator<string> {
   const dec = new TextDecoder();
@@ -348,6 +397,14 @@ function exists(p: string): boolean {
   try {
     lstatSync(p);
     return true;
+  } catch {
+    return false;
+  }
+}
+
+function isFile(p: string): boolean {
+  try {
+    return statSync(p).isFile();
   } catch {
     return false;
   }
