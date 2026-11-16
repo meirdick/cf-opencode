@@ -371,11 +371,40 @@ A handed-off session gets a Handoff block before the task. See [What the agent k
 - A pause stops processes. A task that still runs when the workspace pauses is `stopped`. Continue it with `connect`.
 - `commits` and `changedFiles` do not count what a merge or a new branch brings from the remote. A commit that two remote branches have is not counted.
 - `processes` lists a process only when nothing watches it. A process that runs in a terminal (`cf-opencode shell`, SSH) is not listed.
-- No command copies a file from one workspace to another. See the next section.
+- `run` copies no file from another workspace. Use `cf-opencode cp` first. See the next section.
 
 ## Move a file between workspaces
 
-Two workspaces share only the Git remote. To give a large file (a database, an export) to another workspace, put it on a branch with no history and fetch it there:
+`cf-opencode cp` copies a file or a folder from one workspace to another. Run it on your machine:
+
+```sh
+cf-opencode cp app:export.json.gz api:data/
+```
+
+- `app:export.json.gz` is a path in the workspace `app`, relative to its checkout. A path can also start with `/` or `~` inside `/home/user`.
+- `api:data/` is a folder in the checkout of `api`. An existing folder, or a path that ends in `/`, takes the item inside it. A folder that does not exist is made.
+- A target that exists stays as it is unless you pass `--force`.
+- The target changes only when the whole copy arrives and passes the check. A copy that fails leaves the target as it was.
+
+The same command copies between a workspace and this machine:
+
+```sh
+cf-opencode cp app:build ./build      # from the workspace to this machine
+cf-opencode cp ./fixtures app:test/   # from this machine to the workspace (at most 100 MB)
+```
+
+How a copy works:
+
+- The files go through your Worker, not through a third service. The Worker reads every name in the stream. It refuses an absolute path, a `..`, a link that points out of the copied tree, and a device file. The files are written as `user`, never as root.
+- A paused workspace wakes for the copy, because its disk is only readable in a running container. The progress line says so. The wake counts toward `maxRunning`, and the workspace pauses again when it is idle.
+- Only the control token can start a copy. An agent in a workspace has the workspace password, which reaches no other workspace.
+- One copy moves at most 4 GB and 200,000 entries, and runs at most 30 minutes. See [Limits](/limits/).
+
+An agent in a workspace cannot run `cp`. Run it yourself before the task starts, and name the path in the task.
+
+### Through Git
+
+Git also moves a file, and the agent can do it during a task. Put the file on a branch with no history and fetch it there:
 
 ```sh
 # In the workspace that has the file
