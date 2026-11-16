@@ -43,8 +43,9 @@ Check this machine and your Cloudflare account, deploy the Worker and the worksp
 | `--account <id>` | The account to use, when the login sees more than one. You can set `CLOUDFLARE_ACCOUNT_ID` instead. |
 | `--name <name>` | The Worker name. The default is `cf-opencode`. Use lowercase letters, digits and `-`, up to 63 characters. |
 | `--token-file <path>` | A file with a Cloudflare API token. The default is `CLOUDFLARE_API_TOKEN`, then the `wrangler login`. |
-| `--adopt` | Replace a Worker of that name that this machine did not deploy. This changes its control token. |
-| `--url <url>` | Deploy nothing. Use a Worker that another machine deployed. It needs the control token. See [A second machine](/guides/second-machine/). |
+| `--domain <hostname>` | Also put the Worker on this hostname, as a Custom Domain. The install URL is then `https://<hostname>`. The zone of the hostname must be in the account. See [Use your own hostname](#use-your-own-hostname). |
+| `--adopt` | Replace a Worker of that name that this machine did not deploy. This changes its control token. With `--domain`, also replace DNS records on the hostname, or take the hostname from another Worker. |
+| `--url <url>` | Deploy nothing. Use a Worker that is deployed, from another machine or at a new URL. Any `https` URL works. It needs the control token. See [A second machine](/guides/second-machine/). |
 | `--yes`, `-y` | Never prompt. `--json` and a non-terminal stdin also imply it. |
 | `--no-github` | Do not set up GitHub now. Later, run `cf-opencode git-token`. |
 | `--no-skill` | Do not install the handoff skill for Claude Code and OpenCode on this machine. |
@@ -52,6 +53,36 @@ Check this machine and your Cloudflare account, deploy the Worker and the worksp
 `init` has these steps: check the machine and the account, deploy, store the control token, set up GitHub, and install the handoff skill. The skill step installs the skill for each agent whose config folder exists on this machine. On a terminal, it asks first. It never replaces a skill file that differs. See [Hand off a task](/guides/hand-off-a-task/#the-handoff-skill-for-agents).
 
 `init` reads your settings from `~/.cf-opencode/config.json` and prints the keys it found. See [Configuration](/reference/configuration/).
+
+#### Use your own hostname
+
+```sh
+cf-opencode init --domain code.example.com
+```
+
+`init` writes the hostname into the copied `wrangler.jsonc` as a route with `custom_domain: true`. `wrangler deploy` then makes the Custom Domain and its DNS record. The workers.dev URL stays on, so machines that use it keep working.
+
+Before the deploy, `init` reads the account and changes nothing. It fails with one `Failed:` line when:
+
+- the account has no zone for the hostname, or the zone is not active.
+- the hostname has DNS records. The deploy would replace them.
+- the hostname is a Custom Domain of another Worker.
+
+Pass `--adopt` to replace the records or take the hostname. An API token needs Workers Routes Write on the zone too.
+
+A new Custom Domain can take some minutes to answer. `init` checks the deploy on the workers.dev URL. If the hostname does not answer yet, `init` prints a `!` line and saves the install. Run `cf-opencode doctor` later.
+
+`install.json` keeps the hostname, so `upgrade` deploys it again. A rerun of `init` without `--domain` also keeps it.
+
+#### After the Worker URL changed
+
+When the account's workers.dev subdomain changes, the saved URL stops working. Save the new URL. Nothing is deployed:
+
+```sh
+cf-opencode init --url https://cf-opencode.<new subdomain>.workers.dev
+```
+
+`cf-opencode doctor` prints this command with the right URL when it finds the Worker at a new URL. `init --url` keeps the account and the Custom Domain of the saved install, so `upgrade` still works.
 
 ### upgrade
 
@@ -64,6 +95,8 @@ Redeploy the Worker and the image from this CLI version. The control token stays
 | Flag | Meaning |
 | --- | --- |
 | `--token-file <path>` | A file with a Cloudflare API token. |
+| `--domain <hostname>` | Put the Worker on this hostname. The default is the saved hostname. |
+| `--adopt` | With `--domain`, replace DNS records on the hostname, or take it from another Worker. |
 | `--yes`, `-y` | Never prompt. |
 | `--no-github` | Accepted. Skips the GitHub step. |
 | `--no-skill` | Accepted. Skips the handoff skill step. |
@@ -138,13 +171,14 @@ Print the key that signs the `POST` requests to the notify URL. The receiver che
 cf-opencode doctor
 ```
 
-Check Node, OpenCode, ssh, the saved install, the control token, the Worker and its bindings. `doctor` never starts a workspace. It checks:
+Check Node, OpenCode, ssh, the Worker URL, the control token, the Worker and its bindings. `doctor` never starts a workspace. It checks:
 
 - `node`: version 22 or newer.
 - `opencode`: installed, and version 2.
 - `ssh`: a client exists. Only `ssh`, `ssh-config` and herdr need it.
-- `install` and `control token`: both exist.
-- `worker`: the Worker accepts the control token and its API version equals the CLI version.
+- `url`: the Worker URL in use, and where it comes from: `--url`, `CF_OPENCODE_URL` or `~/.cf-opencode/install.json`. The line also names the Worker and its Custom Domain.
+- `control token`: it exists.
+- `worker`: the Worker at that URL accepts the control token, and its API version equals the CLI version. When the URL does not answer, `doctor` looks for the Worker in the account. If the Worker answers at its workers.dev URL now, the fix is `cf-opencode init --url <that URL>`. This step reads the account with your `wrangler` login and changes nothing.
 - `models`, `browse` and `github`: the AI binding, the Browser Run binding and the GitHub token.
 - `notify`: whether a notify URL is set. It is optional. `doctor` never prints the URL.
 

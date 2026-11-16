@@ -139,6 +139,24 @@ describe("cross-site requests", () => {
     }
     expect(getByName).toHaveBeenCalled();
   });
+
+  it("on a Custom Domain and on workers.dev, each hostname is its own origin", async () => {
+    // init --domain keeps workers.dev on, so one Worker answers on two hostnames.
+    const { env } = envWithStub();
+    const pw = await workspacePassword(TOKEN, "demo");
+    const hosts = ["https://code.example.com", "https://cf-opencode.sub.workers.dev"];
+    const [path, init] = browserRoutes[2] as [string, RequestInit];
+    for (const host of hosts) {
+      for (const origin of hosts) {
+        const headers = new Headers(init.headers);
+        headers.set("origin", origin);
+        headers.set("authorization", basic(pw));
+        const res = await handleApi(new Request(`${host}${path}`, { ...init, headers }), env);
+        if (origin === host) expect(res.status, `${origin} on ${host}`).not.toBe(403);
+        else expect(res.status, `${origin} on ${host}`).toBe(403);
+      }
+    }
+  });
 });
 
 describe("control API spawn password", () => {

@@ -300,9 +300,13 @@ const COMMANDS: Record<string, Command> = {
       "--account <id>       account, when the login can see more than one (or CLOUDFLARE_ACCOUNT_ID)",
       "--name <name>        Worker name (default cf-opencode)",
       "--token-file <path>  Cloudflare API token file. Default: CLOUDFLARE_API_TOKEN, else wrangler login",
-      "--adopt              replace a Worker of that name this machine did not deploy",
-      "--url <url>          deploy nothing; use a Worker deployed from another machine",
-      "                     (needs its control token in ~/.cf-opencode/control-token or CF_OPENCODE_CONTROL_TOKEN)",
+      "--domain <hostname>  also put the Worker on this hostname (a Custom Domain), and use https://<hostname>.",
+      "                     The zone must be in the account. upgrade keeps it.",
+      "--adopt              replace a Worker of that name this machine did not deploy, and DNS records",
+      "                     or another Worker's Custom Domain on --domain",
+      "--url <url>          deploy nothing; use a Worker that is deployed, from another machine or at a new URL",
+      "                     (needs its control token in ~/.cf-opencode/control-token or CF_OPENCODE_CONTROL_TOKEN).",
+      "                     After the workers.dev subdomain changed: cf-opencode init --url <new url>",
       "--yes                never prompt (also implied by --json and a non-terminal stdin)",
       "--no-github          do not set up GitHub now (later: cf-opencode git-token)",
       "--no-skill           do not install the handoff skill for Claude Code and OpenCode on this machine",
@@ -314,6 +318,7 @@ const COMMANDS: Record<string, Command> = {
       "token-file": { type: "string" },
       account: { type: "string" },
       name: { type: "string" },
+      domain: { type: "string" },
       adopt: { type: "boolean" },
       yes: { type: "boolean", short: "y" },
       "no-github": { type: "boolean" },
@@ -327,12 +332,16 @@ const COMMANDS: Record<string, Command> = {
     summary: "Redeploy the Worker and image from this CLI version. Keeps the control token.",
     details: [
       "--token-file <path>  Cloudflare API token file",
+      "--domain <hostname>  put the Worker on this hostname (a Custom Domain); default: the recorded one",
+      "--adopt              replace DNS records or another Worker's Custom Domain on --domain",
       "--yes                never prompt",
       "--no-github          do not set up GitHub now (later: cf-opencode git-token)",
       "--no-skill           do not install the handoff skill for Claude Code and OpenCode on this machine",
     ],
     flags: {
       "token-file": { type: "string" },
+      domain: { type: "string" },
+      adopt: { type: "boolean" },
       yes: { type: "boolean", short: "y" },
       "no-github": { type: "boolean" },
       "no-skill": { type: "boolean" },
@@ -826,6 +835,7 @@ async function initCommand(args: ParsedArgs, upgrade = false): Promise<number> {
         ? { accountId: installed.accountId }
         : {}),
     ...(flagString(args, "name") ? { name: flagString(args, "name") } : {}),
+    ...(flagString(args, "domain") ? { domain: flagString(args, "domain") } : {}),
     adopt: flagBool(args, "adopt"),
     nonInteractive: flagBool(args, "yes") || flagBool(args, "json"),
     noGithub: flagBool(args, "no-github"),
@@ -915,7 +925,7 @@ async function doctorCommand(args: ParsedArgs): Promise<number> {
 function requireUrl(args: ParsedArgs): { url: string } {
   const url = flagString(args, "url") ?? process.env.CF_OPENCODE_URL ?? readInstall()?.url;
   if (!url) throw new CliError("no Worker URL", "run cf-opencode init, or pass --url");
-  return { url };
+  return { url: url.replace(/\/+$/, "") };
 }
 
 function requireInstall(args: ParsedArgs): { url: string; token: string } {
@@ -924,7 +934,7 @@ function requireInstall(args: ParsedArgs): { url: string; token: string } {
   const token = readControlToken() ?? process.env.CF_OPENCODE_CONTROL_TOKEN;
   if (!url) throw new CliError("no Worker URL", "run cf-opencode init, or pass --url");
   if (!token) throw new CliError("no control token", "cf-opencode init writes ~/.cf-opencode/control-token");
-  return { url, token };
+  return { url: url.replace(/\/+$/, ""), token };
 }
 
 function findCommand(argv: string[]): string | undefined {

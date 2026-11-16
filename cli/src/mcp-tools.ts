@@ -513,7 +513,7 @@ export function installFromState(): { url: string; token: string } {
   const token = readControlToken() ?? process.env.CF_OPENCODE_CONTROL_TOKEN;
   if (!url) throw new CliError("no Worker URL", "run cf-opencode init on this machine");
   if (!token) throw new CliError("no control token", "cf-opencode init writes ~/.cf-opencode/control-token");
-  return { url, token };
+  return { url: url.replace(/\/+$/, ""), token };
 }
 
 function originRemote(dir: string): string | undefined {

@@ -9,6 +9,8 @@ export interface InstallState {
   /** Worker name, default cf-opencode. */
   name: string;
   accountId?: string;
+  /** The Custom Domain hostname from `init --domain`. `upgrade` deploys it again. */
+  domain?: string;
 }
 
 export interface WorkspaceLocal {

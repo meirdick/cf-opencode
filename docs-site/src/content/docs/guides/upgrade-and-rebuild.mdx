@@ -17,7 +17,11 @@ cf-opencode upgrade
 
 `upgrade` redeploys the Worker and the image from the installed CLI version. It keeps the control token and the Worker name. It uses the account that `init` saved. It also runs the GitHub step, which changes nothing if the Worker already has a token.
 
-Flags: `--token-file <path>` and `--yes`. See [CLI reference](/reference/cli/).
+Flags: `--token-file <path>`, `--domain <hostname>`, `--adopt` and `--yes`. See [CLI reference](/reference/cli/).
+
+`upgrade` deploys the hostname that `init --domain` saved. To put an install on your own hostname, run `cf-opencode upgrade --domain code.example.com`. The zone must be in the account. The workers.dev URL stays on. The saved URL becomes `https://code.example.com`. Other machines keep the workers.dev URL until they run `cf-opencode init --url https://code.example.com`.
+
+The saved URL is what `upgrade` finds after the deploy. If the account's workers.dev subdomain changed, `upgrade` saves the new URL. To save it without a deploy, run `cf-opencode init --url <new url>`. See [Troubleshooting](/troubleshooting/).
 
 If a deploy interrupts a connect, the CLI retries the connect once.
 

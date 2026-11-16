@@ -15,9 +15,12 @@ there is no hosted service. Do not print or pass any token as a command argument
    keep the control token.
 5. If init reports an existing Worker this machine did not deploy, ask the user before passing `--adopt`;
    it replaces that Worker's control token. `--name <other>` makes a separate install instead.
+   If the user wants their own hostname, add `--domain <hostname>`; its zone must be in the account. If init
+   reports DNS records or another Worker's Custom Domain on it, ask the user before passing `--adopt`.
    Init also gives workspaces the machine's `gh` login, so private repositories and push work. Pass
    `--no-github` if the user did not agree to that; `cf-opencode git-token` sets it later.
-6. Verify with `cf-opencode doctor` (exit 0, every line ✓ or !).
+6. Verify with `cf-opencode doctor` (exit 0, every line ✓ or !). If it says the URL moved, run the fix it
+   prints (`cf-opencode init --url <new url>`; it deploys nothing).
 7. Tell the user the Worker URL and the next step: `cf-opencode connect` from a git checkout.
 
 Models and browsing use the account's AI and Browser Run bindings; no model key or browser token is needed.

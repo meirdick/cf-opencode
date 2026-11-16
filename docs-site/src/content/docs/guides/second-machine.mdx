@@ -35,7 +35,8 @@ Both machines now work on the same workspace and the same session at the same ti
 
 ## Notes
 
-- `init --url` accepts only a `workers.dev` URL.
+- `init --url` accepts any `https` URL of the Worker: its workers.dev URL or its Custom Domain. Give only the origin, with no path.
+- For a Custom Domain URL, `init --url` cannot read the Worker name from the URL. It uses `cf-opencode`. Pass `--name <name>` for another name.
 - With `--url`, `init` does not set up GitHub. It reports `no GitHub token on the Worker` only if the Worker has none. Use `cf-opencode git-token` on a machine with a Cloudflare login.
 - Commands that change the deploy (`upgrade`, `uninstall`, `git-token`) need a Cloudflare login on that machine. `init --url` does not record an account.
 - A workspace made before password derivation moves to it on its next `connect`. OpenCode restarts once.

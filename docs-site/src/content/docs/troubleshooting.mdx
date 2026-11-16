@@ -39,11 +39,17 @@ Two commands help with most problems:
 | `wrangler deploy did not finish in … minutes` | Check your connection. Run `init` again. Pushed layers stay. |
 | `wrangler deploy kept failing on a transient error …` | Run `init` again. If it repeats, read `~/.cf-opencode/deploy.log`. |
 | `wrangler deploy failed: …` | Fix the error that the line shows. Run `init` again. |
-| `wrangler deploy did not print a workers.dev URL` | Enable workers.dev for the Worker in the dashboard. Run `cf-opencode init --url <url>`. |
+| `wrangler deploy did not print a workers.dev URL` | Enable workers.dev for the Worker in the dashboard. Run `cf-opencode init --url <url>`. Or deploy with `--domain <hostname>`. |
+| `--domain … is not a hostname` or `--domain … is a workers.dev hostname` | Pass only a hostname in a zone of your account, for example `code.example.com`. |
+| `no zone for <hostname> in this Cloudflare account` or `wrangler found no zone for the --domain hostname in this account` | Add the domain to the account. Or pass `--account <id>` of the account that has the zone. Or pass another `--domain`. |
+| `the zone … is pending, not active` | Finish the zone setup in the dashboard. Set the nameservers at your registrar. |
+| `<hostname> has DNS records (…), and the deploy replaces them` | Delete the records in the dashboard. Or pass another `--domain`. Or pass `--adopt` to replace them. |
+| `<hostname> is a Custom Domain of the Worker …` | Pass another `--domain`. Or pass `--adopt` to move the hostname to this install. |
+| `--url and --domain do not go together` | Pass `--domain` to deploy on a hostname. Pass `--url` to use a Worker that is deployed. |
 | `deployed, but the control token was not stored: …` | Run `init` again. It reuses the same token. |
 | `the Worker did not accept the control token: …` | Wait a minute. Run `cf-opencode doctor`. |
 | `cannot read a token from <path>` | Write the API token to that file, mode 600. Run `init` again. |
-| `not a workers.dev URL: …` | Pass the URL that `init` printed. |
+| `--url "…" is not a URL` or `--url "…" is not an https Worker URL` | Pass only the origin, for example `https://code.example.com`. No path. |
 | `no control token for that Worker` | Copy `~/.cf-opencode/control-token` from the machine that ran `init`. Or set `CF_OPENCODE_CONTROL_TOKEN`. |
 | `nothing to upgrade on this machine` | Run `cf-opencode init`. |
 
@@ -130,7 +136,10 @@ On a first run that failed after it created the Worker, `~/.cf-opencode/deployin
 | `no control token` | Run `cf-opencode init`. It writes `~/.cf-opencode/control-token`. |
 | `OpenCode is not installed here` | Install OpenCode 2: `curl -fsSL https://opencode.ai/v2/install \| bash`. |
 | `cannot reach <url> from this machine (fetch failed); workspaces and their tasks are not affected` | A connection from your machine dropped. Tasks in the workspaces go on. Run the command again. If it repeats, check the network and run `cf-opencode doctor`. `--wait` and `--follow` try again by themselves for 5 minutes. |
-| Every command fails with `cannot reach <url>` after the workers.dev subdomain of the account changed | The install on this machine has the old URL. Run `cf-opencode init --url https://<worker>.<new subdomain>.workers.dev`. The control token does not change. Then replace each Host block that `ssh-config` printed. |
+| Every command fails with `cannot reach <url>` or `answered HTTP 404 … with a page` after the workers.dev subdomain of the account changed | The install on this machine has the old URL. Run `cf-opencode doctor`. It finds the Worker and prints the fix, `cf-opencode init --url https://<worker>.<new subdomain>.workers.dev`. Run it. It deploys nothing, and the control token does not change. A Host block that `ssh-config` printed without `--url` reads the new URL. Replace a block that has `--url` in it. To stop this from happening again, put the Worker on your own hostname: `cf-opencode upgrade --domain <hostname>`. |
+| `doctor` prints `Worker … is in the account` with no URL | The Worker exists, but `doctor` did not find a URL that answers. Find the URL in the dashboard, under Workers & Pages, the Worker, Settings, Domains & Routes. Run `cf-opencode init --url <url>`. |
+| `doctor` prints `Worker … is not in the account` | The Worker is gone. Run `cf-opencode init`. |
+| `init` prints `! https://<hostname> does not answer yet` | A new Custom Domain can take some minutes. The install is saved. Run `cf-opencode doctor` later. |
 | `the Worker refused the control token on this machine` | The control token on this machine differs from the Worker. Copy `~/.cf-opencode/control-token` from the machine that ran `init`, or run `cf-opencode init --adopt`. |
 | `N/M workspaces already running` | Pause an idle workspace with `cf-opencode pause <workspace>`. Or raise `maxRunning` in `~/.cf-opencode/config.json` and run `cf-opencode upgrade`. |
 | `spawn did not finish in 4 min 30 s` | Retry. Check `cf-opencode status <workspace>`. |

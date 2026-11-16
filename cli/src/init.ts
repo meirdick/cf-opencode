@@ -10,6 +10,7 @@ import { cp, mkdir, rm } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ControlClient } from "./api.js";
+import { apiFor } from "./cloudflare-api.js";
 import {
   controlTokenPath,
   readControlToken,
@@ -18,9 +19,11 @@ import {
   writeInstall,
   writeSecret,
 } from "./config.js";
-import { CliError } from "./errors.js";
+import { domainCheck, hostnameError, probeDomain, type ResolveDns } from "./domain.js";
+import { CliError, toFailedLine } from "./errors.js";
 import { type GithubOutcome, setupGithub } from "./github.js";
 import { setupSkill } from "./skill.js";
+import { proxyUrl } from "./terminal.js";
 import { ask, readSecret, type Ui } from "./ui.js";
 import {
   type Account,
@@ -38,7 +41,7 @@ import {
 
 export const DEFAULT_NAME = "cf-opencode";
 const WORKER_NAME_RE = /^[a-z0-9][a-z0-9-]{0,62}$/;
-const WORKER_URL_RE = /^https:\/\/[a-z0-9-]+\.[a-z0-9-]+\.workers\.dev\/?$/;
+const WORKERS_DEV_RE = /^([a-z0-9-]+)\.[a-z0-9-]+\.workers\.dev$/;
 
 export interface InitOptions {
   name?: string;
@@ -47,7 +50,9 @@ export interface InitOptions {
   tokenFile?: string;
   /** Record an already deployed Worker instead of deploying. */
   url?: string;
-  /** Take over a Worker of this name that this machine did not deploy. */
+  /** Deploy the Worker on this hostname too (a Custom Domain), and record https://<domain> as its URL. */
+  domain?: string;
+  /** Take over a Worker of this name that this machine did not deploy, and DNS records on --domain. */
   adopt?: boolean;
   /** Never prompt. Also implied by a non-TTY stdin. */
   nonInteractive?: boolean;
@@ -82,6 +87,10 @@ export interface InitDeps {
   versionMs?: number;
   /** Where the Worker and image sources come from. Default: the checkout, else the package's templates. */
   sources?: string;
+  /** How the --domain check asks the zone's nameservers. */
+  resolveDns?: ResolveDns;
+  /** How long a new Custom Domain may take to answer after the deploy. */
+  domainMs?: number;
 }
 
 /** What preflight looks at. Gathered once, so the plan is a pure function the tests can drive. */
@@ -118,6 +127,8 @@ export function preflight(o: InitOptions, p: Probes): Preflight {
       new CliError(`bad Worker name ${o.name}`, "use lowercase letters, digits and -, up to 63 characters"),
     );
   }
+  const badDomain = o.domain === undefined ? undefined : hostnameError(o.domain);
+  if (badDomain) errors.push(badDomain);
   if (!p.docker) {
     errors.push(
       new CliError(
@@ -182,13 +193,20 @@ export function preflight(o: InitOptions, p: Probes): Preflight {
 export async function init(o: InitOptions, deps: InitDeps): Promise<InitResult> {
   const env = deps.env ?? process.env;
   const ui = deps.ui;
-  const name = o.name ?? readInstall()?.name ?? DEFAULT_NAME;
+  const recorded = readInstall();
+  const name = o.name ?? recorded?.name ?? DEFAULT_NAME;
+  if (o.url && o.domain)
+    throw new CliError(
+      "--url and --domain do not go together",
+      "pass --domain <hostname> to deploy on it, or --url <url> to use a Worker that is deployed",
+    );
+  // A rerun and upgrade keep the recorded Custom Domain. Without it in the config, the URL would change.
+  const domain = o.domain ?? (recorded?.name === name ? recorded.domain : undefined);
   const apiToken = o.tokenFile ? readTokenFile(o.tokenFile) : env.CLOUDFLARE_API_TOKEN?.trim() || undefined;
   const interactive = (deps.tty ?? Boolean(process.stdin.isTTY)) && !o.nonInteractive;
   const askFn = deps.ask ?? ask;
 
-  // The Worker name is the URL's first label (https://<name>.<subdomain>.workers.dev); later commands that
-  // call wrangler (upgrade, uninstall, git-token) act on that Worker.
+  // Later commands that call wrangler (upgrade, uninstall, git-token) act on the recorded Worker name.
   const githubDeps = {
     run: deps.run,
     ui,
@@ -198,12 +216,7 @@ export async function init(o: InitOptions, deps: InitDeps): Promise<InitResult> 
     ...(deps.fetch ? { fetch: deps.fetch } : {}),
   };
   if (o.url) {
-    const r = await recordExisting(
-      o.url,
-      o.name ?? new URL(o.url).hostname.split(".")[0] ?? DEFAULT_NAME,
-      env,
-      deps,
-    );
+    const r = await recordExisting(o.url, o.name, env, deps);
     const control = env.CF_OPENCODE_CONTROL_TOKEN?.trim() || readControlToken() || "";
     const github = await setupGithub(
       { url: r.url, control, interactive: false, canStore: false },
@@ -228,7 +241,8 @@ export async function init(o: InitOptions, deps: InitDeps): Promise<InitResult> 
     apiToken: Boolean(apiToken),
     interactive,
   };
-  let pf = preflight({ ...o, name, accountId: o.accountId ?? env.CLOUDFLARE_ACCOUNT_ID }, probes);
+  const pfOptions = { ...o, name, accountId: o.accountId ?? env.CLOUDFLARE_ACCOUNT_ID, domain };
+  let pf = preflight(pfOptions, probes);
   ui.step(`✓ Node ${process.version}`);
   if (docker && buildx) ui.step(`✓ Docker ${docker} with buildx`);
   if (pf.kind === "login") {
@@ -242,7 +256,7 @@ export async function init(o: InitOptions, deps: InitDeps): Promise<InitResult> 
       );
     await w.run(["login"], { interactive: true });
     probes.whoami = await whoami(w);
-    pf = preflight({ ...o, name, accountId: o.accountId ?? env.CLOUDFLARE_ACCOUNT_ID }, probes);
+    pf = preflight(pfOptions, probes);
   }
   if (pf.kind === "pick") pf = { kind: "ok", account: await pickAccount(pf.accounts, askFn, ui) };
   if (pf.kind === "fail") throw joinErrors(pf.errors);
@@ -278,6 +292,15 @@ export async function init(o: InitOptions, deps: InitDeps): Promise<InitResult> 
     if (found.kind === "unknown")
       ui.step(`! could not check for an existing Worker ${name} (${found.reason})`);
   }
+  // The Custom Domain: a zone of this account, and a hostname the deploy does not take from someone.
+  if (domain) {
+    const api = await apiFor(w, apiToken, deps.fetch);
+    const probe = await probeDomain(domain, account.id, api, deps.resolveDns);
+    const check = domainCheck(domain, name, probe, o.adopt);
+    for (const l of check.warnings) ui.step(l);
+    if (check.errors.length > 0) throw joinErrors(check.errors);
+    ui.step(`✓ Custom Domain ${domain}${check.zone ? ` (zone ${check.zone})` : ""}`);
+  }
 
   // 3. Control token first: a run that fails after the deploy reuses it on the next try.
   const control =
@@ -290,7 +313,7 @@ export async function init(o: InitOptions, deps: InitDeps): Promise<InitResult> 
   const settings = readSettings();
   if (Object.keys(settings).length > 0)
     ui.step(`✓ Settings from ${settingsPath()}: ${Object.keys(settings).join(", ")}`);
-  await materialize(deps.sources ?? sourcesDir(), deployDir, name, settings);
+  await materialize(deps.sources ?? sourcesDir(), deployDir, name, settings, domain);
   const logPath = join(stateDir(), "deploy.log");
   let log = "";
   const started = Date.now();
@@ -299,8 +322,9 @@ export async function init(o: InitOptions, deps: InitDeps): Promise<InitResult> 
   );
   const phases = new PhaseReporter((l) => ui.step(`  ${l} (${Math.round((Date.now() - started) / 1000)}s)`));
   let url: string;
+  let workersDev: string | undefined;
   try {
-    ({ url } = await deployWithRetry(
+    ({ url, workersDev } = await deployWithRetry(
       makeWrangler(deps.run, { ...wranglerBase, accountId: account.id, cwd: deployDir }),
       name,
       {
@@ -309,6 +333,7 @@ export async function init(o: InitOptions, deps: InitDeps): Promise<InitResult> 
           phases.feed(s);
         },
         onRetry: (n) => ui.step(`  image push failed (registry flake); retry ${n}`),
+        ...(domain ? { domain } : {}),
       },
     ));
   } finally {
@@ -327,18 +352,41 @@ export async function init(o: InitOptions, deps: InitDeps): Promise<InitResult> 
       "rerun cf-opencode init; it reuses the same token",
     );
   }
-  writeInstall({ url, name, accountId: account.id });
+  writeInstall({ url, name, accountId: account.id, ...(domain ? { domain } : {}) });
   rmSync(pendingPath, { force: true });
   ui.step(`✓ Control token stored in ${controlTokenPath()} and on the Worker`);
 
   // 6. The Worker answers with that token.
   // The old version can answer for some seconds after a deploy. Wait for the one that was deployed.
-  const version = await waitHealthy(url, control, deps, deployedVersion(deployDir));
-  ui.step(`✓ Worker healthy (API ${version})`);
+  // A new Custom Domain needs a certificate first, so the workers.dev URL proves the deploy, when there is one.
+  const healthUrl = workersDev ?? url;
+  const version = await waitHealthy(healthUrl, control, deps, deployedVersion(deployDir));
+  ui.step(`✓ Worker healthy (API ${version})${healthUrl !== url ? ` at ${healthUrl}` : ""}`);
+  if (healthUrl !== url) {
+    try {
+      await waitHealthy(url, control, { ...deps, healthMs: deps.domainMs ?? 180_000 });
+      ui.step(`✓ ${url} answers`);
+    } catch (e) {
+      ui.step(
+        `! ${url} does not answer yet (${toFailedLine(e)
+          .replace(/^Failed: /, "")
+          .replace(
+            / — fix: .*$/,
+            "",
+          )}). A new Custom Domain can take some minutes. Check it later with cf-opencode doctor.`,
+      );
+    }
+  }
 
   // 7. GitHub, once, so the first connect from a private checkout works.
   const github = await setupGithub(
-    { url, control, interactive, ...(o.noGithub ? { skip: true } : {}), ...(apiToken ? { apiToken } : {}) },
+    {
+      url: healthUrl,
+      control,
+      interactive,
+      ...(o.noGithub ? { skip: true } : {}),
+      ...(apiToken ? { apiToken } : {}),
+    },
     githubDeps,
   );
 
@@ -350,15 +398,24 @@ export async function init(o: InitOptions, deps: InitDeps): Promise<InitResult> 
   return { url, name, accountId: account.id, tokenPath: controlTokenPath(), deployed: true, version, github };
 }
 
-/** init --url: point this machine at a Worker deployed elsewhere. Needs that install's control token. */
+/**
+ * init --url: point this machine at a Worker that is deployed, on another machine or at a new URL. Needs that
+ * install's control token. Any https origin works: a workers.dev URL, or a Custom Domain. It is also the repair
+ * after the URL changed (a renamed workers.dev subdomain): the record keeps its account and Custom Domain, so
+ * upgrade still works.
+ */
 async function recordExisting(
   url: string,
-  name: string,
+  nameFlag: string | undefined,
   env: NodeJS.ProcessEnv,
   deps: InitDeps,
 ): Promise<InitResult> {
-  if (!WORKER_URL_RE.test(url))
-    throw new CliError(`not a workers.dev URL: ${url}`, "pass the URL cf-opencode init printed");
+  const clean = proxyUrl(url);
+  // The first label of a workers.dev hostname is the Worker name. A Custom Domain says nothing about it.
+  const recorded = readInstall();
+  const name =
+    nameFlag ?? WORKERS_DEV_RE.exec(new URL(clean).hostname)?.[1] ?? recorded?.name ?? DEFAULT_NAME;
+  const same = recorded?.name === name ? recorded : undefined;
   const control = env.CF_OPENCODE_CONTROL_TOKEN?.trim() || readControlToken();
   if (!control) {
     throw new CliError(
@@ -366,10 +423,15 @@ async function recordExisting(
       "copy ~/.cf-opencode/control-token from the machine that ran init (mode 600), or set CF_OPENCODE_CONTROL_TOKEN",
     );
   }
-  const clean = url.replace(/\/$/, "");
   const version = await waitHealthy(clean, control, { ...deps, healthMs: deps.healthMs ?? 10_000 });
   writeSecret(controlTokenPath(), control);
-  writeInstall({ url: clean, name });
+  writeInstall({
+    url: clean,
+    name,
+    ...(same?.accountId ? { accountId: same.accountId } : {}),
+    ...(same?.domain ? { domain: same.domain } : {}),
+  });
+  if (same && same.url !== clean) deps.ui.step(`✓ Replaced the recorded URL ${same.url}`);
   deps.ui.step(`✓ Worker ${clean} accepts the control token (API ${version})`);
   return { url: clean, name, tokenPath: controlTokenPath(), deployed: false, version };
 }
@@ -509,12 +571,14 @@ export const DEPLOY_FILES = ["worker/src", "worker/wrangler.jsonc", "image"];
  * Copy the deploy files, and write the Worker name into the copy's wrangler.jsonc. `wrangler deploy --name`
  * is not enough: the container application keeps the config's name (cf-opencode-workspacesession), so a
  * second install in one account would collide with the first ("an application with the name … already exists").
+ * A Custom Domain goes there too, as a route with custom_domain: true.
  */
 export async function materialize(
   from: string,
   to: string,
   name = DEFAULT_NAME,
   settings: Record<string, unknown> = {},
+  domain?: string,
 ): Promise<void> {
   await rm(to, { recursive: true, force: true });
   for (const f of DEPLOY_FILES) {
@@ -529,7 +593,22 @@ export async function materialize(
   const named = text.replace(/("name"\s*:\s*)"[^"]*"/, `$1"${name}"`);
   if (named === text && !text.includes(`"name": "${name}"`))
     throw new CliError(`no "name" in ${cfg}`, "reinstall cf-opencode");
-  writeFileSync(cfg, applySettings(named, settings));
+  writeFileSync(cfg, applySettings(withDomain(named, domain), settings));
+}
+
+/**
+ * Add the Custom Domain route after the top-level "name". wrangler turns workers.dev off for a config with routes
+ * unless workers_dev is true; it stays on, so other machines that recorded the workers.dev URL keep working.
+ */
+export function withDomain(wranglerJsonc: string, domain: string | undefined): string {
+  if (!domain) return wranglerJsonc;
+  if (/"(routes?|workers_dev)"\s*:/.test(wranglerJsonc))
+    throw new CliError("worker/wrangler.jsonc already has routes or workers_dev", "reinstall cf-opencode");
+  const route = `"routes": [{ "pattern": ${JSON.stringify(domain)}, "custom_domain": true }]`;
+  return wranglerJsonc.replace(
+    /^(\s*)("name"\s*:\s*"[^"]*",)$/m,
+    `$1$2\n$1"workers_dev": true,\n$1${route},`,
+  );
 }
 
 /** The user's settings file. Its keys replace the defaults in CF_OPENCODE_CONFIG on each deploy. */
