@@ -68,6 +68,12 @@ function resultLines(r: TaskResult, o: { live?: boolean; at?: string; now?: numb
     );
   if (r.processes?.length)
     facts.push(`Processes  ! left running, a pause stops them: ${r.processes.join(", ")}`);
+  if (r.autoReply)
+    facts.push(
+      r.autoReply.sent
+        ? `Auto reply ${fmtAge(r.autoReply.at, now)}: told the agent (${r.autoReply.found})`
+        : `Auto reply ! not sent (${r.autoReply.found})${r.autoReply.error ? `: ${r.autoReply.error}` : ""}`,
+    );
   if (r.structured !== undefined) facts.push(`Structured ${JSON.stringify(r.structured).slice(0, 200)}`);
   if (r.structuredError) facts.push(`Structured ! ${r.structuredError}`);
   if (r.notified) facts.push(`Notified   ${fmtAge(r.notified.at, now)} (HTTP ${r.notified.status})`);

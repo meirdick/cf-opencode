@@ -8,6 +8,7 @@
 import { workspacePassword } from "../auth";
 import { checkSchema, MAX_SCHEMA_CHARS, structuredResult } from "../core/json-subset";
 import { LAST_USE_KEY } from "./alarm";
+import { type AutoReply, planAutoReplies, replyGate, sendAutoReplies } from "./auto-reply";
 import type { OrbContext } from "./context";
 import { iso, loadOrb, redactWith } from "./journal";
 import { sh } from "./spawn";
@@ -71,6 +72,8 @@ export interface TaskRecord {
   notify?: PendingNotify;
   notified?: { at: string; status: number; state: TaskState };
   notifyError?: string;
+  /** The automatic reply (auto-reply.ts). Set once, and never cleared, so it is sent at most once. */
+  autoReply?: AutoReply;
 }
 
 export interface TaskList {
@@ -361,7 +364,12 @@ export function applyStatus(
       state = "stopped";
       reason = t.reason;
     }
+    // The automatic reply went out. OpenCode shows the turn before it until its loop takes the reply.
+    const waitsForReply =
+      t.autoReply?.status === "sent" && !t.autoReply.taken && now - t.autoReply.at < START_GRACE_MS;
+    if (state === "done" && t.state === "running" && waitsForReply && !active.has(t.id)) state = "running";
     let next: TaskRecord = { ...t, state };
+    if (waitsForReply && active.has(t.id) && t.autoReply) next.autoReply = { ...t.autoReply, taken: true };
     if (reason) next.reason = reason;
     else delete next.reason;
     if (found && typeof s.title === "string" && s.title) next.title = s.title.slice(0, 200);
@@ -375,8 +383,13 @@ export function applyStatus(
     delete next.structured;
     delete next.structuredError;
     // Read the result block from the whole last message: the summary keeps only its end.
-    if (t.schema !== undefined && state !== "running")
-      Object.assign(next, structuredResult(last ?? t.last, t.schema));
+    if (t.schema !== undefined && state !== "running") {
+      const r = structuredResult(last ?? t.last, t.schema);
+      // The answer to the automatic reply can lack the block. The block from before the reply still holds.
+      if ("structuredError" in r && t.autoReply?.structured !== undefined)
+        next.structured = t.autoReply.structured;
+      else Object.assign(next, r);
+    }
     if (state !== t.state && state !== "running") next = markEnded(next, now, opts.notify === true);
     return next;
   });
@@ -470,6 +483,8 @@ export interface CaptureOptions {
   facts?: string[];
   /** Ask gh for the pull request. On by itself when a task leaves running. */
   gh?: boolean;
+  /** False for the last read before a pause: it records the automatic reply as not sent (auto-reply.ts). */
+  reply?: boolean;
 }
 
 /** Read the states from the running workspace and keep them. undefined when OpenCode did not answer. */
@@ -500,13 +515,17 @@ export async function captureTasks(ctx: Ctx, o: CaptureOptions = {}): Promise<Ta
       : undefined;
     // Asked before the read below, which must have no await after it.
     const notify = Boolean(await currentNotifyUrl(ctx));
+    const gate = await replyGate(ctx, o.reply !== false);
     // Read again: a task started while the scripts ran must not be lost. No await from here to the put, so
-    // a concurrent read cannot mark the same change twice.
+    // a concurrent read cannot mark the same change twice, or send the automatic reply twice.
     const current = (await ctx.kv.get<Saved>(TASKS_KEY)) ?? before;
     let tasks = applyStatus(current.tasks, status, ctx.clock.now(), { notify });
     if (facts) tasks = applyFacts(tasks, facts, factIds);
+    const plan = planAutoReplies(current.tasks, tasks, ctx.clock.now(), gate, facts ? factIds : new Set());
+    tasks = plan.tasks;
     const at = iso(ctx.clock.now());
     await ctx.kv.put(TASKS_KEY, { tasks, at });
+    tasks = (await sendAutoReplies(ctx, plan.send)) ?? tasks;
     return { tasks, at, live: true };
   } catch {
     return undefined;
@@ -558,7 +577,7 @@ export async function stopTasks(ctx: Ctx): Promise<void> {
   const saved = await ctx.kv.get<Saved>(TASKS_KEY);
   const running = saved?.tasks.filter((t) => t.state === "running").map((t) => t.id) ?? [];
   if (running.length === 0) return;
-  await captureTasks(ctx, { facts: running, gh: true }).catch(() => undefined);
+  await captureTasks(ctx, { facts: running, gh: true, reply: false }).catch(() => undefined);
   const notify = Boolean(await currentNotifyUrl(ctx));
   const after = await ctx.kv.get<Saved>(TASKS_KEY);
   if (!after?.tasks.some((t) => t.state === "running")) return;

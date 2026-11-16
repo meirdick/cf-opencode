@@ -63,6 +63,8 @@ export interface TaskResult {
   error?: string;
   structured?: unknown;
   structuredError?: string;
+  /** The automatic reply to a task that ended with work that is not safe. From a Worker of 0.4 or later. */
+  autoReply?: { at: string; sent: boolean; found: string; error?: string };
   notified?: { at: string; status: number };
   notifyError?: string;
   started: string;

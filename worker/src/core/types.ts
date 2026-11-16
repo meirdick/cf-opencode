@@ -206,6 +206,11 @@ export interface ProviderConfig {
   snapshotRefreshDays: number;
   /** Serve the A2A Agent Card and JSON-RPC endpoint. Off by default: it is one more way to run code. */
   a2a: boolean;
+  /**
+   * Send one automatic reply to a handed-off session that ends its turn with commits that are not pushed or
+   * processes left running (auto-reply.ts). On by default.
+   */
+  autoReply: boolean;
   // The notify URL is not a setting: a webhook URL often holds its own secret, and this config is a plain
   // variable. It is the Worker secret NOTIFY_URL (`cf-opencode notify-url`), read at send time.
 }
@@ -230,6 +235,7 @@ export const DEFAULT_CONFIG: ProviderConfig = {
   model: "cloudflare-workers-ai/@cf/zai-org/glm-5.3",
   snapshotRefreshDays: 3,
   a2a: false,
+  autoReply: true,
 };
 
 export const SNAPSHOT_TTL_MS = 30 * 24 * 3600_000;

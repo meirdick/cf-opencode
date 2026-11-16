@@ -124,6 +124,11 @@ const RESULT_SCHEMA = {
       items: { type: "string" },
       description: "Processes the task left running in the checkout. The next pause stops them.",
     },
+    autoReply: {
+      type: "object",
+      description:
+        "The Worker found commits that are not pushed or processes left running when the task ended, and sent the session one message about it (sent true), or could not (error).",
+    },
     question: { type: "string" },
     error: { type: "string" },
     started: { type: "string", description: "ISO 8601." },

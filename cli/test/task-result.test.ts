@@ -79,6 +79,31 @@ describe("result record", () => {
     expect(list).toContain("! ended with commits that are not pushed");
   });
 
+  it("shows the automatic reply: sent, or not sent and why", () => {
+    const sent = renderResult(
+      { ...base, autoReply: { at: "2026-11-12T11:50:00Z", sent: true, found: "2 commits not pushed" } },
+      { now },
+    );
+    expect(sent).toContain("Auto reply 10m ago: told the agent (2 commits not pushed)");
+    const not = renderResult(
+      {
+        ...base,
+        unpushed: 2,
+        autoReply: {
+          at: "2026-11-12T11:50:00Z",
+          sent: false,
+          found: "2 commits not pushed",
+          error: "the workspace paused before the reply",
+        },
+      },
+      { now },
+    );
+    expect(not).toContain(
+      "Auto reply ! not sent (2 commits not pushed): the workspace paused before the reply",
+    );
+    expect(not).toContain('--reply "Push your branch."');
+  });
+
   it("says none for no commits, shows the question of a waiting task and how to continue a stopped one", () => {
     expect(renderResult({ ...base, commits: [] }, { now })).toContain("Commits    none");
     const waiting = renderResult({ ...base, state: "waiting", question: "Permission: allow bash?" }, { now });
