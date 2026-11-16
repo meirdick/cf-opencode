@@ -2,6 +2,7 @@
 // exec(["bash", "-c", SCRIPT], { env }) and talk to opencode serve on 127.0.0.1, like SESSIONS_SH.
 // Python, so the password stays in env and out of argv. Each prints one JSON document and exits 0
 // when OpenCode answered with an error, so the Worker can say what went wrong.
+import { JOBS_PY } from "./jobs";
 
 /**
  * Start a session with a first prompt, and return without waiting for the agent. Env: PORT,
@@ -147,6 +148,7 @@ PY
  * For an AUTO task, each open permission request is answered "once" (POST
  * /api/session/{id}/permission/{request}/reply), as `opencode run --auto` does, and only the ones that could
  * not be answered count. "replied" is the count answered. A form is a question for a person: it stays open.
+ * "jobs" are the workspace's long jobs (jobs.ts), from cf-opencode-job.
  */
 export const TASK_STATUS_SH = `
 exec python3 - <<'PY'
@@ -221,6 +223,8 @@ for sid in os.environ.get("IDS", "").split():
         out["sessions"][sid] = {"error": str(e)[:200]}
         continue
     out["sessions"][sid] = s
+${JOBS_PY}
+out["jobs"] = jobs()
 print(json.dumps(out))
 PY
 `;
@@ -235,7 +239,8 @@ PY
  * "unpushed" is the count of commits on HEAD that no remote branch has: work that is only on this disk.
  * "processes" are the processes that run in the checkout and that nothing watches (started in the background
  * and left): a pause stops them. Not OpenCode and what it runs now, not a terminal (tmux, sshd) and what runs
- * in one. Only the program name and its first plain argument are kept, since a command line can hold a secret.
+ * in one, not a long job (cf-opencode-job marks its processes with CF_OPENCODE_JOB). Only the program name and
+ * its first plain argument are kept, since a command line can hold a secret.
  * A task with no base (started before 0.2) or a base git does not know gets no entry.
  * Commits are base..HEAD with a commit time at or after the start, and not on a remote branch other than the
  * task's own. So what a checkout, a merge or a new branch brings from origin does not count as the agent's,
@@ -300,6 +305,13 @@ def left_running():
             continue
         if not argv or not (cwd == root or cwd.startswith(root + "/")):
             continue
+        # A long job: it is watched, and the record lists it as a job.
+        try:
+            with open("/proc/%d/environ" % pid, "rb") as f:
+                if b"\\0CF_OPENCODE_JOB=" in b"\\0" + f.read():
+                    continue
+        except Exception:
+            pass
         # A child of a process already listed is the same job.
         if any(a in listed for a in chain(pid)[1:]):
             listed.add(pid)

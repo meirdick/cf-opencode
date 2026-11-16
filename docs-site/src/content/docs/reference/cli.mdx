@@ -264,7 +264,7 @@ cf-opencode tasks [workspace | session]
 
 List the tasks that `run` started. Tasks that ended and that you did not read come first, marked `*`. Then the newest come first. The columns are `WORKSPACE`, `SESSION`, `STATE`, `AGE` and `TITLE`. With a `ses_…` ID, show one task: its state, summary, branch, commits and pull request. This marks the task read. The command wakes nothing.
 
-The states are `running`, `done`, `failed`, `waiting` and `stopped`. `stopped` means that the workspace paused while the task ran.
+The states are `running`, `done`, `failed`, `waiting` and `stopped`. `stopped` means that the workspace paused while the task ran. A task whose agent ended its turn while a long job (`cf-opencode-job`) runs is `running`. The list shows it as `running, job`, and `tasks <ses_…>` shows each job in a `Job` line.
 
 | Flag | Meaning |
 | --- | --- |
@@ -275,6 +275,8 @@ The states are `running`, `done`, `failed`, `waiting` and `stopped`. `stopped` m
 | `--follow` | With a session ID: as `--wait`, and show the agent's progress live. |
 | `--timeout <minutes>` | How long `--wait` and `--follow` wait. The default is 60. |
 | `--pull` | With a session ID: fetch the task's branch from `origin` into the checkout in the current directory, and make or fast-forward a local branch that tracks it. Your files and your checked-out branch do not change, except a fast-forward of that branch when it has no changes. It fails when the task has no pushed branch or has `unpushed` commits. |
+
+A task that ends with commits that are not pushed or processes left running gets one automatic reply from the Worker. The task stays `running` until that turn ends. `tasks <ses_…>` shows the reply in the line `Auto reply`. See [The automatic reply](/guides/hand-off-a-task/#the-automatic-reply).
 
 With a session ID and `--json`, stdout is the result record. With `--pull --json`, stdout is `{"ok":true,"workspace":"…","session":"ses_…","branch":"…","commit":"…","local":"created","checkedOut":false}`. With `--reply --json` and no `--wait` or `--follow`, stdout is `{"ok":true,"workspace":"…","session":"ses_…","replied":true}`.
 

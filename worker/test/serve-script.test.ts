@@ -59,6 +59,19 @@ describe.skipIf(process.platform === "win32")("SERVE_SH agent notes", () => {
     expect(readFileSync(notes, "utf8")).toContain("`mise trust && mise install`");
     expect(readFileSync(notes, "utf8")).toContain("For a long job, stay in your turn");
 
+    expect(readFileSync(notes, "utf8")).not.toContain("cf-opencode-job");
+
+    // An image with cf-opencode-job: the notes say to run a long job with it and end the turn.
+    const bin = join(home, "bin");
+    mkdirSync(bin);
+    writeFileSync(join(bin, "cf-opencode-job"), "#!/bin/sh\n", { mode: 0o755 });
+    serve(home, { PATH: `${bin}:/usr/bin:/bin`, PORT: "4321" });
+    const withJob = readFileSync(notes, "utf8");
+    expect(withJob).toContain("`cf-opencode-job start -- <command>`, then end your turn");
+    expect(withJob).not.toContain("For a long job, stay in your turn");
+    // The job sends its end message to OpenCode on this port.
+    expect(readFileSync(join(home, ".cf-opencode", "port"), "utf8")).toBe("4321\n");
+
     writeFileSync(notes, "# mine\n");
     serve(home, {});
     expect(readFileSync(notes, "utf8")).toBe("# mine\n");

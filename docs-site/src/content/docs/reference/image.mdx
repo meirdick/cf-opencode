@@ -39,8 +39,32 @@ The image has these commands. The agent uses them. You can run them in `cf-openc
 | `cf-opencode-browse` | `cf-opencode-browse [--preview <port>]...` | Opens a remote browser session and prints its websocket address. See [Web search and browsing](/guides/browsing/). |
 | `cf-opencode-preview` | `cf-opencode-preview <port>` | Prints the preview URL of a dev server, and checks that the port listens on `0.0.0.0`. See [Preview a dev server](/guides/preview/). |
 | `cf-opencode-notify` | `cf-opencode-notify "<text>"` | Sends a note to the notify URL. See [Hand off a task](/guides/hand-off-a-task/#get-a-message-when-a-task-ends). |
+| `cf-opencode-job` | `cf-opencode-job start [--name <name>] [--max-minutes <n>] -- <command...>` | Runs a long command apart from the agent's turn. See [Long jobs](#long-jobs). |
 
 `opencode` on the `PATH` is a small wrapper. It adds the model config, then runs the real OpenCode binary.
+
+### Long jobs
+
+`cf-opencode-job` runs a command apart from the agent's turn, so the agent can end its turn. See [Long jobs](/guides/hand-off-a-task/#long-jobs) for how a task uses it.
+
+| Command | What it does |
+| --- | --- |
+| `start [--name <name>] [--max-minutes <n>] [--json] -- <command...>` | Starts the job and returns at once. It prints the job ID and the log path. The default name is the program name and its first plain argument. |
+| `list [--json]` | Lists the jobs, newest first, with their state. |
+| `status <id> [--json]` | Shows one job: state, exit code, command, log path, and the message to the session. |
+| `logs <id> [-f] [-n <lines>]` | Prints the end of the log (100 lines). `-f` follows the log until the job ends. |
+| `wait <id> [--timeout <seconds>]` | Waits until the job ends, and exits with the job's exit code. The default timeout is 300 seconds. A timeout exits with 124. Keep the timeout under the time limit of your tool call. |
+| `stop <id>` | Stops the job: `SIGTERM` to its process group, then `SIGKILL` after 10 seconds. |
+
+A job has one of these states: `running`, `done` (exit code 0), `failed`, `timeout` (it reached `--max-minutes`) and `stopped` (by `stop`, or by a pause).
+
+- `--max-minutes` is 1 to 1440. The default is 120.
+- A running job counts as use for the idle pause, up to its maximum run time. `maxAwakeHours` still pauses the workspace.
+- When the job's command ends, what is left in its process group ends too.
+- OpenCode gives the job the session ID of the agent that started it. When OpenCode gives none and one session is active, the job is tied to that session. When the job ends, that session gets one message with the exit code and the end of the log. The message waits until the session is idle. A job that the agent watched to its end with `wait`, `status` or `logs -f` gets no message. A stopped job gets no message.
+- Each job is a folder in `~/.cf-opencode/jobs/<id>/`: `job.json` and `log`. The 50 newest jobs that ended are kept.
+- A job that was running when the workspace paused shows `stopped (the workspace paused or stopped)` after the next wake.
+- A failure is one line: `Failed: <cause> — fix: <action>`.
 
 ## Not installed
 

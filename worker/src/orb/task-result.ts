@@ -1,6 +1,7 @@
 // The result record of a handed-off task: one stable object for `tasks <session> --json`, `run --wait
 // --json`, the notify URL POST, and any other client of the task API. Built from the saved task only, so a
 // paused workspace answers it too.
+import type { JobFact } from "./jobs";
 import type { Commit, TaskRecord, TaskState } from "./tasks";
 
 export interface TaskResult {
@@ -22,6 +23,11 @@ export interface TaskResult {
   unpushed?: number;
   /** Processes the task left running in the checkout. The next pause stops them. Absent when there are none. */
   processes?: string[];
+  /**
+   * The long jobs (cf-opencode-job) the task started. A job is not in `processes`. While one runs, or its end
+   * message has not reached the agent, the task is running. Absent when there are none.
+   */
+  jobs?: { id: string; name: string; state: JobFact["state"]; exit?: number }[];
   /** The open permission request or form, when the state is waiting. */
   question?: string;
   /** Why the task failed or stopped. */
@@ -29,6 +35,11 @@ export interface TaskResult {
   /** The json block that matched the schema of `run --schema`. */
   structured?: unknown;
   structuredError?: string;
+  /**
+   * The automatic reply: the task ended its turn with commits that are not pushed or processes left running,
+   * and the Worker told the session once. `found` is what it saw. Absent when none was due.
+   */
+  autoReply?: { at: string; sent: boolean; found: string; error?: string };
   /** The last delivery to the notify URL. */
   notified?: { at: string; status: number };
   notifyError?: string;
@@ -56,10 +67,24 @@ export function taskResult(workspace: string, t: TaskRecord): TaskResult {
   if (t.worktree) r.worktree = t.worktree;
   if (t.unpushed) r.unpushed = t.unpushed;
   if (t.processes?.length) r.processes = t.processes;
+  if (t.jobs?.length)
+    r.jobs = t.jobs.map((j) => ({
+      id: j.id,
+      name: j.name,
+      state: j.state,
+      ...(j.exit !== undefined ? { exit: j.exit } : {}),
+    }));
   if (t.state === "waiting" && t.question) r.question = t.question;
   if ((t.state === "failed" || t.state === "stopped") && t.reason) r.error = t.reason;
   if (t.structured !== undefined) r.structured = t.structured;
   if (t.structuredError) r.structuredError = t.structuredError;
+  if (t.autoReply)
+    r.autoReply = {
+      at: iso(t.autoReply.at),
+      sent: t.autoReply.status === "sent",
+      found: t.autoReply.found,
+      ...(t.autoReply.error ? { error: t.autoReply.error } : {}),
+    };
   if (t.notified) r.notified = { at: t.notified.at, status: t.notified.status };
   if (t.notifyError) r.notifyError = t.notifyError;
   return r;

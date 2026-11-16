@@ -112,6 +112,9 @@ describe("taskPrompt", () => {
     // A pause stops what the agent left running, and a commit that is not pushed is only on the disk.
     expect(taskPrompt("x")).toContain("Do not end your turn while a process you started still runs");
     expect(taskPrompt("x")).toContain("Push also when the work is not complete");
+    expect(taskPrompt("x")).toContain(
+      "For a job longer than a few minutes, run it with `cf-opencode-job start -- <command>`, then end your turn. You get a message when it ends",
+    );
   });
 });
 

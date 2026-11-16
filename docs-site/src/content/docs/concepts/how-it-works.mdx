@@ -60,12 +60,13 @@ The Worker pauses a workspace `idlePauseMinutes` after its last use. The default
 - A request through the Worker, such as the OpenCode client, `shell` or `ssh`.
 - An OpenCode session that is running. The Worker asks the workspace's OpenCode.
 - Output on a terminal in the workspace: a tmux pane, a herdr pane, an SSH session or an OpenCode terminal.
+- A long job that `cf-opencode-job` runs, up to its maximum run time. See [Long jobs](/guides/hand-off-a-task/#long-jobs).
 
 A session that waits for a permission or an answer needs you. It is not work, so it does not keep the workspace awake.
 
 The idle time runs from the last use. A task that ends after two hours causes a pause 20 minutes after it ends. A stored use never pauses a fresh wake. The idle clock starts no earlier than the wake.
 
-`maxAwakeHours` (default 12) is a cost guard. A workspace that is awake that long pauses even while the agent works.
+`maxAwakeHours` (default 12) is a cost guard. A workspace that is awake that long pauses even while the agent works or a long job runs.
 
 ## Warm period
 

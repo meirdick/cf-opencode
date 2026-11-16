@@ -25,6 +25,19 @@ export function resultOf(workspace: string, one: Pick<RemoteTaskOne, "task" | "r
 export const leftWork = (t: { unpushed?: number; processes?: string[] }) =>
   (t.unpushed ?? 0) > 0 || (t.processes?.length ?? 0) > 0;
 
+/** A long job's state, in words. */
+export function jobState(j: { state: string; exit?: number }): string {
+  if (j.state === "running") return "running";
+  if (j.state === "timeout")
+    return `stopped at its maximum run time${j.exit !== undefined ? `, exit ${j.exit}` : ""}`;
+  if (j.state === "stopped") return "stopped";
+  return `${j.state}${j.exit !== undefined ? `, exit ${j.exit}` : ""}`;
+}
+
+/** True when a long job of the task still runs. The task is then running, with the agent's turn ended. */
+export const jobRunning = (t: { jobs?: { state: string }[] }) =>
+  (t.jobs ?? []).some((j) => j.state === "running");
+
 const MAX_SUMMARY_LINES = 30;
 const MAX_FILES_SHOWN = 8;
 
@@ -38,7 +51,7 @@ function resultLines(r: TaskResult, o: { live?: boolean; at?: string; now?: numb
   const lines = [
     `Task       ${r.id}`,
     `Workspace  ${r.workspace}`,
-    `State      ${r.state}${r.error ? ` (${r.error})` : ""}`,
+    `State      ${r.state}${r.state === "running" && jobRunning(r) ? ", job running" : ""}${r.error ? ` (${r.error})` : ""}`,
     `Title      ${r.title.replace(/\s+/g, " ").slice(0, 100)}`,
     `Started    ${fmtAge(r.started, now)}`,
   ];
@@ -69,6 +82,13 @@ function resultLines(r: TaskResult, o: { live?: boolean; at?: string; now?: numb
     );
   if (r.processes?.length)
     facts.push(`Processes  ! left running, a pause stops them: ${r.processes.join(", ")}`);
+  for (const j of r.jobs ?? []) facts.push(`Job        ${j.id} ${j.name}: ${jobState(j)}`);
+  if (r.autoReply)
+    facts.push(
+      r.autoReply.sent
+        ? `Auto reply ${fmtAge(r.autoReply.at, now)}: told the agent (${r.autoReply.found})`
+        : `Auto reply ! not sent (${r.autoReply.found})${r.autoReply.error ? `: ${r.autoReply.error}` : ""}`,
+    );
   if (r.structured !== undefined) facts.push(`Structured ${JSON.stringify(r.structured).slice(0, 200)}`);
   if (r.structuredError) facts.push(`Structured ! ${r.structuredError}`);
   if (r.notified) facts.push(`Notified   ${fmtAge(r.notified.at, now)} (HTTP ${r.notified.status})`);

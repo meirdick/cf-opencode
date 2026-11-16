@@ -2,7 +2,7 @@
 // Every read is one short request, so a paused workspace answers from its saved copy and wakes nothing.
 import { type ControlClient, NotTheWorker, type RemoteTask, type TaskResult, type TaskState } from "./api.js";
 import { CliError, toFailedLine } from "./errors.js";
-import { leftWork, renderResult, resultOf } from "./task-result.js";
+import { jobRunning, leftWork, renderResult, resultOf } from "./task-result.js";
 import { fmtAge, table, terminalSafe } from "./ui.js";
 
 export interface TaskRow extends RemoteTask {
@@ -75,7 +75,11 @@ export function renderTasks(r: TasksResult, now = Date.now(), o: { unseen?: bool
           t.unseen ? "*" : "",
           t.workspace,
           t.id,
-          ended(t) && leftWork(t) ? `${t.state} !` : t.state,
+          ended(t) && leftWork(t)
+            ? `${t.state} !`
+            : t.state === "running" && jobRunning(t)
+              ? "running, job"
+              : t.state,
           fmtAge(iso(t.started), now),
           short(t.title, 60),
         ]),

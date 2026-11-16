@@ -375,9 +375,40 @@ the clients show a `!` and the reply that fixes it. Only the program name and it
 kept from a command line, because the record goes to the notify URL. A process left running does not keep
 the workspace awake: a forgotten dev server would then cost until `maxAwakeHours`.
 
+The automatic reply (`auto-reply.ts`) acts on those facts. The read that sees a task change to `done`
+with `unpushed` or `processes` sends the session one message, with OpenCode's prompt call, as `--reply`
+does. The decision and its mark are in the same storage write as the change, with no await between the
+read and the put, so exactly one read sends it; the mark is never cleared, so it cannot loop and a
+person's later reply does not reset it. That write holds the task at `running` and takes back the delivery
+the change queued: `--wait`, the inbox and the notify URL see one end, after the reply's turn. Until
+OpenCode shows the reply's turn (at most `START_GRACE_MS`), a `done` read is the turn before it. A send that
+fails lets the task be `done` with the delivery. Only a read of an awake workspace sends: the last read
+before a pause, and a read of a warm workspace, record the reply as not sent and wake nothing. Those reads
+see the change first only after a pause at `maxAwakeHours` or a person's pause, so a wake would undo the
+cost guard or the person's choice. `--schema` tasks get it too: the message asks for the block again, and
+the block from before the reply stays when the answer has none. `autoReply: false` turns it off.
+
 The task's commits are also limited to those that no other remote branch has. The commit time alone is not
 enough: a task that runs for a day, or gets a reply a day later, merges commits that others made after its
 start.
+
+A long job is the safe way to run such a process: `cf-opencode-job` (`image/job.sh`, `worker/src/orb/jobs.ts`)
+runs a command in its own process group, under a supervisor that is apart from the agent's turn. The agent
+ends its turn; the job's state is a file in `~/.cf-opencode/jobs`. The Worker reads the jobs with
+`cf-opencode-job list --json` in two scripts. `ACTIVITY_SH` counts a running job inside its maximum run time
+as use, so the idle pause waits for it; `maxAwakeHours` does not, and a job ends at its own `--max-minutes`
+(default 120, at most 24 h), so no job keeps a workspace awake for ever. `TASK_STATUS_SH` puts the jobs on
+the task of their session, and the record lists them as `jobs`, apart from `processes`: the git script
+skips a process with `CF_OPENCODE_JOB` in its environment. While a job of the session runs, or its end
+message has not reached the session, `taskState` says `running`, not `done`. That keeps `--wait`, its exit
+codes, the inbox and the notify URL right without a sixth state: the agent ended its turn on purpose, and
+the task is not over. The CLI shows `running, job`. The supervisor sends the end message itself, with
+OpenCode's prompt call and the password in the agent's environment, when the session is idle; the alarm
+is not needed for it, since the job keeps the workspace awake. A job that the agent watched to its end
+(`wait`, `status`, `logs -f`) gets none. The session is `OPENCODE_SESSION_ID`, which OpenCode sets for the
+tools it runs; without it, the one active session; else none, and the job is only recorded. A pause
+records the jobs with the tasks before it stops them (`stopJobs`), and a job file that says running from an
+older boot reads as stopped by a pause.
 
 `run --schema` keeps the schema with the task in the Durable Object, so
 validation does not depend on the machine that started it. The subset

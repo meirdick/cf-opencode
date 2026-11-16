@@ -48,6 +48,16 @@ export interface RemoteTask {
   auto?: boolean;
   /** run --worktree: the git worktree of the task in the workspace. */
   worktree?: string;
+  /** Long jobs the task started (cf-opencode-job). From a Worker of 0.4 or later. */
+  jobs?: RemoteJob[];
+}
+
+/** A long job of a task, as the Worker keeps it. */
+export interface RemoteJob {
+  id: string;
+  name: string;
+  state: "running" | "done" | "failed" | "timeout" | "stopped";
+  exit?: number;
 }
 
 /** The result record the Worker builds (worker/src/orb/task-result.ts). */
@@ -65,10 +75,13 @@ export interface TaskResult {
   worktree?: string;
   unpushed?: number;
   processes?: string[];
+  jobs?: RemoteJob[];
   question?: string;
   error?: string;
   structured?: unknown;
   structuredError?: string;
+  /** The automatic reply to a task that ended with work that is not safe. From a Worker of 0.4 or later. */
+  autoReply?: { at: string; sent: boolean; found: string; error?: string };
   notified?: { at: string; status: number };
   notifyError?: string;
   started: string;

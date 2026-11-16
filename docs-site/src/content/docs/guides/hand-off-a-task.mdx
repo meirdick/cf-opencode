@@ -102,21 +102,46 @@ The agent did not see your local conversation. Put everything it needs in the ta
 3. push the branch, also when the work is not complete,
 4. open a pull request if `gh auth status` succeeds,
 5. not end its turn while a process that it started still runs,
-6. end with one line: `Result: <what changed>; branch <name>; pull request <URL or none>`.
+6. run a job longer than a few minutes with `cf-opencode-job`, then end its turn,
+7. end with one line: `Result: <what changed>; branch <name>; pull request <URL or none>`.
 
 A task that changes no files, for example research, does not need a commit. It ends `done` with no commits.
 
 ### Long jobs
 
-A job that runs for hours (a build, an import, a batch of model calls) needs care. The workspace pauses `idlePauseMinutes` after the agent's last message, and a pause stops every process. An agent that starts the job in the background and ends its turn loses the job.
+A job that runs for a long time (a build, an import, a batch of model calls) needs care. The workspace pauses `idlePauseMinutes` after the agent's last message, and a pause stops every process. A process that the agent starts in the background does not keep the workspace awake.
 
-Write these in the task for a long job:
+The agent runs such a job with `cf-opencode-job`:
 
-- "Do not end your turn while the job runs. Check it in a loop until it ends."
+```sh
+cf-opencode-job start --name import -- python3 import.py
+```
+
+```text
+job-3f9a1c started: import
+log: /home/user/.cf-opencode/jobs/job-3f9a1c/log
+```
+
+1. `start` returns at once. The job runs apart from the agent's turn, with its output in the log.
+2. The agent ends its turn. The task stays `running`.
+3. A running job counts as use, so the workspace stays awake until the job ends.
+4. When the job ends, the session gets one message with the exit code and the end of the log. The agent goes on: it checks the result, commits and pushes.
+5. The task is `done` when the agent ends that turn.
+
+`run` tells the agent to do this for a job longer than a few minutes. The workspace notes say it too. A job that the agent watched to its end (`cf-opencode-job wait`, `status` or `logs -f`) gets no message: the agent already knows.
+
+Limits:
+
+- A job ends at its maximum run time: `--max-minutes`, default 120, at most 1440. Then the job gets `SIGTERM`, and `SIGKILL` 10 seconds later.
+- `maxAwakeHours` still pauses the workspace, also while a job runs. It is the cost guard. A pause stops the job, and the task is `stopped`.
+- The job is tied to the OpenCode session that started it. A job started in `cf-opencode shell` or over SSH has no session. It gets no message, and no task waits for it.
+
+For a job of hours, write these in the task too:
+
 - "Make the job able to continue from where it stopped", for example with a checkpoint file for each unit of work.
 - "Commit and push at each checkpoint", so the work is on the remote before the job ends.
 
-`run` puts the first rule in each task. If the agent ends its turn anyway, the result says so. See [Work that is not safe](#work-that-is-not-safe).
+The other commands are `cf-opencode-job list`, `status <id>`, `logs <id> [-f]`, `wait <id> [--timeout <seconds>]` and `stop <id>`. See [The workspace image](/reference/image/#long-jobs).
 
 ## Ask for a structured result
 
@@ -190,7 +215,7 @@ A task has one of these states:
 
 | State | Meaning |
 | --- | --- |
-| `running` | The agent works. |
+| `running` | The agent works, or a long job of the task runs. `tasks` shows `running, job` for the second. |
 | `done` | The agent finished its turn. A task with no commits can be `done`. |
 | `failed` | The turn stopped with an error, or did not start. |
 | `waiting` | The agent asks a question or asks for a permission. |
@@ -251,6 +276,25 @@ The task ended with work that is not safe. Tell the agent: cf-opencode tasks ses
 ```
 
 The result record has the same two fields, so a script and the notify URL get them too. The facts are from the time the task ended. A later end of the same task (after a reply) reads them again.
+
+### The automatic reply
+
+You do not have to send that reply yourself. When a task changes to `done` and the facts show `unpushed` or `processes`, the Worker sends the session one message. The message says what the Worker found, and tells the agent to push the branch and not to end its turn while a process that it needs runs. The agent then goes on.
+
+- The Worker sends it one time for each task. A later turn, or your own `--reply`, does not send it again.
+- The alarm sends it, so it works with the laptop closed.
+- The task stays `running` until the agent ends the turn of the reply. `--wait` keeps waiting, and the notify URL gets one result: the one after the reply.
+- The Worker does not send it for a task that is `failed`, `waiting` or `stopped`.
+- The Worker does not wake a paused workspace for it. When the last read before a pause sees the change, the task is `done` and the record says that the reply was not sent. Send `--reply` yourself to wake the workspace.
+- With `--schema`, the message asks the agent to end with the `json` block again. If the answer has no block, the record keeps the block from before the reply.
+
+`tasks <ses_…>` shows it:
+
+```text
+Auto reply 12m ago: told the agent (2 commits not pushed)
+```
+
+The setting `autoReply` turns it off. See [Configuration](/reference/configuration/).
 
 ## Wait for a task
 
@@ -401,10 +445,12 @@ The result record:
 | `pullRequest` | The pull request of the branch, when `gh pr view` finds one. |
 | `changedFiles` | The files of the task's commits, and the files with changes that are not committed. At most 100. |
 | `unpushed` | The count of commits that no remote branch has. Left out when it is 0. |
-| `processes` | The processes left running in the checkout: the program name and its first plain argument. At most 5. Left out when there are none. |
+| `processes` | The processes left running in the checkout: the program name and its first plain argument. At most 5. Left out when there are none. A long job is not in this list. |
+| `jobs` | The long jobs of the task: `[{ "id", "name", "state", "exit"? }]`. `state` is `running`, `done`, `failed`, `timeout` or `stopped`. Left out when there are none. |
 | `question` | When `waiting`: the open permission request or question. |
 | `error` | When `failed` or `stopped`: why. |
 | `structured`, `structuredError` | With `--schema`: the checked value, or why there is none. |
+| `autoReply` | When the task ended with work that is not safe: `{ "at", "sent", "found", "error"? }`. `found` says what the Worker saw. `sent` is `false` when the reply did not go out, and `error` says why. |
 | `notified`, `notifyError` | With a notify URL: the last delivery, or why it failed. |
 | `started`, `updated` | ISO times. |
 
@@ -442,7 +488,7 @@ A handed-off session gets a Handoff block before the task. See [What the agent k
 - `run` never sends local files. Uncommitted work stays on your laptop.
 - A pause stops processes. A task that still runs when the workspace pauses is `stopped`. Continue it with `connect`.
 - `commits` and `changedFiles` do not count what a merge or a new branch brings from the remote. A commit that two remote branches have is not counted.
-- `processes` lists a process only when nothing watches it. A process that runs in a terminal (`cf-opencode shell`, SSH) is not listed.
+- `processes` lists a process only when nothing watches it. A process that runs in a terminal (`cf-opencode shell`, SSH) is not listed. A long job is not listed either: it is in `jobs`.
 - No command copies a file from one workspace to another. See the next section.
 
 ## Move a file between workspaces

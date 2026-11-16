@@ -8,7 +8,9 @@
 import { workspacePassword } from "../auth";
 import { checkSchema, MAX_SCHEMA_CHARS, structuredResult } from "../core/json-subset";
 import { LAST_USE_KEY } from "./alarm";
+import { type AutoReply, planAutoReplies, replyGate, sendAutoReplies } from "./auto-reply";
 import type { OrbContext } from "./context";
+import { holdingJobs, type JobFact, jobsOf, parseJobs, stopJobs } from "./jobs";
 import { iso, loadOrb, redactWith } from "./journal";
 import { sh } from "./spawn";
 import { type Handoff, handoffBlock, parseHandoff } from "./task-context";
@@ -75,6 +77,10 @@ export interface TaskRecord {
   auto?: boolean;
   /** `run --worktree`: the git worktree the task works in. Absent: the workspace checkout. */
   worktree?: string;
+  /** The long jobs (jobs.ts) tied to this session, as the last status read saw them. */
+  jobs?: JobFact[];
+  /** The automatic reply (auto-reply.ts). Set once, and never cleared, so it is sent at most once. */
+  autoReply?: AutoReply;
 }
 
 export interface TaskList {
@@ -137,13 +143,17 @@ export interface SessionFacts {
   outcome?: string;
   /** The failure message of the last turn, when OpenCode gave one. */
   reason?: string;
+  /** Long jobs of this session that run, or whose end message has not reached it yet (jobs.ts holdingJobs). */
+  jobs?: number;
 }
 
 /**
  * The task state from what OpenCode says. A question waits even while the session is active, because the
  * agent cannot go on without an answer. A session with no outcome and no activity is a prompt the loop has
  * not picked up yet; after START_GRACE_MS it never started. A task that made no commit is still done: many
- * tasks are research. `stopped` is not here: only a pause sets it (stopTasks).
+ * tasks are research. A turn that succeeded with a long job of the session still working is running: the
+ * agent ended its turn on purpose, and the job's end message starts the next one. `stopped` is not here:
+ * only a pause sets it (stopTasks).
  */
 export function taskState(
   f: SessionFacts,
@@ -153,7 +163,7 @@ export function taskState(
   if (!f.found) return { state: "failed", reason: "OpenCode no longer has this session" };
   if (f.permissions > 0 || f.forms > 0) return { state: "waiting" };
   if (f.active) return { state: "running" };
-  if (f.outcome === "succeeded") return { state: "done" };
+  if (f.outcome === "succeeded") return { state: (f.jobs ?? 0) > 0 ? "running" : "done" };
   if (f.outcome === "failed")
     return { state: "failed", reason: f.reason || "the agent stopped with an error" };
   if (f.outcome === "interrupted")
@@ -395,6 +405,8 @@ export async function startTask(ctx: Ctx, input: TaskInput): Promise<StartResult
 interface StatusOut {
   active: string[];
   sessions: Record<string, Record<string, unknown>>;
+  /** Absent from a workspace whose status script does not read jobs. */
+  jobs?: JobFact[];
 }
 
 /** The status script's output, or undefined when it is not that. */
@@ -407,7 +419,11 @@ export function parseTaskStatus(stdout: string): StatusOut | undefined {
   }
   const r = raw as Partial<StatusOut> | null;
   if (!r || !Array.isArray(r.active) || !r.sessions || typeof r.sessions !== "object") return undefined;
-  return { active: r.active.filter((x): x is string => typeof x === "string"), sessions: r.sessions };
+  return {
+    active: r.active.filter((x): x is string => typeof x === "string"),
+    sessions: r.sessions,
+    ...(Array.isArray(r.jobs) ? { jobs: parseJobs(r.jobs) } : {}),
+  };
 }
 
 /**
@@ -439,6 +455,7 @@ export function applyStatus(
     if (!s || typeof s.error === "string") return t;
     const found = s.found === true;
     const time = (s.time ?? {}) as Record<string, unknown>;
+    const jobs = status.jobs ? jobsOf(status.jobs, t.id) : undefined;
     let { state, reason } = taskState(
       {
         found,
@@ -447,6 +464,7 @@ export function applyStatus(
         forms: typeof s.forms === "number" ? s.forms : 0,
         ...(typeof s.outcome === "string" ? { outcome: s.outcome } : {}),
         ...(typeof s.reason === "string" && s.reason ? { reason: s.reason.slice(0, MAX_REASON_CHARS) } : {}),
+        jobs: jobs ? holdingJobs(jobs, now, START_GRACE_MS) : 0,
       },
       t.started,
       now,
@@ -456,9 +474,21 @@ export function applyStatus(
       state = "stopped";
       reason = t.reason;
     }
+    // The pause stopped a long job of the task, after the agent ended its turn: the same stop.
+    if (t.state === "stopped" && state === "done" && jobs?.some((j) => j.stoppedBy === "pause")) {
+      state = "stopped";
+      reason = t.reason;
+    }
+    // The automatic reply went out. OpenCode shows the turn before it until its loop takes the reply.
+    const waitsForReply =
+      t.autoReply?.status === "sent" && !t.autoReply.taken && now - t.autoReply.at < START_GRACE_MS;
+    if (state === "done" && t.state === "running" && waitsForReply && !active.has(t.id)) state = "running";
     let next: TaskRecord = { ...t, state };
+    if (waitsForReply && active.has(t.id) && t.autoReply) next.autoReply = { ...t.autoReply, taken: true };
     if (reason) next.reason = reason;
     else delete next.reason;
+    if (jobs?.length) next.jobs = jobs;
+    else if (jobs) delete next.jobs;
     if (found && typeof s.title === "string" && s.title) next.title = s.title.slice(0, 200);
     // The script keeps 16 000 characters, but the agent is root and can answer for the script: bound it here.
     const last = typeof s.last === "string" && s.last ? s.last.slice(-MAX_LAST_CHARS) : undefined;
@@ -470,8 +500,13 @@ export function applyStatus(
     delete next.structured;
     delete next.structuredError;
     // Read the result block from the whole last message: the summary keeps only its end.
-    if (t.schema !== undefined && state !== "running")
-      Object.assign(next, structuredResult(last ?? t.last, t.schema));
+    if (t.schema !== undefined && state !== "running") {
+      const r = structuredResult(last ?? t.last, t.schema);
+      // The answer to the automatic reply can lack the block. The block from before the reply still holds.
+      if ("structuredError" in r && t.autoReply?.structured !== undefined)
+        next.structured = t.autoReply.structured;
+      else Object.assign(next, r);
+    }
     if (state !== t.state && state !== "running") next = markEnded(next, now, opts.notify === true);
     return next;
   });
@@ -583,6 +618,8 @@ export interface CaptureOptions {
   facts?: string[];
   /** Ask gh for the pull request. On by itself when a task leaves running. */
   gh?: boolean;
+  /** False for the last read before a pause: it records the automatic reply as not sent (auto-reply.ts). */
+  reply?: boolean;
 }
 
 /** Read the states from the running workspace and keep them. undefined when OpenCode did not answer. */
@@ -618,13 +655,19 @@ export async function captureTasks(ctx: Ctx, o: CaptureOptions = {}): Promise<Ta
       : undefined;
     // Asked before the read below, which must have no await after it.
     const notify = Boolean(await currentNotifyUrl(ctx));
+    const gate = await replyGate(ctx, o.reply !== false);
     // Read again: a task started while the scripts ran must not be lost. No await from here to the put, so
-    // a concurrent read cannot mark the same change twice.
+    // a concurrent read cannot mark the same change twice, or send the automatic reply twice.
     const current = (await ctx.kv.get<Saved>(TASKS_KEY)) ?? before;
     let tasks = applyStatus(current.tasks, status, ctx.clock.now(), { notify });
     for (const f of facts ?? []) tasks = applyFacts(tasks, f, factIds);
+    // Only a task whose own checkout answered has facts from this read.
+    const fresh = new Set((facts ?? []).flatMap((f) => Object.keys(f.tasks)).filter((id) => factIds.has(id)));
+    const plan = planAutoReplies(current.tasks, tasks, ctx.clock.now(), gate, fresh);
+    tasks = plan.tasks;
     const at = iso(ctx.clock.now());
     await ctx.kv.put(TASKS_KEY, { tasks, at });
+    tasks = (await sendAutoReplies(ctx, plan.send)) ?? tasks;
     return { tasks, at, live: true };
   } catch {
     return undefined;
@@ -676,7 +719,7 @@ export async function stopTasks(ctx: Ctx): Promise<void> {
   const saved = await ctx.kv.get<Saved>(TASKS_KEY);
   const running = saved?.tasks.filter((t) => t.state === "running").map((t) => t.id) ?? [];
   if (running.length === 0) return;
-  await captureTasks(ctx, { facts: running, gh: true }).catch(() => undefined);
+  await captureTasks(ctx, { facts: running, gh: true, reply: false }).catch(() => undefined);
   const notify = Boolean(await currentNotifyUrl(ctx));
   const after = await ctx.kv.get<Saved>(TASKS_KEY);
   if (!after?.tasks.some((t) => t.state === "running")) return;
@@ -687,6 +730,7 @@ export async function stopTasks(ctx: Ctx): Promise<void> {
       : markEnded(
           {
             ...t,
+            ...(t.jobs ? { jobs: stopJobs(t.jobs) } : {}),
             state: "stopped",
             reason: `the workspace paused while the task ran; continue it with cf-opencode connect ${ctx.workspaceId} --session ${t.id}`,
           },

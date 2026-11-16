@@ -47,8 +47,8 @@ cf-opencode upgrade --domain code.example.com
 | --- | --- | --- | --- |
 | `instance` | 2 vCPU, 6144 MiB memory, 20000 MB disk | `lite`, `standard-1` to `standard-4`, or `{ "vcpu", "memoryMib", "diskMb" }` with `vcpu` 1 to 4 | The container size. One size for the whole install. |
 | `maxRunning` | `10` | Integer, 1 to 100 | The most workspaces that run at once. |
-| `maxAwakeHours` | `12` | Integer, 1 to 168 | A workspace that is awake this long pauses, even while it works. |
-| `idlePauseMinutes` | `20` | Integer, 1 to 1440 | Idle time before the Worker pauses a workspace. |
+| `maxAwakeHours` | `12` | Integer, 1 to 168 | A workspace that is awake this long pauses, even while it works, and also while a long job (`cf-opencode-job`) runs. |
+| `idlePauseMinutes` | `20` | Integer, 1 to 1440 | Idle time before the Worker pauses a workspace. A running long job is not idle time. |
 | `warmMinutes` | `10` | Integer, 0 to 1440 | After an idle pause, the container keeps running this long. `0` stops it at once. |
 | `snapshotRefreshDays` | `3` | Integer, 0 to 29 | Days before expiry when the Worker refreshes a paused snapshot. `0` lets unused workspaces expire. |
 | `inactivityTimeoutMinutes` | `15` | Integer, 1 to 1440 | The platform inactivity timeout of the container. |
@@ -62,6 +62,7 @@ cf-opencode upgrade --domain code.example.com
 | `searchProvider` | `"exa"` | A provider name of 1 to 32 characters: lowercase letters, digits, `.`, `_` and `-`, starting with a letter or digit | The Web Search API provider for `cf-opencode-search`. Known providers are `exa`, `linkup` and `ceramic`. |
 | `model` | `"cloudflare-workers-ai/@cf/zai-org/glm-5.3"` | `provider/model`, or `""` | The default OpenCode model. An empty value lets OpenCode choose. |
 | `a2a` | `false` | `true` or `false` | `true` serves the A2A Agent Card and the JSON-RPC endpoint `/a2a`. See [Hand off tasks over A2A](/guides/a2a/). |
+| `autoReply` | `true` | `true` or `false` | `true` sends one message to a handed-off session that ends its turn with commits that are not pushed or processes left running. See [The automatic reply](/guides/hand-off-a-task/#the-automatic-reply). |
 | `images` | `{}` | An object of image references | Extra image references mapped to image keys. For advanced use. |
 
 The notify URL is not a setting. A webhook URL often holds its own secret, and these settings are a plain Worker variable. It is the Worker secret `NOTIFY_URL`; set it with `cf-opencode notify-url`. A `notifyUrl` key in the settings file stops `init` and `upgrade` before the deploy with `Failed: notifyUrl in <path> is no longer a setting; the URL is a Worker secret now — fix: remove notifyUrl from the file, then run cf-opencode notify-url`.
