@@ -20,9 +20,9 @@ describe("connect", () => {
     process.env.HOME = mkdtempSync(join(tmpdir(), "cfoc-connect-"));
     try {
       await expect(
-        connect({ url: "http://127.0.0.1:9", token: "t", id: "ses_e2c6abc", attach: false }),
+        connect({ url: "http://127.0.0.1:9", token: "t", id: "ses_abc123", attach: false }),
       ).rejects.toThrow(
-        /^Failed: ses_e2c6abc is a session id, not a workspace — fix: cf-opencode connect <workspace> --session ses_e2c6abc, or cf-opencode tasks ses_e2c6abc$/,
+        /^Failed: ses_abc123 is a session id, not a workspace — fix: cf-opencode connect <workspace> --session ses_abc123, or cf-opencode tasks ses_abc123$/,
       );
     } finally {
       process.env.HOME = home;
