@@ -128,6 +128,8 @@ The user made it from their machine with the cf-opencode CLI.
   \`cf-opencode-browse --preview <port>\` and open that address.
 - Tell the user something while they are away: \`cf-opencode-notify "<text>"\` posts the text to the user's notify URL.
   Use it for a blocker or a result they must see soon, not for progress.
+- Files for other workspaces or for later: \`cf-opencode-store put <file>\` saves it in the user's store (if the
+  user turned the store on), \`get <name>\` and \`list\` read it. The store outlives this workspace. Put no secret there.
 - The disk is saved when the workspace is idle. Processes do not survive that; files do. The workspace is idle
   some minutes after your last message when nobody is attached, also while a process you started still runs.
   For a long job, stay in your turn: start it with its output in a log file, then check it in a loop with
