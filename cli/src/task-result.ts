@@ -50,6 +50,7 @@ function resultLines(r: TaskResult, o: { live?: boolean; at?: string; now?: numb
     if (s.length > MAX_SUMMARY_LINES) lines.splice(lines.length - MAX_SUMMARY_LINES, 0, "  …");
   }
   const facts: string[] = [];
+  if (r.worktree) facts.push(`Worktree   ${r.worktree}`);
   if (r.branch) facts.push(`Branch     ${r.branch}`);
   if (r.commits)
     facts.push(
@@ -86,5 +87,7 @@ function resultLines(r: TaskResult, o: { live?: boolean; at?: string; now?: numb
       }"`,
     );
   lines.push(`Open: cf-opencode connect ${r.workspace} --session ${r.id}`);
+  if (r.branch && (r.commits?.length ?? 0) > 0 && !r.unpushed)
+    lines.push(`Pull: cf-opencode tasks ${r.id} --workspace ${r.workspace} --pull`);
   return lines;
 }

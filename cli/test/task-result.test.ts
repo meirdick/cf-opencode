@@ -25,18 +25,16 @@ const base: TaskResult = {
 
 describe("result record", () => {
   it("renders state, then summary, then branch, commits and pull request", () => {
-    const text = renderResult(
-      {
-        ...base,
-        branch: "fix-login",
-        commits: [{ sha: "a".repeat(40), subject: "Fix the login form" }],
-        pullRequest: "https://github.com/acme/app/pull/7",
-        changedFiles: ["src/login.ts"],
-        structured: { ok: true },
-        notified: { at: "2026-11-12T11:56:00Z", status: 200 },
-      },
-      { live: true, now },
-    );
+    const r: TaskResult = {
+      ...base,
+      branch: "fix-login",
+      commits: [{ sha: "a".repeat(40), subject: "Fix the login form" }],
+      pullRequest: "https://github.com/acme/app/pull/7",
+      changedFiles: ["src/login.ts"],
+      structured: { ok: true },
+      notified: { at: "2026-11-12T11:56:00Z", status: 200 },
+    };
+    const text = renderResult(r, { live: true, now });
     const at = (s: string) => text.indexOf(s);
     expect(at("State      done")).toBeLessThan(at("Summary:"));
     expect(at("Summary:")).toBeLessThan(at("Branch     fix-login"));
@@ -45,7 +43,15 @@ describe("result record", () => {
     expect(text).toContain("Changed    src/login.ts");
     expect(text).toContain('Structured {"ok":true}');
     expect(text).toContain("Notified   4m ago (HTTP 200)");
-    expect(text).toMatch(/Open: cf-opencode connect app --session ses_1$/);
+    expect(text).toMatch(
+      /Open: cf-opencode connect app --session ses_1\nPull: cf-opencode tasks ses_1 --workspace app --pull$/,
+    );
+    // No commit, or commits only on the workspace disk: nothing to pull.
+    expect(renderResult({ ...r, commits: [] })).not.toContain("--pull");
+    expect(renderResult({ ...r, unpushed: 1 })).not.toContain("--pull");
+    expect(renderResult({ ...r, worktree: "/home/user/worktrees/a" })).toContain(
+      "Worktree   /home/user/worktrees/a",
+    );
   });
 
   it("warns about commits that are not pushed and processes left running, with the fix", () => {

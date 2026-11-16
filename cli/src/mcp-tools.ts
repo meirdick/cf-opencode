@@ -8,6 +8,7 @@ import { readControlToken, readInstall, readWorkspace } from "./config.js";
 import { type ConnectInput, type ConnectResult, connect, httpsRemote, workspaceIdFrom } from "./connect.js";
 import { CliError } from "./errors.js";
 import { preflight, renderStarted, runTask } from "./handoff.js";
+import { type PullResult, pullTask, renderPull } from "./pull.js";
 import { localWorkspaceIds } from "./sessions.js";
 import { resultOf } from "./task-result.js";
 import {
@@ -49,11 +50,17 @@ export interface StartArgs {
   title?: string;
   model?: string;
   allowDirty: boolean;
+  branch?: string;
+  auto?: boolean;
+  newWorkspace?: boolean;
+  worktree?: boolean;
 }
 
 /** The task operations, so tests can run the tools without a Worker. */
 export interface TaskBackend {
-  start(a: StartArgs): Promise<{ workspace: string; task: RemoteTask; warning?: string }>;
+  start(
+    a: StartArgs,
+  ): Promise<{ workspace: string; task: RemoteTask; warning?: string; newWorkspace?: boolean }>;
   get(session: string, workspace?: string): Promise<TaskView>;
   wait(
     session: string,
@@ -62,6 +69,11 @@ export interface TaskBackend {
     signal: AbortSignal,
   ): Promise<TaskView & { timedOut: boolean }>;
   list(workspace?: string): Promise<TasksResult>;
+  pull(
+    session: string,
+    workspace: string | undefined,
+    directory: string | undefined,
+  ): Promise<PullResult & { workspace: string }>;
 }
 
 export const WAIT_DEFAULT_SECONDS = 240;
@@ -165,6 +177,7 @@ export const TOOL_DEFS: ToolDef[] = [
       "Commit and push first; the call fails on such changes unless allowDirty is true.",
       "The remote agent has not seen this conversation. Write the task as a full brief: the goal, the branch, the constraints, and how to prove the change works.",
       "The agent commits, pushes a branch, opens a pull request when GitHub access works, and ends with a Result line.",
+      "One task at a time uses the checkout of a workspace. When one runs there, set worktree or newWorkspace to true.",
       "Returns the workspace and the session id. Follow it with wait_task or get_task.",
     ].join(" "),
     inputSchema: {
@@ -191,6 +204,26 @@ export const TOOL_DEFS: ToolDef[] = [
           description:
             "Start even when the checkout has changes that are not committed or pushed. The workspace will not see them.",
         },
+        branch: {
+          type: "string",
+          description:
+            "Start from this branch as it is on origin, in place of the checkout's branch. The call checks that origin has it; the state of the local checkout does not matter then.",
+        },
+        auto: {
+          type: "boolean",
+          description:
+            "The remote agent runs with no permission prompts, so it does not stop to wait for a person. A deny rule still applies. Default false.",
+        },
+        newWorkspace: {
+          type: "boolean",
+          description:
+            "Start in a new workspace of its own, named <checkout>-<short id>. Use it when a task already runs in the checkout's workspace. The new workspace pauses when idle; the maxRunning limit counts it.",
+        },
+        worktree: {
+          type: "boolean",
+          description:
+            "Start in a new git worktree in the existing workspace, so the task does not share a checkout with a task that runs there.",
+        },
       },
       required: ["task"],
       additionalProperties: false,
@@ -205,6 +238,7 @@ export const TOOL_DEFS: ToolDef[] = [
           type: "string",
           description: "What the workspace will not see, when allowDirty skipped the check.",
         },
+        newWorkspace: { type: "boolean", description: "True when newWorkspace made the workspace." },
       },
       required: ["workspace", "session", "task"],
     },
@@ -301,6 +335,45 @@ export const TOOL_DEFS: ToolDef[] = [
     },
     annotations: { readOnlyHint: true, openWorldHint: true },
   },
+  {
+    name: "pull_task",
+    title: "Pull the branch of a handed-off task",
+    description: [
+      "Fetch the branch a task pushed from origin into the local checkout, and make or fast-forward a local branch that tracks it.",
+      "Local files and the checked-out branch do not change, except a fast-forward of that branch when it has no changes.",
+      "Fails when the task has no pushed branch, or has commits that are only on the workspace disk.",
+    ].join(" "),
+    inputSchema: {
+      type: "object",
+      properties: {
+        session: sessionArg,
+        workspace: workspaceArg,
+        directory: {
+          type: "string",
+          description:
+            "The local git checkout: the directory the MCP client started this server in (the default), or a folder under it.",
+        },
+      },
+      required: ["session"],
+      additionalProperties: false,
+    },
+    outputSchema: {
+      type: "object",
+      properties: {
+        workspace: { type: "string" },
+        branch: { type: "string" },
+        commit: { type: "string", description: "The commit of origin/<branch> after the fetch." },
+        local: {
+          type: "string",
+          description:
+            "created (a new local branch), updated (a fast-forward), or current (it had the commit).",
+        },
+        checkedOut: { type: "boolean", description: "True when the branch is the one checked out." },
+      },
+      required: ["workspace", "branch", "commit", "local", "checkedOut"],
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+  },
 ];
 
 // --- Argument checks. A bad argument is a tool error the model can read and fix. ---
@@ -350,25 +423,32 @@ export function taskTools(backend: TaskBackend): McpTool[] {
       run: async (args) => {
         const task = optString(args, "task", MAX_TASK_CHARS);
         if (!task) throw new CliError("task is empty", "pass the full task brief as task");
-        if (args.allowDirty !== undefined && typeof args.allowDirty !== "boolean")
-          throw new CliError("allowDirty must be true or false", "pass a boolean");
+        for (const key of ["allowDirty", "auto", "newWorkspace", "worktree"])
+          if (args[key] !== undefined && typeof args[key] !== "boolean")
+            throw new CliError(`${key} must be true or false`, "pass a boolean");
         const directory = optString(args, "directory");
         const workspace = workspaceOf(args);
         const title = optString(args, "title", 200);
         const model = optString(args, "model", 300);
+        const branch = optString(args, "branch", 200);
         const r = await backend.start({
           task,
           ...(directory ? { directory } : {}),
           ...(workspace ? { workspace } : {}),
           ...(title ? { title } : {}),
           ...(model ? { model } : {}),
+          ...(branch ? { branch } : {}),
           allowDirty: args.allowDirty === true,
+          ...(args.auto === true ? { auto: true } : {}),
+          ...(args.newWorkspace === true ? { newWorkspace: true } : {}),
+          ...(args.worktree === true ? { worktree: true } : {}),
         });
         const out = {
           workspace: r.workspace,
           session: r.task.id,
           task: { ...r.task },
           ...(r.warning ? { warning: r.warning } : {}),
+          ...(r.newWorkspace ? { newWorkspace: true } : {}),
         };
         return both([r.warning, renderStarted(r)].filter(Boolean).join("\n"), out);
       },
@@ -403,6 +483,13 @@ export function taskTools(backend: TaskBackend): McpTool[] {
       run: async (args) => {
         const r = await backend.list(workspaceOf(args));
         return both(renderTasks(r), { rows: r.rows, workspaces: r.workspaces });
+      },
+    },
+    {
+      def: def("pull_task"),
+      run: async (args) => {
+        const r = await backend.pull(sessionOf(args), workspaceOf(args), optString(args, "directory"));
+        return both(renderPull(r), { ...r });
       },
     },
   ];
@@ -472,10 +559,12 @@ export function localBackend(d: LocalDeps): TaskBackend {
       const p = preflight(dir);
       if (!p.checkout && !a.workspace)
         throw new CliError(`${dir} is not a git checkout`, "pass directory (a git checkout) or workspace");
-      const id = a.workspace ?? workspaceIdFrom(dir);
+      if (a.newWorkspace && a.workspace)
+        throw new CliError("newWorkspace names the workspace itself", "leave out workspace, or newWorkspace");
+      const id = a.newWorkspace ? undefined : (a.workspace ?? workspaceIdFrom(dir));
       // connect reads the remote and branch of its own working directory. This server may run elsewhere,
       // so a workspace this machine has not connected yet gets them from the checkout named here.
-      const fresh = !readWorkspace(id) && p.checkout;
+      const fresh = (!id || !readWorkspace(id)) && p.checkout;
       const repoUrl = fresh ? originRemote(dir) : undefined;
       const branch = fresh ? p.branch : undefined;
       try {
@@ -484,9 +573,13 @@ export function localBackend(d: LocalDeps): TaskBackend {
             url,
             token,
             task: a.task,
-            id,
+            ...(id ? { id } : {}),
             ...(a.title ? { title: a.title } : {}),
             ...(a.model ? { model: a.model } : {}),
+            ...(a.branch ? { branch: a.branch } : {}),
+            ...(a.auto ? { auto: true } : {}),
+            ...(a.newWorkspace ? { newWorkspace: true } : {}),
+            ...(a.worktree ? { worktree: true } : {}),
             allowDirty: a.allowDirty,
             origin: "mcp",
             dir,
@@ -509,6 +602,7 @@ export function localBackend(d: LocalDeps): TaskBackend {
             e.message.replace(/ — fix: .*$/, "").replace(/^Failed: /, ""),
             "commit and git push, or set allowDirty to true",
           );
+        if (e instanceof CliError) throw toolFix(e);
         throw e;
       }
     },
@@ -540,7 +634,30 @@ export function localBackend(d: LocalDeps): TaskBackend {
       const { url, token } = install();
       return listTasks(client(url, token), workspace ? [workspace] : ids());
     },
+    async pull(session, workspace, directory) {
+      const { url, token } = install();
+      const c = client(url, token);
+      const ws = await where(c, session, workspace);
+      const dir = insideStart(d.cwd, directory);
+      const r = pullTask(dir, resultOf(ws, await c.task(ws, session)), readWorkspace(ws)?.repoUrl);
+      return { workspace: ws, ...r };
+    },
   };
+}
+
+/** A fix that names a run flag, said with the tool argument a model sets. */
+export function toolFix(e: CliError): CliError {
+  const words: [RegExp, string][] = [
+    [/run without --new\b/g, "set newWorkspace to false"],
+    [/run without --worktree\b/g, "set worktree to false"],
+    [/pass --branch with a branch\b/g, "set branch to a branch"],
+    [/--new needs\b/g, "newWorkspace needs"],
+    [/leave out --new\b/g, "leave out newWorkspace"],
+    [/--new and --worktree/g, "newWorkspace and worktree"],
+  ];
+  let m = e.message;
+  for (const [re, to] of words) m = m.replace(re, to);
+  return m === e.message ? e : new CliError(m, e.fix);
 }
 
 /**

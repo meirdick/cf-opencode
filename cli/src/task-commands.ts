@@ -4,12 +4,13 @@
 import { readFileSync } from "node:fs";
 import { ControlClient } from "./api.js";
 import { flagBool, flagString, type ParsedArgs } from "./args.js";
-import { derivePassword } from "./config.js";
+import { derivePassword, readWorkspace } from "./config.js";
 import { connect } from "./connect.js";
 import { CliError, toFailedLine } from "./errors.js";
 import { followTask, openEventStream, renderEvent } from "./follow.js";
 import { renderStarted, runTask } from "./handoff.js";
 import { notifyKey } from "./notify-key.js";
+import { pullTask, renderPull } from "./pull.js";
 import { replyTask } from "./reply.js";
 import { readSchema } from "./schema.js";
 import { localWorkspaceIds } from "./sessions.js";
@@ -68,6 +69,7 @@ export async function runCommand(args: ParsedArgs, install: Install): Promise<nu
   const limit = mode ? timeoutMs(args) : 0;
   const title = flagString(args, "title");
   const model = flagString(args, "model");
+  const branch = flagString(args, "branch");
   const schemaFile = flagString(args, "schema");
   // Before the wake: a bad schema must not cost a workspace start.
   const schema = schemaFile === undefined ? undefined : readSchema(schemaFile);
@@ -79,6 +81,10 @@ export async function runCommand(args: ParsedArgs, install: Install): Promise<nu
       ...(title ? { title } : {}),
       ...(model ? { model } : {}),
       ...(schema !== undefined ? { schema } : {}),
+      ...(branch !== undefined ? { branch } : {}),
+      auto: flagBool(args, "auto"),
+      newWorkspace: flagBool(args, "new"),
+      worktree: flagBool(args, "worktree"),
       allowDirty: flagBool(args, "allow-dirty"),
       beforeAttach: skillsHook(flagString(args, "skills"), flagString(args, "url"), err),
       onLine: err,
@@ -94,6 +100,9 @@ export async function runCommand(args: ParsedArgs, install: Install): Promise<nu
           session: r.task.id,
           title: r.task.title,
           state: r.task.state,
+          ...(r.newWorkspace ? { newWorkspace: true } : {}),
+          ...(r.task.worktree ? { worktree: r.task.worktree } : {}),
+          ...(r.task.auto ? { auto: true } : {}),
           ...(r.warning ? { warning: r.warning } : {}),
         }),
       );
@@ -111,9 +120,24 @@ export async function tasksCommand(args: ParsedArgs, install: Install): Promise<
   const pos = args.positionals[0];
   const ws = flagString(args, "workspace");
   const mode = watchMode(args);
+  const pull = flagBool(args, "pull");
+  if (pull && (!pos || !looksLikeSession(pos)))
+    throw new CliError("--pull needs one task", "cf-opencode tasks <session> --pull");
+  if (pull && (mode || flagString(args, "reply") !== undefined))
+    throw new CliError(
+      "--pull goes alone",
+      "wait first (cf-opencode tasks <session> --wait), then run cf-opencode tasks <session> --pull",
+    );
   if (pos && looksLikeSession(pos)) {
     const limit = mode ? timeoutMs(args) : 0;
     const workspace = ws ?? (await findTask(client, localWorkspaceIds(), pos));
+    if (pull) {
+      const one = await client.task(workspace, pos);
+      const p = pullTask(process.cwd(), resultOf(workspace, one), readWorkspace(workspace)?.repoUrl);
+      if (json) out(JSON.stringify({ ok: true, workspace, session: pos, ...p }));
+      else out(renderPull(p));
+      return 0;
+    }
     const reply = flagString(args, "reply");
     if (reply !== undefined) {
       await replyTask(target(install.url, workspace), pos, reply);
