@@ -7,6 +7,32 @@ sidebar:
 
 The full history is in [CHANGELOG.md](https://github.com/meirdick/cf-opencode/blob/main/CHANGELOG.md) in the repository.
 
+## 0.4.0 (not released)
+
+After `cf-opencode upgrade`, run `cf-opencode rebuild <workspace>` for each older workspace. A rebuild puts `cf-opencode-job` and `cf-opencode-store` on its disk.
+
+Start a task:
+
+- `run --branch`, `--auto`, `--new` and `--worktree`. See [Hand off a task](/guides/hand-off-a-task/).
+- One task at a time uses the checkout of a workspace. A second `run` fails with the two fixes: `--new` and `--worktree`.
+- `tasks <ses_…> --pull` fetches the task's branch into the local checkout.
+- MCP: `handoff_task` takes `branch`, `auto`, `newWorkspace` and `worktree`, and there is a new tool, `pull_task`. A2A: `metadata.auto` and `metadata.worktree`.
+
+Work that a task leaves in the workspace:
+
+- A task that ends with commits that are not pushed or processes left running gets one automatic reply. The task stays `running` until that turn ends. The setting `autoReply` turns it off.
+- `cf-opencode-job` in the workspace runs a long command apart from the agent's turn. A running job keeps the workspace awake up to its `--max-minutes`. See [The workspace image](/reference/image/).
+
+Files:
+
+- `cf-opencode cp` copies a file or a folder between workspaces, or between a workspace and this machine.
+- The store, an optional R2 bucket (`store: true`): `cp` with `store:<name>`, `cf-opencode store`, and `cf-opencode-store` in a workspace.
+
+The Worker URL:
+
+- `init --domain <hostname>` puts the Worker on a Custom Domain.
+- `init --url` repairs an install after the Worker URL changed. `doctor` prints that fix when the URL does not answer.
+
 ## 0.3.0 (2026-11-16)
 
 Fixes from a first long run of handed-off tasks with the laptop closed.

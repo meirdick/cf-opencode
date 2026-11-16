@@ -42,7 +42,7 @@ import { forgetHostKey, shell, ssh, sshConfigBlock, sshKey, sshProxy, target } f
 import { fmtAge, makeUi, readSecret, table, terminalSafe } from "./ui.js";
 import { runProcess } from "./wrangler.js";
 
-const VERSION = "0.3.0";
+const VERSION = "0.4.0";
 
 const GLOBAL: FlagSpec = {
   help: { type: "boolean", short: "h" },

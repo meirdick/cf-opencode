@@ -24,7 +24,7 @@ import { isPreviewPath, previewControl, previewFallback, previewIngress } from "
 import { r2Store } from "./store";
 import { tasksRoute } from "./tasks-api";
 
-export const API_VERSION = "0.3.0";
+export const API_VERSION = "0.4.0";
 
 /** Workspace ids: start with a letter or digit, then letters, digits, _ or -. */
 export const WORKSPACE_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;

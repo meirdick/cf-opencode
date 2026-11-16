@@ -1,6 +1,7 @@
-# Plan: hand a task to a workspace (0.2.0)
+# Plan: hand a task to a workspace
 
-Status: in progress. Items marked (done) are on the v0.2 branch.
+Status: steps 1 to 7 are done in 0.4.0, except the live tests of step 6. Step 8 is proposed, not built.
+Items marked (done) say the release. Live tests still to run are in step 6c.
 
 ## Goal
 
@@ -35,19 +36,19 @@ agent). This list is from knowledge of those tools, not from a new survey.
 
 ### 1. `cf-opencode run`
 
-1. `cf-opencode run "<task>"` wakes the workspace of the checkout, starts a new OpenCode session there with the task, prints the session id, and returns.
-2. Send the task through the OpenCode server API (`POST /api/session`, then `/api/session/{id}/prompt`), so the session outlives the command.
-3. Preflight on the local checkout: fail when the branch is not pushed or the tree has changes that are not committed. `--allow-dirty` skips the check and says what the workspace will not see.
-4. Flags: `--branch`, `--model`, `--title`, `--wait`, `--json`, `--auto`.
-5. `--auto` lets the remote agent run without permission prompts. Default: off. Without it, a prompt puts the task in `waiting`.
-6. Add a fixed closing instruction to each task: commit, push the branch, open a pull request if `gh` works, and end with a short result.
+1. (done, 0.2.0) `cf-opencode run "<task>"` wakes the workspace of the checkout, starts a new OpenCode session there with the task, prints the session id, and returns.
+2. (done, 0.2.0) Send the task through the OpenCode server API (`POST /api/session`, then `/api/session/{id}/prompt`), so the session outlives the command.
+3. (done, 0.2.0) Preflight on the local checkout: fail when the branch is not pushed or the tree has changes that are not committed. `--allow-dirty` skips the check and says what the workspace will not see.
+4. (done; `--branch` and `--auto` in 0.4.0) Flags: `--branch`, `--model`, `--title`, `--wait`, `--json`, `--auto`.
+5. (done, 0.4.0) `--auto` lets the remote agent run without permission prompts. Default: off. Without it, a prompt puts the task in `waiting`. OpenCode has no server flag for it: the session gets a rule set that allows all and keeps each deny rule, and the Worker answers a request that still opens.
+6. (done, 0.2.0) Add a fixed closing instruction to each task: commit, push the branch, open a pull request if `gh` works, and end with a short result.
 
 ### 2. Isolation
 
-1. `cf-opencode run --new` starts the task in its own workspace, named `<checkout>-<short id>`.
-2. `--worktree` starts the task in a new git worktree in the existing workspace (`opencode run --worktree` exists).
-3. Default: the existing workspace, one task at a time. A second task while one runs fails with the two fixes: `--new` or `--worktree`.
-4. `maxRunning` stays the cost guard. The error names it.
+1. (done, 0.4.0) `cf-opencode run --new` starts the task in its own workspace, named `<checkout>-<short id>`.
+2. (done, 0.4.0) `--worktree` starts the task in a new git worktree in the existing workspace, in `/home/user/worktrees`. Nothing removes a worktree yet.
+3. (done, 0.4.0) Default: the existing workspace, one task at a time. A `waiting` task also holds the checkout. A second task while one runs fails with the two fixes: `--new` or `--worktree`.
+4. (done, 0.4.0) `maxRunning` stays the cost guard. The error names it.
 
 ### 3. Status
 
@@ -56,26 +57,26 @@ agent). This list is from knowledge of those tools, not from a new survey.
 3. (done) `cf-opencode tasks <id> --wait` returns when the task leaves the running state. Exit code: 0 done, 1 failed, 2 waiting, 3 timed out, 4 stopped. `--follow` does the same and streams the agent's progress.
 4. (done) The Durable Object keeps the task list, as it does for sessions, so a paused workspace answers without a wake.
 5. (done) State comes from the OpenCode API: active sessions, open permissions and forms, and the session outcome.
-6. `cf-opencode tasks <id> --reply "<text>"` answers a waiting task.
+6. (done, 0.2.0) `cf-opencode tasks <id> --reply "<text>"` answers a waiting task.
 
 ### 4. Result
 
 1. (done) The closing instruction makes the agent push a branch and open a pull request.
-2. `cf-opencode tasks <id> --pull` fetches the task's branch into the local checkout.
+2. (done, 0.4.0) `cf-opencode tasks <id> --pull` fetches the task's branch into the local checkout.
 3. (changed) A task that made no commit is `done`, with `commits: []`: many tasks are research. The result record carries the git facts (branch, commits since the start, changed files, pull request), read by the Worker with git, not from the agent's text.
 
 ### 5. Handoff instructions for agents
 
 1. (done) Ship a skill file in the package (`cli/skill/cf-opencode-handoff/SKILL.md`): when to hand off, the preflight, how to write the task prompt, how to check status.
-2. (done, except init) `cf-opencode skill` prints where the file is. `cf-opencode skill --install --claude | --opencode | --dir` copies it into the agent's skills folder. `init` does not print it yet.
+2. (done) `cf-opencode skill` prints where the file is. `cf-opencode skill --install --claude | --opencode | --dir` copies it into the agent's skills folder. `init` installs it.
 3. (done) The task prompt rule, from the orb skill: goal, branch, constraints, and how to prove the change works. The remote agent has not seen the local conversation.
-4. The agent notes in the workspace (`AGENTS.md`) get a section for handed-off tasks: finish with commit, push, pull request, and a result line.
+4. (done, 0.2.0) The agent notes in the workspace (`AGENTS.md`) get a section for handed-off tasks: finish with commit, push, pull request, and a result line.
 
 ### 6. Checks before release
 
-1. Unit tests for the preflight, the state mapping, and the task list.
-2. Live tests: one task to a pull request; two tasks with `--new`; a task that asks a question, then `--reply`; laptop closed during a task; a task on a private repository.
-3. Docs: a guide "Hand off a task", the CLI reference, and the skill.
+1. (done) Unit tests for the preflight, the state mapping, and the task list.
+2. Live tests of 0.2.0 (done in the first long run, 2026-11-13): one task to a pull request; a reply to a running task; laptop closed during a task; a task on a private repository. Not run: two tasks with `--new` (see step 6c).
+3. (done) Docs: a guide "Hand off a task", the CLI reference, and the skill.
 
 ### 6b. Result and push (done)
 
@@ -86,7 +87,18 @@ agent). This list is from knowledge of those tools, not from a new survey.
 5. A `stopped` state for a task the workspace paused under.
 6. Live tests still to run: `--follow` against OpenCode 2.2.7, a notification to a real receiver, a pause under a running task, `gh pr view` through egress.
 
-### 7. Preview a dev server
+### 6c. Stranded work, file copy, Worker URL (done, 0.4.0)
+
+From the first long run of handed-off tasks.
+
+1. One automatic reply when a task ends with commits not pushed or processes left running. Setting `autoReply`.
+2. `cf-opencode-job` in the workspace for a long job. A running job counts as use for the idle pause.
+3. `cf-opencode cp` between workspaces and the local machine, through the Worker.
+4. The store, an optional R2 bucket (`store: true`), with `cf-opencode-store` in the workspace.
+5. `init --domain` for a Custom Domain, and `init --url` to repair an install after the URL changed.
+6. Live tests still to run, all on a throwaway install: `--auto` with a permission and with a subagent; `--worktree` on the pinned OpenCode; two `run` commands at once; `--new` at `maxRunning`; `--pull` from a real task branch; that OpenCode does not kill a detached job when the tool call ends; one automatic reply and one `done` at the notify URL; a copy of 1 GB or more between two paused workspaces; the store on a new and on an existing bucket; `init --domain` on a hostname with and with no DNS record.
+
+### 7. Preview a dev server (done, 0.2.0)
 
 1. `cf-opencode preview <workspace> <port>` prints a URL on the Worker that proxies to that port in the workspace, behind the workspace password. No public URL.
 2. `cf-opencode-preview <port>` in the workspace prints the same URL, so the agent can give it to the user.
@@ -94,7 +106,7 @@ agent). This list is from knowledge of those tools, not from a new survey.
 4. The remote browser (`cf-opencode-browse`, `cf-opencode-fetch`) can open the dev server by an internal hostname, with no public URL, so the agent can check its own frontend work.
 5. A request to a preview counts as use for the idle pause.
 
-### 8. WIP handoff: `--wip` and `--upload` (proposed, not in 0.2.0)
+### 8. WIP handoff: `--wip` and `--upload` (proposed, not built)
 
 The preflight keeps a handoff a pure git contract: unpushed or uncommitted work
 does not reach the workspace. E2B's box mode is the one competitor that carries
@@ -125,10 +137,10 @@ not a change to the preflight.
 
 ## Open questions
 
-1. Does the OpenCode 2 server API accept `--auto` for a session started over HTTP? If not, `run` starts the session with `opencode run --auto` in the workspace, detached.
+1. (answered, 0.4.0) OpenCode 2.2.7 has no server flag for `--auto`; it is a client feature. `POST /api/session` takes a permission rule set, and `run --auto` uses that. Read from source, not yet run live.
 2. Can an OpenCode 2 plugin register a tool? If yes, a later release adds a `delegate` tool, so the local agent hands off without the shell.
-3. Should `--new` workspaces delete themselves after the pull request merges?
-4. What is the default model for a handed-off task: the workspace default, or a stronger one?
+3. (answered) `--new` workspaces do not delete themselves. They pause.
+4. (answered) The default model of a task is the workspace default.
 
 ## Order of work
 

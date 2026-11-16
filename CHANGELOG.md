@@ -1,5 +1,71 @@
 # Changelog
 
+## 0.4.0 (not released)
+
+The open items of the handoff plan, and fixes from the first long run that 0.3.0 only reported.
+
+After `cf-opencode upgrade`, run `cf-opencode rebuild <workspace>` for each older workspace. A rebuild puts
+`cf-opencode-job` and `cf-opencode-store` on its disk.
+
+Start a task:
+
+- `run --branch <name>` starts the task from that branch as it is on origin. The preflight then checks only
+  that origin has the branch.
+- `run --auto` runs the agent with no permission prompts. Each rule that says "ask" becomes "allow"; a rule
+  that says "deny" still applies. A question to a person still puts the task in `waiting`.
+- One task at a time uses the checkout of a workspace. A second `run` fails while a task there is `running` or
+  `waiting`, with the two fixes: `--new` and `--worktree`.
+- `run --new` starts the task in a new workspace, named `<checkout>-<short id>`. It pauses when idle and does
+  not delete itself. `maxRunning` limits it, and the error names that limit.
+- `run --worktree` starts the task in a new git worktree in the workspace, in `/home/user/worktrees`. The
+  branch, commits, `unpushed` and `processes` of the result are read in that worktree. The result record has
+  `worktree`.
+- `tasks <ses_…> --pull` fetches the task's branch into the local checkout and makes or fast-forwards a local
+  branch that tracks it. It does not touch a checkout that has changes.
+- MCP: `handoff_task` takes `branch`, `auto`, `newWorkspace` and `worktree`. A new tool, `pull_task`. A2A:
+  `metadata.auto` and `metadata.worktree`.
+
+Work that a task leaves in the workspace:
+
+- When a task ends with commits that are not pushed or processes left running, the Worker sends the session
+  one automatic reply that says what it found and what to do. The task stays `running` until that turn ends,
+  so `--wait` and the notify URL get one `done`. The reply is sent one time for each task, and never wakes a
+  paused workspace. The result record has `autoReply`, and `tasks <ses_…>` shows it. The setting `autoReply`
+  (default `true`) turns it off.
+- `cf-opencode-job` in the workspace runs a long command apart from the agent's turn: `start`, `list`,
+  `status`, `logs`, `wait`, `stop`. A running job keeps the workspace awake up to its `--max-minutes` (default
+  120). `maxAwakeHours` still applies. When the job ends, the session gets one message with the exit code and
+  the end of the log.
+- A task whose agent ended its turn while a job of it runs is `running`. The list shows `running, job`. The
+  result record lists `jobs` apart from `processes`, and a job is not counted in `processes`.
+- The instruction that `run` adds, and the workspace notes, tell the agent to run a job longer than a few
+  minutes with `cf-opencode-job` and then end its turn.
+
+Files:
+
+- `cf-opencode cp` copies a file or a folder between workspaces, or between a workspace and this machine. The
+  Worker checks every path in the stream, and the target changes only when the whole copy passed. A paused
+  workspace wakes. At most 4 GB for each copy, and 100 MB from this machine. `--force` replaces a target that
+  exists. Only the control token can start a copy.
+- The store, an optional R2 bucket of the install (setting `store: true`). `cp` takes `store:<name>` sides,
+  `cf-opencode store` lists and removes files, and `cf-opencode-store` in a workspace saves and reads files.
+  No R2 key enters the workspace. Files outlive a pause and a delete, and R2 bills them. `uninstall` keeps the
+  bucket and prints the command that deletes it.
+
+The Worker URL:
+
+- `init --domain <hostname>` and `upgrade --domain` put the Worker on a Custom Domain. The install URL is
+  `https://<hostname>`, and `upgrade` keeps it. The workers.dev URL stays on.
+- Before the deploy, `init` checks the hostname and changes nothing. It fails when the account has no zone for
+  it, the zone is not active, the hostname has DNS records, or the hostname is another Worker's Custom Domain.
+  `--adopt` replaces the records or takes the hostname.
+- `init --url` takes any https Worker URL, not only workers.dev. It keeps the account and the Custom Domain of
+  the saved install, so it repairs an install after the workers.dev subdomain changed. It deploys nothing.
+- `doctor` shows the Worker URL in use and where it comes from. When the URL does not answer, it looks for the
+  Worker in the account and prints `cf-opencode init --url <new url>`. In `doctor --json`, the check `install`
+  is now `url`.
+- A trailing `/` in `--url` or `CF_OPENCODE_URL` no longer makes paths with `//`.
+
 ## 0.3.0 (2026-11-16)
 
 From a first long run of handed-off tasks: several workspaces, with the laptop closed.
