@@ -35,7 +35,8 @@ The notes list what the agent can do:
 | Browser | No browser is installed. `cf-opencode-browse` opens a remote browser session and prints a Chrome DevTools Protocol websocket address, and a Python line that connects to it. Python has the `websocket` module. |
 | Dev server | Start it on `0.0.0.0`. Run `cf-opencode-preview <port>`. Give the user the line it prints. They open it with `cf-opencode preview`. Nothing is public. The agent can check its own frontend with `cf-opencode-fetch http://p<port>.preview.internal/` or `cf-opencode-browse --preview <port>`. |
 | Notes to the user | `cf-opencode-notify "<text>"` posts the text to the user's notify URL. Use it for a blocker or a result that the user must see soon, not for progress. |
-| Disk | The disk is saved when the workspace is idle. Processes do not survive that. Files do. The workspace is idle some minutes after the agent's last message when nobody is attached, also while a process still runs. For a long job the agent stays in its turn and checks the job in a loop. |
+| Disk | The disk is saved when the workspace is idle. Processes do not survive that. Files do. The workspace is idle some minutes after the agent's last message when nobody is attached, also while a process still runs. |
+| Long jobs | For a command that runs longer than a few minutes, run `cf-opencode-job start -- <command>`, then end the turn. A message comes when the job ends, with its exit code and the end of its log. Then check the result, commit and push. A running job keeps the workspace awake up to its maximum run time (`--max-minutes`, default 120). On an image from before `cf-opencode-job`, the notes say to stay in the turn and check the job in a loop instead. |
 
 ## The Handoff block
 
@@ -53,7 +54,7 @@ The block has these lines:
 
 The block ends with: "The task follows in the next message."
 
-`run` also adds a closing instruction to the task text: commit, push the branch, open a pull request when `gh auth status` succeeds, and end with a `Result:` line. See [Hand off a task](/guides/hand-off-a-task/#write-the-task).
+`run` also adds a closing instruction to the task text: commit, push the branch, run a long job with `cf-opencode-job` and end the turn, open a pull request when `gh auth status` succeeds, and end with a `Result:` line. See [Hand off a task](/guides/hand-off-a-task/#write-the-task).
 
 ## Related pages
 

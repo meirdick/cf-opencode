@@ -8,6 +8,7 @@ sidebar:
 ## Limits
 
 - **Processes do not survive a pause.** A paused workspace keeps its disk, not its processes. `opencode serve` starts again on resume. A dev server or a tmux session that you started does not.
+- **A long job has a maximum run time.** A job that `cf-opencode-job` runs keeps the workspace awake, up to `--max-minutes` (default 120, at most 1440). `maxAwakeHours` pauses the workspace also while a job runs, and the pause stops the job.
 - **A restore keeps the old tools.** A snapshot is the whole disk. A restore keeps the tools of the image it first booted, even after `cf-opencode upgrade`. `cf-opencode status <workspace>` says when the image is older. `cf-opencode rebuild <workspace>` moves it. `rebuild` does not carry packages that you installed outside `/home/user`. It stops a running agent.
 - **A redeploy reaches a running workspace late.** The control code of a running workspace changes after its container next stops. Pause the workspace to move it sooner.
 - **One container size per install.** The default is 2 vCPU, 6 GiB of memory and a 20 GB disk. Change it with `instance`.
@@ -47,7 +48,8 @@ For current prices, see the Cloudflare pricing pages for [Containers](https://de
 How to keep costs low:
 
 - An idle workspace stops after `idlePauseMinutes` plus `warmMinutes`. Lower these to stop sooner.
-- `maxAwakeHours` stops a workspace that is awake too long, even while it works.
+- `maxAwakeHours` stops a workspace that is awake too long, even while it works or a long job runs.
+- A long job keeps the workspace awake. Give `cf-opencode-job start` a `--max-minutes` near the time that the job needs.
 - Run `cf-opencode pause <workspace>` to stop a workspace now.
 - A browser session closes after 10 minutes without activity.
 - Run `cf-opencode uninstall --yes` to delete the Worker, the container application and the images. Snapshot data stays up to 30 days; Cloudflare has no API to delete it. Files in `~/.cf-opencode` stay, except `install.json`.
