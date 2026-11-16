@@ -238,6 +238,7 @@ Other commands:
 | `cf-opencode pause <id>` | Snapshot the disk and stop the container now |
 | `cf-opencode rebuild <id>` | Move a workspace onto the deployed image, keeping `/home/user` |
 | `cf-opencode cp <from> <to>` | Copy a file or a folder between workspaces (`app:data/x api:`), or between a workspace and this machine. A paused workspace wakes |
+| `cf-opencode store [rm <name>]` | List or remove files in the store, an R2 bucket that outlives workspaces. Off unless `store` is `true`; `cp` takes `store:<name>` sides |
 | `cf-opencode shell <id>` | Terminal in the workspace, inside tmux |
 | `cf-opencode ssh <id> [-- cmd]` | SSH into the workspace as `user` |
 | `cf-opencode ssh-config <id>` | Print a `~/.ssh/config` block for ssh, scp and herdr |

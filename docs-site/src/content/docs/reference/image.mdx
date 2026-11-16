@@ -39,6 +39,7 @@ The image has these commands. The agent uses them. You can run them in `cf-openc
 | `cf-opencode-browse` | `cf-opencode-browse [--preview <port>]...` | Opens a remote browser session and prints its websocket address. See [Web search and browsing](/guides/browsing/). |
 | `cf-opencode-preview` | `cf-opencode-preview <port>` | Prints the preview URL of a dev server, and checks that the port listens on `0.0.0.0`. See [Preview a dev server](/guides/preview/). |
 | `cf-opencode-notify` | `cf-opencode-notify "<text>"` | Sends a note to the notify URL. See [Hand off a task](/guides/hand-off-a-task/#get-a-message-when-a-task-ends). |
+| `cf-opencode-store` | `cf-opencode-store put <file> [name]`, `get [-f] <name> [path]`, `list [prefix]`, `rm <name>` | Saves and reads files in the store, when `store` is on. A file that the agent saves is named `<workspace>/<name>`. See [Share files through the store](/guides/hand-off-a-task/#through-the-store). |
 
 `opencode` on the `PATH` is a small wrapper. It adds the model config, then runs the real OpenCode binary.
 

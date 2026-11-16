@@ -51,6 +51,14 @@ A preview shows a dev server that the agent runs. Treat its pages as code you di
 - The receiving workspace unpacks as `user`, never as root, into a stage folder. The Worker moves the result into place only after the whole stream passed its check.
 - A workspace path must stay under `/home/user`. The Worker checks the path, and the workspace checks it again after it follows symlinks.
 
+## The store
+
+The store is off by default (`store`). When it is on:
+
+- The R2 bucket is a binding of the Worker. No R2 key enters a workspace. `cf-opencode-store` sends its requests to the same intercepted host as the models.
+- Every agent in the install can read every file in the store. An agent writes and removes only names under `<its workspace>/`, so it cannot replace a file that you or another workspace put there. Put no secret in the store.
+- `lockdown` does not turn the store off. The store is in your account, not on the internet.
+
 ## Handed-off tasks, MCP and A2A
 
 - Task text goes to the workspace in the environment of a script, never in a command line.

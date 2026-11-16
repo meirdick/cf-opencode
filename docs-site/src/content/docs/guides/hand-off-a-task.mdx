@@ -400,7 +400,46 @@ How a copy works:
 - Only the control token can start a copy. An agent in a workspace has the workspace password, which reaches no other workspace.
 - One copy moves at most 4 GB and 200,000 entries, and runs at most 30 minutes. See [Limits](/limits/).
 
-An agent in a workspace cannot run `cp`. Run it yourself before the task starts, and name the path in the task.
+An agent in a workspace cannot run `cp`. Run it yourself before the task starts, and name the path in the task. To let agents share files during a task, turn on the store.
+
+### Through the store
+
+The store is an R2 bucket in your account. It is off by default. Turn it on in `~/.cf-opencode/config.json`, then upgrade:
+
+```json
+{ "store": true }
+```
+
+```sh
+cf-opencode upgrade
+```
+
+`upgrade` makes the bucket `<worker>-store` (for example `cf-opencode-store`) and binds it to the Worker. The Cloudflare login needs R2 access: an API token needs Workers R2 Storage Write, and R2 must be on in the account.
+
+On your machine, a `store:<name>` side copies a file in or out:
+
+```sh
+cf-opencode cp app:export.json.gz store:              # the name is export.json.gz
+cf-opencode cp store:export.json.gz api:data/
+cf-opencode cp ./seed.sql store:seeds/seed.sql        # from this machine, at most 100 MB
+cf-opencode store                                     # list the files
+cf-opencode store rm seeds/seed.sql                   # remove one
+```
+
+In a workspace, the agent uses `cf-opencode-store`:
+
+```sh
+cf-opencode-store put export.json.gz     # saved as <this workspace>/export.json.gz
+cf-opencode-store list
+cf-opencode-store get app/export.json.gz  # saved as ./export.json.gz
+```
+
+- `cf-opencode-store` needs `ai` on, which is the default: it uses the same intercepted host as the models. A workspace made before this version has no `cf-opencode-store` until you run `cf-opencode rebuild <workspace>`.
+- The store holds files, not folders. Pack a folder first: `tar czf data.tgz data`.
+- An agent saves a file under its own workspace name, and removes only those files. It reads every file in the store.
+- A file from an agent is at most 100 MB. A copy from a workspace with `cf-opencode cp` takes up to 4 GB.
+- Files in the store outlive a pause, a `delete` and an `uninstall`. R2 bills for the storage per GB-month and for each request, with a free monthly allowance. See [R2 pricing](https://developers.cloudflare.com/r2/pricing/). Remove what you do not need with `cf-opencode store rm`.
+- Put no secret in the store. Every agent of the install can read it.
 
 ### Through Git
 

@@ -353,6 +353,21 @@ An existing folder, or a path that ends in `/`, takes the item inside it. A paus
 
 Limits: 4 GB and 200,000 entries in one copy, 30 minutes in each workspace, and 100 MB for a copy from this machine.
 
+With the store on (`store`), a side can be `store:<name>`. `store:` alone takes the name of the source. The store holds files, not folders.
+
+### store
+
+```text
+cf-opencode store [rm <name>...]
+```
+
+List the files in the store, with size and age, or remove files. The store is off unless `store` is `true`. See [Share files through the store](/guides/hand-off-a-task/#through-the-store).
+
+| Flag | Meaning |
+| --- | --- |
+| `--prefix <text>` | List only the names that start with the text. |
+| `--json` | One JSON document with the list. |
+
 ## Terminal
 
 ### shell

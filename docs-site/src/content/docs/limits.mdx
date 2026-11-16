@@ -41,8 +41,9 @@ Everything is billed to your Cloudflare account. cf-opencode has no fee.
 | Workers AI models (`@cf/...`) | Workers Paid usage |
 | Third-party models through AI Gateway | AI Gateway credits (Unified Billing) |
 | Browser sessions | Per browser hour, through Browser Run |
+| The store (`store`, off by default) | R2 storage per GB-month and operations; no egress fee |
 
-For current prices, see the Cloudflare pricing pages for [Containers](https://developers.cloudflare.com/containers/pricing/), [Workers AI](https://developers.cloudflare.com/workers-ai/platform/pricing/) and [Browser Run](https://developers.cloudflare.com/browser-run/).
+For current prices, see the Cloudflare pricing pages for [Containers](https://developers.cloudflare.com/containers/pricing/), [Workers AI](https://developers.cloudflare.com/workers-ai/platform/pricing/), [Browser Run](https://developers.cloudflare.com/browser-run/) and [R2](https://developers.cloudflare.com/r2/pricing/).
 
 How to keep costs low:
 
@@ -50,6 +51,7 @@ How to keep costs low:
 - `maxAwakeHours` stops a workspace that is awake too long, even while it works.
 - Run `cf-opencode pause <workspace>` to stop a workspace now.
 - A browser session closes after 10 minutes without activity.
+- Files in the store stay until you remove them, also after a workspace is deleted. List them with `cf-opencode store`. Remove one with `cf-opencode store rm <name>`.
 - Run `cf-opencode uninstall --yes` to delete the Worker, the container application and the images. Snapshot data stays up to 30 days; Cloudflare has no API to delete it. Files in `~/.cf-opencode` stay, except `install.json`.
 
 Containers need the Workers Paid plan.

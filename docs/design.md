@@ -442,6 +442,23 @@ another. The Worker route (`copy-api.ts`) drives it, so the CLI sees progress li
 - No command in the workspace. An agent that could pull from another workspace would break the first rule, and a
   grant that the owner opens with the control token is new state and a new auth path.
 
+## The store
+
+`store: true` adds an R2 bucket, `<worker>-store`, for files that outlive a workspace. Off by default: it is a
+cost that grows, and a place every agent can read.
+
+- init makes the bucket with `wrangler r2 bucket create` before the deploy, then adds an `r2_buckets` binding
+  with that name to the copied `wrangler.jsonc`. A fixed name, not wrangler's provisioning: uninstall and the
+  docs must name it. uninstall keeps it and says how to delete it; its files are the user's.
+- The CLI reaches it through `/v1` (`store:` sides of `cp`, `cf-opencode store`). A workspace side goes through
+  the cp path and the tar guard; the store holds files only. R2 needs the length of a stream, so the Worker
+  holds back the last chunk until the guard has checked the end of the archive.
+- The agent reaches it through the intercepted AI host (`cf-opencode-store`), as `cf-opencode-notify` does. No
+  R2 key enters the container. It reads every name, and writes and removes only `<its workspace>/…`, so it
+  cannot replace a file of the user or of another workspace. The workspace id comes from the egress props,
+  which only the Worker sets. One upload is at most 100 MB, the documented limit for one request body.
+- lockdown does not turn it off: the bucket is in the account, not on the internet.
+
 ## Rebuild, not in-place upgrades
 
 Cloudflare snapshots are tied to the image they came from, so an upgrade never
