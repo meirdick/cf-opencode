@@ -79,6 +79,42 @@ describe("result record", () => {
     expect(list).toContain("! ended with commits that are not pushed");
   });
 
+  it("shows a task's long jobs; a task with a job at work is running, job running", () => {
+    const text = renderResult(
+      {
+        ...base,
+        state: "running",
+        jobs: [
+          { id: "job-abc123", name: "npm run", state: "running" },
+          { id: "job-abc122", name: "import", state: "failed", exit: 2 },
+          { id: "job-abc121", name: "train", state: "timeout", exit: 143 },
+        ],
+      },
+      { now },
+    );
+    expect(text).toContain("State      running, job running");
+    expect(text).toContain("Job        job-abc123 npm run: running");
+    expect(text).toContain("Job        job-abc122 import: failed, exit 2");
+    expect(text).toContain("Job        job-abc121 train: stopped at its maximum run time, exit 143");
+    const list = renderTasks(
+      {
+        rows: [
+          {
+            id: "ses_1",
+            workspace: "app",
+            title: "a",
+            started: now,
+            state: "running",
+            jobs: [{ id: "job-abc123", name: "npm run", state: "running" }],
+          },
+        ],
+        workspaces: [{ id: "app", live: true }],
+      },
+      now,
+    );
+    expect(list).toMatch(/ses_1\s+running, job\s/);
+  });
+
   it("shows the automatic reply: sent, or not sent and why", () => {
     const sent = renderResult(
       { ...base, autoReply: { at: "2026-11-12T11:50:00Z", sent: true, found: "2 commits not pushed" } },

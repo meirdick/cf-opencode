@@ -124,6 +124,12 @@ const RESULT_SCHEMA = {
       items: { type: "string" },
       description: "Processes the task left running in the checkout. The next pause stops them.",
     },
+    jobs: {
+      type: "array",
+      items: { type: "object" },
+      description:
+        "Long jobs the task started with cf-opencode-job: id, name, state (running, done, failed, timeout, stopped) and exit. While one runs, the task is running.",
+    },
     autoReply: {
       type: "object",
       description:

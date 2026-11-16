@@ -44,6 +44,16 @@ export interface RemoteTask {
   unpushed?: number;
   /** Processes the task left running in the checkout. From a Worker of 0.3 or later. */
   processes?: string[];
+  /** Long jobs the task started (cf-opencode-job). From a Worker of 0.4 or later. */
+  jobs?: RemoteJob[];
+}
+
+/** A long job of a task, as the Worker keeps it. */
+export interface RemoteJob {
+  id: string;
+  name: string;
+  state: "running" | "done" | "failed" | "timeout" | "stopped";
+  exit?: number;
 }
 
 /** The result record the Worker builds (worker/src/orb/task-result.ts). */
@@ -59,6 +69,7 @@ export interface TaskResult {
   changedFiles?: string[];
   unpushed?: number;
   processes?: string[];
+  jobs?: RemoteJob[];
   question?: string;
   error?: string;
   structured?: unknown;

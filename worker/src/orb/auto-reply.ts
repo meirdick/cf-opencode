@@ -66,7 +66,7 @@ export function autoReplyText(t: Pick<TaskRecord, "unpushed" | "processes" | "br
   }
   if (t.processes?.length)
     lines.push(
-      `- These processes still run in the checkout: ${t.processes.map((p) => `\`${p}\``).join(", ")}. This machine pauses some minutes after your last message, and the pause stops them. Do not end your turn while a process that you need runs: wait for it in your turn, or stop it.`,
+      `- These processes still run in the checkout: ${t.processes.map((p) => `\`${p}\``).join(", ")}. This machine pauses some minutes after your last message, and the pause stops them. Do not end your turn while a process that you need runs: wait for it in your turn, or stop it. For a job longer than a few minutes, run it with \`cf-opencode-job start -- <command>\` and end your turn: you get a message when it ends.`,
     );
   lines.push(
     t.schema === undefined

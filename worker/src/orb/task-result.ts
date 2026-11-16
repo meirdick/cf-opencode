@@ -1,6 +1,7 @@
 // The result record of a handed-off task: one stable object for `tasks <session> --json`, `run --wait
 // --json`, the notify URL POST, and any other client of the task API. Built from the saved task only, so a
 // paused workspace answers it too.
+import type { JobFact } from "./jobs";
 import type { Commit, TaskRecord, TaskState } from "./tasks";
 
 export interface TaskResult {
@@ -20,6 +21,11 @@ export interface TaskResult {
   unpushed?: number;
   /** Processes the task left running in the checkout. The next pause stops them. Absent when there are none. */
   processes?: string[];
+  /**
+   * The long jobs (cf-opencode-job) the task started. A job is not in `processes`. While one runs, or its end
+   * message has not reached the agent, the task is running. Absent when there are none.
+   */
+  jobs?: { id: string; name: string; state: JobFact["state"]; exit?: number }[];
   /** The open permission request or form, when the state is waiting. */
   question?: string;
   /** Why the task failed or stopped. */
@@ -58,6 +64,13 @@ export function taskResult(workspace: string, t: TaskRecord): TaskResult {
   if (t.changedFiles) r.changedFiles = t.changedFiles;
   if (t.unpushed) r.unpushed = t.unpushed;
   if (t.processes?.length) r.processes = t.processes;
+  if (t.jobs?.length)
+    r.jobs = t.jobs.map((j) => ({
+      id: j.id,
+      name: j.name,
+      state: j.state,
+      ...(j.exit !== undefined ? { exit: j.exit } : {}),
+    }));
   if (t.state === "waiting" && t.question) r.question = t.question;
   if ((t.state === "failed" || t.state === "stopped") && t.reason) r.error = t.reason;
   if (t.structured !== undefined) r.structured = t.structured;

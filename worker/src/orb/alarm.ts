@@ -319,18 +319,22 @@ export interface Activity {
   /** Epoch ms of the last output on any terminal in the workspace; 0 when none. */
   ptyAt: number;
   agent: "busy" | "waiting" | "idle" | "unknown";
+  /** Long jobs (cf-opencode-job) that run inside their maximum run time. */
+  jobs: number;
 }
 
 export function parseActivity(stdout: string): Activity {
   const pty = Number(/^pty (\d+)$/m.exec(stdout)?.[1] ?? 0);
   const agent = /^agent (busy|waiting|idle|unknown)$/m.exec(stdout)?.[1] as Activity["agent"] | undefined;
-  return { ptyAt: Number.isFinite(pty) ? pty * 1000 : 0, agent: agent ?? "unknown" };
+  const jobs = Number(/^jobs (\d+)$/m.exec(stdout)?.[1] ?? 0);
+  return { ptyAt: Number.isFinite(pty) ? pty * 1000 : 0, agent: agent ?? "unknown", jobs };
 }
 
 /**
  * The idle pause. An awake workspace pauses after idlePauseMinutes without use, where use is any of: a
  * request through the Worker, a terminal frame, an OpenCode session running (the agent works on with the
- * laptop closed), or output on a terminal (tmux and herdr panes, ssh sessions). The idle time counts from the
+ * laptop closed), a long job (cf-opencode-job) inside its maximum run time, or output on a terminal (tmux
+ * and herdr panes, ssh sessions). The idle time counts from the
  * last of those, so a long task pauses idlePauseMinutes after it finishes, not when it finishes. A session
  * waiting on a permission or a question is not work. `password` is the workspace password, which lets the
  * probe ask opencode; without it, only the other signals count. Returns true when it paused.
@@ -346,7 +350,7 @@ export async function idleTick(ctx: OrbContext, password: string | undefined): P
   // a workspace woken by the control API and never used through the Worker still pauses.
   const woke = Date.parse(rec.awakeSince ?? "");
   let last = Math.max(Number.isFinite(stored) ? stored : 0, Number.isFinite(woke) ? woke : 0) || nowMs;
-  let seen: Activity = { ptyAt: 0, agent: "unknown" };
+  let seen: Activity = { ptyAt: 0, agent: "unknown", jobs: 0 };
   try {
     const [cmd, opts] = sh(ACTIVITY_SH, {
       PORT: String(config.serverPort),
@@ -356,14 +360,14 @@ export async function idleTick(ctx: OrbContext, password: string | undefined): P
   } catch (e) {
     ctx.say(`activity probe failed: ${errText(e)}`);
   }
-  if (seen.agent === "busy") last = nowMs;
+  if (seen.agent === "busy" || seen.jobs > 0) last = nowMs;
   if (seen.ptyAt > last) last = Math.min(seen.ptyAt, nowMs);
   if (last !== stored) await kv.put(LAST_USE_KEY, iso(last));
   if (nowMs - last < idleMs) return false;
   const why =
     seen.agent === "waiting"
       ? `the agent waited ${config.idlePauseMinutes} min for an answer`
-      : `idle for ${config.idlePauseMinutes} min (no client, no agent work, no terminal output)`;
+      : `idle for ${config.idlePauseMinutes} min (no client, no agent work, no job, no terminal output)`;
   ctx.say(`${why}; pausing`);
   await runPause(ctx, { op: "pause" }, why);
   return true;

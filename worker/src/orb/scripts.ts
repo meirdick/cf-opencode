@@ -10,6 +10,7 @@
 // It is on the root disk, so it survives snapshots; boot_id tells a restore apart from a retry.
 //
 // Template literals: "\${" is a literal "${" for bash; "\\" is one backslash.
+import { JOBS_PY } from "./jobs";
 
 /** Redaction rules shared by the Worker (redact) and the scripts. Order matters. */
 const RULES: ReadonlyArray<readonly [RegExp, string]> = [
@@ -77,6 +78,8 @@ is_server() {
 export const SERVE_SH = `${PRELUDE}
 PORT=\${PORT:-4096}
 DIR=\${DIRECTORY:-/home/user/project}
+# cf-opencode-job sends a job's end message to OpenCode on this port. PORT is not in the agent's env.
+printf '%s\n' "$PORT" > "$D/port"
 if [ -n "\${CF_OPENCODE_WORKSPACE:-}" ]; then
   printf '%s\n' "$CF_OPENCODE_WORKSPACE" > /home/user/.cf-opencode-workspace
 fi
@@ -130,9 +133,23 @@ The user made it from their machine with the cf-opencode CLI.
   Use it for a blocker or a result they must see soon, not for progress.
 - The disk is saved when the workspace is idle. Processes do not survive that; files do. The workspace is idle
   some minutes after your last message when nobody is attached, also while a process you started still runs.
+CF_OPENCODE_NOTES
+  # An older image has no cf-opencode-job: tell the agent only what works here.
+  if command -v cf-opencode-job >/dev/null 2>&1; then
+    cat >> "$NOTES" <<'CF_OPENCODE_NOTES'
+- Long jobs: for a command that runs longer than a few minutes (a build, an import, a test run), run
+  \`cf-opencode-job start -- <command>\`, then end your turn. You get a message in this session when the job
+  ends, with its exit code and the end of its log. Then go on: check the result, commit, push. A running job
+  keeps the workspace awake, up to its maximum run time (\`--max-minutes\`, default 120). \`cf-opencode-job
+  list\`, \`status <id>\`, \`logs <id> -f\`, \`wait <id>\` and \`stop <id>\` show and control jobs. Make the job
+  able to continue from where it stopped: a pause at maxAwakeHours stops it.
+CF_OPENCODE_NOTES
+  else
+    cat >> "$NOTES" <<'CF_OPENCODE_NOTES'
   For a long job, stay in your turn: start it with its output in a log file, then check it in a loop with
   \`sleep\` until it ends. Make the job able to continue from where it stopped.
 CF_OPENCODE_NOTES
+  fi
 fi
 SHA=\${PASSWORD_SHA:-unknown}
 mkdir -p "$DIR"
@@ -321,6 +338,7 @@ echo ready
  *   agent <state> busy: an OpenCode session is running. waiting: every running session waits on a
  *                 permission or a question, which is a person's turn, not work. idle. unknown: no password,
  *                 or opencode did not answer.
+ *   jobs <n>      long jobs (cf-opencode-job) that run and are inside their maximum run time.
  */
 export const ACTIVITY_SH = `
 exec python3 - <<'PY'
@@ -332,6 +350,9 @@ for p in glob.glob("/dev/pts/[0-9]*"):
     except OSError:
         pass
 print("pty %d" % pty)
+${JOBS_PY}
+import time
+print("jobs %d" % sum(1 for j in jobs() if j.get("state") == "running" and float(j.get("deadline") or 0) > time.time()))
 state = "unknown"
 pw = os.environ.get("OPENCODE_SERVER_PASSWORD")
 if pw:
