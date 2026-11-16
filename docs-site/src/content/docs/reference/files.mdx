@@ -9,7 +9,7 @@ The CLI keeps its state in `~/.cf-opencode`. Files that hold a secret have mode 
 
 | Path | Secret | Content |
 | --- | --- | --- |
-| `~/.cf-opencode/install.json` | No | The Worker URL, the Worker name and the account ID. Mode 600. |
+| `~/.cf-opencode/install.json` | No | The Worker URL, the Worker name, the account ID, and the Custom Domain from `init --domain`. Mode 600. To change the URL, run `cf-opencode init --url <url>`; do not edit the file. |
 | `~/.cf-opencode/config.json` | No | Your settings. You write it; `init` and `upgrade` read it and apply it. The CLI never writes it. See [Configuration](/reference/configuration/). |
 | `~/.cf-opencode/skills.json` | No | The default skill list, as `{ "names": [...] }`. `cf-opencode skills default` writes it. `connect`, `run` and `skills push` read it. It does not exist until you set a list. See [Skills in a workspace](/guides/skills/). |
 | `~/.cf-opencode/control-token` | Yes | The control token. Mode 600. |

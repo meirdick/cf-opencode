@@ -91,6 +91,17 @@ from the environment or `--token-file`, never from an argument.
 app and image tags); `--yes` deletes them. On a second machine, copy the control
 token file and run `cf-opencode init --url <worker url>`.
 
+To use your own hostname, pass `--domain code.example.com` to `init` or
+`upgrade`. The zone must be in the account. The Worker gets a Custom Domain
+there, the workers.dev URL stays on, and the install records
+`https://code.example.com`; `upgrade` keeps it. Before the deploy, `init`
+checks the zone and refuses a hostname that has DNS records or belongs to
+another Worker, unless `--adopt`.
+
+If the account's workers.dev subdomain changes, the recorded URL stops working.
+`cf-opencode doctor` finds the Worker and prints the fix,
+`cf-opencode init --url <new url>`, which deploys nothing.
+
 ## Use
 
 From a git checkout:
@@ -249,7 +260,7 @@ Other commands:
 | `cf-opencode skill [--install]` | Print the handoff skill for agents, or install it |
 | `cf-opencode notify-url [--remove]` | Set where the Worker POSTs task results and notes; a Worker secret |
 | `cf-opencode notify-key` | Print the key that signs the POSTs to the notify URL |
-| `cf-opencode doctor` | Check Node, OpenCode, ssh, the token, the Worker and its bindings. Starts nothing |
+| `cf-opencode doctor` | Check Node, OpenCode, ssh, the Worker URL, the token, the Worker and its bindings. Starts nothing |
 | `cf-opencode upgrade` | Redeploy the Worker and image from this CLI version |
 | `cf-opencode uninstall [--yes]` | List, then delete, the Worker, container app and images |
 

@@ -67,6 +67,25 @@ a checkout: the CLI package carries the Worker source and the image
   `~/.cf-opencode/deploy.log`.
 - It is done when the Worker accepts the control token, not when wrangler exits.
 
+`--domain <hostname>` goes into the copied `wrangler.jsonc` as a route with
+`custom_domain: true`, like the name. `workers_dev: true` goes with it: wrangler
+turns workers.dev off for a config with routes, and other machines may use that
+URL. The install records `https://<hostname>` and the hostname, so `upgrade` and a
+rerun keep it. Without a terminal, wrangler replaces DNS records on the hostname
+and takes it from another Worker without a question. So preflight reads the
+account first (zone, Custom Domains, DNS records; the zone's own nameservers when
+the login cannot read DNS) and refuses both without `--adopt`. The deploy is
+checked on the workers.dev URL; a new Custom Domain that does not answer yet is a
+`!` line, not a failure.
+
+The URL is not fixed: a renamed workers.dev subdomain moves it. `init --url
+<url>` takes any https origin and keeps the record's account and hostname, so it
+is the repair with no deploy. When the recorded URL does not answer, `doctor`
+looks the Worker up and asks the account for its workers.dev subdomain, and
+prints `init --url` with the URL that accepts the control token. Nothing in the
+Worker depends on its hostname: the Origin checks, cookies, preview links and
+the A2A card all use the request's own origin.
+
 `upgrade` is init for the recorded install. `uninstall` is a dry run without
 `--yes`; it decides whether the Worker is gone by looking it up, because
 `wrangler delete` can delete it and still exit 1.
@@ -162,7 +181,8 @@ password hash, spent tickets, and which public shares exist now.
   prefix (a same-origin Referer sends them back; hot reload's websocket has no
   Referer), and a preview page can read other previews the same browser is
   signed in to. A hostname for each preview fixes both and needs a custom
-  domain with wildcard DNS; it is the next step if users have one.
+  domain with wildcard DNS. `init --domain` gives the custom domain; the
+  wildcard hostname for each preview is the next step.
 - Public is explicit. `/public/<id>/<token>/` exists only after `preview
   --public`, which needs the control token: the agent has the workspace
   password, and must not be able to publish a port. The token is a 16-byte

@@ -24,6 +24,23 @@ The Worker reads its settings from the variable `CF_OPENCODE_CONFIG`, a JSON obj
 
 The CLI stops before the deploy when the file is not one JSON object. A value out of range passes the deploy; the Worker then returns a `Failed:` line that names the key. Correct the file, then run `cf-opencode upgrade` again.
 
+## The Worker hostname
+
+The hostname is not a key in the settings file. Set it with a flag:
+
+```sh
+cf-opencode upgrade --domain code.example.com
+```
+
+`init` and `upgrade` write it into the copied `wrangler.jsonc` as a Custom Domain route, and keep workers.dev on:
+
+```jsonc
+"workers_dev": true,
+"routes": [{ "pattern": "code.example.com", "custom_domain": true }],
+```
+
+`~/.cf-opencode/install.json` saves the hostname as `domain`, and the URL as `https://<hostname>`. Each later `upgrade` deploys the hostname again. See [Use your own hostname](/reference/cli/#use-your-own-hostname).
+
 ## Keys
 
 | Key | Default | Valid values | Meaning |
