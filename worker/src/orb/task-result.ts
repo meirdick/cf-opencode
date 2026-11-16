@@ -16,6 +16,8 @@ export interface TaskResult {
   commits?: Commit[];
   pullRequest?: string;
   changedFiles?: string[];
+  /** The git worktree of a `run --worktree` task. The facts above are read there. */
+  worktree?: string;
   /** Commits that are only on the workspace disk: no remote branch has them. Absent when there are none. */
   unpushed?: number;
   /** Processes the task left running in the checkout. The next pause stops them. Absent when there are none. */
@@ -51,6 +53,7 @@ export function taskResult(workspace: string, t: TaskRecord): TaskResult {
   if (t.commits) r.commits = t.commits;
   if (t.pullRequest) r.pullRequest = t.pullRequest;
   if (t.changedFiles) r.changedFiles = t.changedFiles;
+  if (t.worktree) r.worktree = t.worktree;
   if (t.unpushed) r.unpushed = t.unpushed;
   if (t.processes?.length) r.processes = t.processes;
   if (t.state === "waiting" && t.question) r.question = t.question;

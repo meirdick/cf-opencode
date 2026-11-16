@@ -53,6 +53,16 @@ function fakeBackend(over: Partial<TaskBackend> = {}): TaskBackend & { calls: un
       calls.push(["list", w]);
       return { rows: [{ ...rec(), workspace: "app" }], workspaces: [{ id: "app", live: true }] };
     },
+    pull: async (s, w, d) => {
+      calls.push(["pull", s, w, d]);
+      return {
+        workspace: w ?? "app",
+        branch: "fix",
+        commit: "a".repeat(40),
+        local: "created" as const,
+        checkedOut: false,
+      };
+    },
     ...over,
   };
 }
@@ -109,6 +119,7 @@ describe("MCP lifecycle", () => {
       "get_task",
       "wait_task",
       "list_tasks",
+      "pull_task",
     ]);
     // An old client gets no 2026-07-28 fields.
     expect(list.result.resultType).toBeUndefined();
@@ -127,7 +138,7 @@ describe("MCP lifecycle", () => {
     });
     const list = (await s.handle(modern("tools/list"))) as any;
     expect(list.result).toMatchObject({ resultType: "complete", cacheScope: "public" });
-    expect(list.result.tools).toHaveLength(4);
+    expect(list.result.tools).toHaveLength(5);
     const call = (await s.handle(modern("tools/call", { name: "list_tasks", arguments: {} }))) as any;
     expect(call.result).toMatchObject({ resultType: "complete", isError: false });
     expect(s.legacyVersion).toBeUndefined();
@@ -269,6 +280,52 @@ describe("MCP tools", () => {
         allowDirty: true,
       } satisfies StartArgs,
     ]);
+  });
+
+  it("passes branch, auto, newWorkspace and worktree on, and checks they are booleans", async () => {
+    const b = fakeBackend();
+    const s = server(b);
+    await legacy(s);
+    await s.handle(
+      req("tools/call", {
+        name: "handoff_task",
+        arguments: { task: "x", branch: "feat/a", auto: true, newWorkspace: true, worktree: false },
+      }),
+    );
+    expect(b.calls[0]).toEqual([
+      "start",
+      { task: "x", branch: "feat/a", allowDirty: false, auto: true, newWorkspace: true } satisfies StartArgs,
+    ]);
+    const bad = (await s.handle(
+      req("tools/call", { name: "handoff_task", arguments: { task: "x", worktree: "yes" } }, 2),
+    )) as any;
+    expect(bad.result.isError).toBe(true);
+    expect(bad.result.content[0].text).toMatch(/^Failed: worktree must be true or false — fix: /);
+  });
+
+  it("pull_task pulls the task's branch and returns what changed", async () => {
+    const b = fakeBackend();
+    const s = server(b);
+    await legacy(s);
+    const r = (await s.handle(
+      req("tools/call", { name: "pull_task", arguments: { session: "ses_1", directory: "sub" } }),
+    )) as any;
+    expect(b.calls[0]).toEqual(["pull", "ses_1", undefined, "sub"]);
+    expect(r.result.structuredContent).toMatchObject({ workspace: "app", branch: "fix", local: "created" });
+    expect(r.result.content[0].text).toContain("git switch fix");
+  });
+
+  it("says CLI flags in a fix as the tool arguments", async () => {
+    const { toolFix } = await import("../src/mcp-tools.js");
+    const e = toolFix(
+      new CliError(
+        "--new needs one more running workspace, and 3 of 3 run already (the maxRunning limit)",
+        "pause an idle workspace (cf-opencode pause <workspace>), run without --new, or raise maxRunning",
+      ),
+    );
+    expect(e.message).toBe(
+      "Failed: newWorkspace needs one more running workspace, and 3 of 3 run already (the maxRunning limit) — fix: pause an idle workspace (cf-opencode pause <workspace>), set newWorkspace to false, or raise maxRunning",
+    );
   });
 
   it("reports a bad argument or a failure as isError with one Failed line", async () => {

@@ -44,6 +44,10 @@ export interface RemoteTask {
   unpushed?: number;
   /** Processes the task left running in the checkout. From a Worker of 0.3 or later. */
   processes?: string[];
+  /** run --auto: the task runs with no permission prompts. */
+  auto?: boolean;
+  /** run --worktree: the git worktree of the task in the workspace. */
+  worktree?: string;
 }
 
 /** The result record the Worker builds (worker/src/orb/task-result.ts). */
@@ -57,6 +61,8 @@ export interface TaskResult {
   commits?: { sha: string; subject: string }[];
   pullRequest?: string;
   changedFiles?: string[];
+  /** The git worktree of a run --worktree task. */
+  worktree?: string;
   unpushed?: number;
   processes?: string[];
   question?: string;
@@ -144,6 +150,8 @@ export class ControlClient {
       model?: string;
       schema?: unknown;
       handoff?: { origin: "cli" | "mcp"; branch?: string; commit?: string; dirty?: boolean };
+      auto?: boolean;
+      worktree?: boolean;
     },
   ): Promise<{ task: RemoteTask }> {
     return this.send("POST", `/v1/workspaces/${encodeURIComponent(workspaceId)}/tasks`, body);

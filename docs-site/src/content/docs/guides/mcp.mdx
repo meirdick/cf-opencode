@@ -59,6 +59,7 @@ If npm could not install the CLI globally, use `npx cf-opencode mcp` as the comm
 | `get_task` | Reads one task. Wakes nothing. |
 | `wait_task` | Waits until the task is not `running`, for at most 280 seconds. |
 | `list_tasks` | Lists the tasks of the workspaces of this machine, newest first. Wakes nothing. |
+| `pull_task` | Fetches the branch of a task into the local checkout, as `tasks <ses_…> --pull` does. |
 
 ### handoff_task
 
@@ -70,6 +71,12 @@ If npm could not install the CLI globally, use `npx cf-opencode mcp` as the comm
 | `title` | No | The session title. |
 | `model` | No | `provider/model`. Default: the model of the workspace. |
 | `allowDirty` | No | `true` starts the task when the checkout has changes that are not committed or pushed. |
+| `branch` | No | Start from this branch as it is on `origin`, as `run --branch` does. The tool checks that `origin` has it. |
+| `auto` | No | `true`: the remote agent runs with no permission prompts, as `run --auto` does. |
+| `worktree` | No | `true`: start in a new git worktree in the workspace, as `run --worktree` does. |
+| `newWorkspace` | No | `true`: start in a new workspace, as `run --new` does. Not with `workspace` or `worktree`. |
+
+One task at a time uses the checkout of a workspace. When a task there is `running` or `waiting`, the tool fails with the fix `set newWorkspace or worktree to true`. See [Run two tasks at once](/guides/hand-off-a-task/#run-two-tasks-at-once).
 
 The tool runs the same preflight as `run`. The workspace clones from the Git remote. It does not see changes that are not committed or commits that are not pushed. The tool fails on these, unless `allowDirty` is `true`. See [The preflight](/guides/hand-off-a-task/#the-preflight).
 
@@ -90,6 +97,16 @@ The result has `workspace`, `session` and `task`. Give `session` to the other to
 | `timeoutSeconds` | No, `wait_task` only | 1 to 280. Default 240. |
 
 The result has `workspace`, `result`, `task`, `live` and `at`. `result` is the result record that `cf-opencode tasks <ses_…> --json` prints: the state, the summary, and the branch, commits, changed files and pull request that git read in the workspace. When an older Worker sends no result record, the server builds one from `task`. `live` is `false` when a paused workspace answered with its saved copy. `wait_task` also returns `timedOut`.
+
+### pull_task
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `session` | Yes | The `ses_…` ID of the task. |
+| `workspace` | No | The workspace. Default: the workspace of this machine that has the session. |
+| `directory` | No | The local git checkout. Default: the directory that the client started the server in. It must be that folder or a folder under it. |
+
+The result has `workspace`, `branch`, `commit`, `local` (`created`, `updated` or `current`) and `checkedOut`. The tool changes no file and no checked-out branch, except a fast-forward of the checked-out branch when it has no changes. See [Bring the branch to your checkout](/guides/hand-off-a-task/#bring-the-branch-to-your-checkout).
 
 Most MCP clients stop a tool call after 5 minutes. For this reason, `wait_task` waits 280 seconds or less. When `timedOut` is `true`, the task still runs. Call `wait_task` again.
 

@@ -58,7 +58,7 @@ export function parseHandoff(v: unknown): { handoff: Handoff } | { error: string
 }
 
 /** The block the session reads first. The workspace notes tell the agent what a "# Handoff" block means. */
-export function handoffBlock(h: Handoff, taskId?: string): string {
+export function handoffBlock(h: Handoff, taskId?: string, o: { worktree?: boolean } = {}): string {
   const start = h.branch
     ? `- Start point: branch \`${h.branch}\`${h.commit ? ` at commit \`${h.commit.slice(0, 12)}\`` : ""} on origin.`
     : "- Start point: the default branch on origin.";
@@ -71,6 +71,12 @@ export function handoffBlock(h: Handoff, taskId?: string): string {
     `This session was started by ${ORIGINS[h.origin]}. Nobody is attached to it and nobody reads it live.`,
     "",
     start,
+    ...(o.worktree
+      ? [
+          "- You work in your own git worktree, not in the workspace checkout. Another task can use that checkout at the same time.",
+          "- HEAD is detached at the start point. Make a new branch for your work before you commit: `git switch -c <name>`. Do not check out a branch that another worktree uses.",
+        ]
+      : []),
     local,
     "- Work alone. Ask a question only when you cannot continue: a question stops the task until the user opens this session.",
     "- Your last message is the result the caller reads. Keep it short and factual.",

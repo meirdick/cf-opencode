@@ -121,6 +121,11 @@ function withOpenCode(
 }
 
 const spawnReq = { op: "spawn" as const, password: "tok-123456" };
+/** A status answer where every task asked about is done, so the next task may use the checkout. */
+const allDone = (ids: string[]) => ({
+  active: [],
+  sessions: Object.fromEntries(ids.map((id) => [id, { found: true, outcome: "succeeded" }])),
+});
 
 describe("startTask", () => {
   it("creates a session at the workspace directory with the prompt, and keeps it in the list", async () => {
@@ -159,7 +164,7 @@ describe("startTask", () => {
   it("titles a task without --title from its first line, and keeps the newest first", async () => {
     const h = makeOrbCtx();
     let n = 0;
-    withOpenCode(h, { start: () => ({ id: `ses_${++n}`, title: "" }) });
+    withOpenCode(h, { start: () => ({ id: `ses_${++n}`, title: "" }), status: allDone });
     await runSpawn(h.newOp(), spawnReq);
     await startTask(h.ctx, { text: "first\nmore detail" });
     const r = await startTask(h.ctx, { text: "second" });
@@ -200,8 +205,11 @@ describe("readTasks", () => {
   it("refreshes the states from a running workspace", async () => {
     const h = makeOrbCtx();
     let n = 0;
-    let answer = status({});
-    withOpenCode(h, { start: () => ({ id: `ses_${++n}`, title: "" }), status: () => answer });
+    let answer: unknown;
+    withOpenCode(h, {
+      start: () => ({ id: `ses_${++n}`, title: "" }),
+      status: (ids) => answer ?? allDone(ids),
+    });
     await runSpawn(h.newOp(), spawnReq);
     await startTask(h.ctx, { text: "one" });
     await startTask(h.ctx, { text: "two" });

@@ -35,13 +35,56 @@ Open:   cf-opencode connect my-app --session ses_4f2a…
 
 `run` does these steps:
 
-1. It checks the checkout. See [The preflight](#the-preflight).
+1. It checks the checkout, or with `--branch` that `origin` has the branch. See [The preflight](#the-preflight).
 2. It wakes the workspace, as `cf-opencode connect --no-attach` does.
 3. It records the commit that the workspace checkout is on (`HEAD`). Commits after it are the task's.
 4. It starts a new OpenCode session in the workspace, with your task as the first message.
 5. It prints the session ID and returns. It does not wait.
 
 The session runs in `opencode serve` in the workspace. The workspace stays awake while the agent works. It pauses `idlePauseMinutes` after the agent stops. See [Idle pause](/concepts/how-it-works/#idle-pause).
+
+## Start from another branch
+
+By default the task starts from the branch of your checkout, as it is on `origin`. `--branch <name>` starts it from another branch on `origin`:
+
+```sh
+cf-opencode run "Fix the flaky date test" --branch release/2.4
+```
+
+With `--branch`, the [preflight](#the-preflight) asks `origin` for the branch (`git ls-remote`). The state of your checkout does not matter then: changes that are not committed and a branch that is not pushed do not stop the task. When `origin` does not answer, the branch from your last `git fetch` decides.
+
+## Run two tasks at once
+
+One task at a time uses the checkout of a workspace. Two agents in one checkout change the same files. When a task in the checkout is `running` or `waiting`, a second `run` fails before it starts a session:
+
+```text
+Failed: task ses_4f2a… is running in the checkout of workspace my-app; two tasks in one checkout change the same files — fix: pass --new (a new workspace) or --worktree (a new git worktree in this workspace)
+```
+
+A `waiting` task counts, because its work is in the checkout and goes on after your answer. The fix then also gives the `--reply` command. A `stopped`, `done` or `failed` task does not count. The Worker does the check, in one queue for each workspace, so two `run` commands at the same time cannot both start.
+
+Give the second task its own checkout:
+
+- `--worktree` starts the task in a new git worktree in the same workspace, in `/home/user/worktrees`. The worktree starts at the branch on `origin` with a detached HEAD, and the agent makes a new branch for its work. The task's branch, commits, `unpushed` and `processes` are read in its worktree. The workspace checkout does not change. The worktree stays on the disk after the task. Remove it in the workspace with `git worktree remove <path>`.
+- `--new` starts the task in a new workspace, named `<checkout>-<short id>`, for example `my-app-3f9a1c`. It clones the branch from `origin`. It pauses when idle, like any other workspace, and it does not delete itself. Remove it with `cf-opencode delete <workspace>`.
+
+`--new` and `--worktree` cannot go together. `maxRunning` limits how many workspaces run at the same time. When `--new` needs one more, the error names that limit:
+
+```text
+Failed: --new needs one more running workspace, and 10 of 10 run already (the maxRunning limit) — fix: pause an idle workspace (cf-opencode pause <workspace>), run without --new, or raise maxRunning in ~/.cf-opencode/config.json and run cf-opencode upgrade
+```
+
+A worktree uses the CPU and memory of its workspace. Several worktree tasks in a small instance type are slow. `--new` gives each task its own container.
+
+## Run with no permission prompts
+
+By default, a permission request of the agent puts the task in `waiting` until a person answers it. `--auto` lets the agent run with no permission prompts:
+
+```sh
+cf-opencode run "Upgrade the test runner and fix what breaks" --auto
+```
+
+The Worker starts the session with a permission rule that allows each action, followed by the deny rules of the agents. A rule that denies an action still applies. When the Worker cannot read those rules, it answers each open permission request with "allow once" when it reads the task state, as `opencode run --auto` does. A question to you (a form) still puts the task in `waiting`. Default: off.
 
 ## Write the task
 
@@ -54,7 +97,7 @@ The agent did not see your local conversation. Put everything it needs in the ta
 
 `run` adds a fixed instruction to each task. It tells the agent to:
 
-1. start from your current branch as it is on `origin`,
+1. start from your current branch, or the `--branch`, as it is on `origin` (in a worktree: make a new branch first),
 2. commit the work if it changed files, on a new branch if it is on the default branch,
 3. push the branch, also when the work is not complete,
 4. open a pull request if `gh auth status` succeeds,
@@ -125,6 +168,8 @@ The preflight reads the checkout on your machine, the one in the path of the mes
 
 The preflight does not fetch. It compares with the upstream as your machine last saw it.
 
+With `--branch <name>`, the preflight is different: it asks `origin` for that branch, and does not read the state of your checkout. See [Start from another branch](#start-from-another-branch).
+
 ## Check a task
 
 List the tasks of all your workspaces:
@@ -180,6 +225,8 @@ Changed    src/login.ts, test/login.test.ts
 
 Open: cf-opencode connect my-app --session ses_19c0…
 ```
+
+A task with `--worktree` also shows `Worktree` with its path in the workspace. A task with commits on a pushed branch shows the `Pull:` command. See [Bring the branch to your checkout](#bring-the-branch-to-your-checkout).
 
 `Branch`, `Commits`, `PR` and `Changed` are facts. The Worker reads them with `git` and `gh pr view` in the workspace. They do not come from the agent's message.
 
@@ -255,13 +302,35 @@ A task in `waiting` needs you. The result shows the question. Send your answer a
 cf-opencode tasks ses_4f2a… --reply "Use the staging database."
 ```
 
-`--reply` wakes a paused workspace. Add `--wait` or `--follow` to watch the task go on. A permission request is not answered this way. Open the session in your local OpenCode and answer there:
+`--reply` wakes a paused workspace. Add `--wait` or `--follow` to watch the task go on. A permission request is not answered this way. A task started with `--auto` does not stop for one. Open the session in your local OpenCode and answer there:
 
 ```sh
 cf-opencode connect my-app --session ses_4f2a…
 ```
 
 A waiting task does not keep the workspace awake. The workspace pauses after `idlePauseMinutes`. `connect` wakes it again with the question still open.
+
+## Bring the branch to your checkout
+
+```sh
+cf-opencode tasks ses_19c0… --pull
+```
+
+```text
+Fetched origin/fix-login (3f1c2a9) and made the local branch fix-login, which tracks it. Switch to it: git switch fix-login
+```
+
+`--pull` fetches the task's branch from `origin` into the checkout in the current directory. Then it makes a local branch that tracks it, or moves a local branch that is behind to the fetched commit. Your files and the branch you have checked out do not change. One exception: when the task's branch is the branch you have checked out, and it has no changes that are not committed, `--pull` moves it forward (`git merge --ff-only`).
+
+`--pull` fails, with the fix, when:
+
+- the task made no commit, or has no branch yet,
+- the task has commits that are only on the workspace disk (`unpushed`). The fix is the `--reply` that tells the agent to push,
+- `origin` does not have the branch,
+- the local branch and the task's branch both have commits that the other does not have. The fetch is done. Merge them yourself,
+- the current directory is a checkout of another repository than the workspace's.
+
+`--pull` goes alone. Wait first with `--wait`, then pull.
 
 ## Continue a stopped task
 
@@ -314,7 +383,8 @@ Without `--model`, the session uses the default model of the workspace. See [Mod
 
 `--json` makes stdout one JSON document. Progress goes to stderr.
 
-- `run --json`: `{"ok":true,"workspace":"…","session":"ses_…","title":"…","state":"running"}`.
+- `run --json`: `{"ok":true,"workspace":"…","session":"ses_…","title":"…","state":"running"}`. It adds `"newWorkspace": true` with `--new`, `"worktree": "<path>"` with `--worktree` and `"auto": true` with `--auto`.
+- `tasks <ses_…> --pull --json`: `{"ok":true,"workspace":"…","session":"ses_…","branch":"…","commit":"…","local":"created","checkedOut":false}`. `local` is `created`, `updated` or `current`.
 - `tasks --json`: the task list and, for each workspace, where its list came from. A task that ended and was not read has `"unseen": true`.
 - `tasks <ses_…> --json`, `--wait --json` and `run --wait --json`: the result record.
 
@@ -325,7 +395,8 @@ The result record:
 | `id`, `workspace`, `title` | The session ID, the workspace and the session title. |
 | `state` | `running`, `done`, `failed`, `waiting` or `stopped`. |
 | `summary` | The last message of the agent that has text (the end of it). |
-| `branch` | The branch of the workspace checkout. |
+| `branch` | The branch of the workspace checkout, or of the task's worktree. |
+| `worktree` | With `--worktree`: the path of the task's git worktree in the workspace. |
 | `commits` | `[{ "sha", "subject" }]`, the commits made after the task started that no other remote branch has. At most 30. An empty list means no commit. |
 | `pullRequest` | The pull request of the branch, when `gh pr view` finds one. |
 | `changedFiles` | The files of the task's commits, and the files with changes that are not committed. At most 100. |
@@ -366,7 +437,8 @@ A handed-off session gets a Handoff block before the task. See [What the agent k
 
 ## Limits
 
-- One workspace runs all the tasks of a checkout. Two tasks at the same time share the same files, and the same branch facts.
+- One task at a time uses the checkout of a workspace. A second task needs `--worktree` or `--new`. See [Run two tasks at once](#run-two-tasks-at-once).
+- A worktree from `--worktree` and a workspace from `--new` stay after the task. Remove them yourself.
 - `run` never sends local files. Uncommitted work stays on your laptop.
 - A pause stops processes. A task that still runs when the workspace pauses is `stopped`. Continue it with `connect`.
 - `commits` and `changedFiles` do not count what a merge or a new branch brings from the remote. A commit that two remote branches have is not counted.

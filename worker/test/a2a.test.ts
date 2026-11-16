@@ -275,7 +275,36 @@ describe("SendMessage", () => {
     expect(got?.model).toBe("a/b");
     expect(got?.text).toBe(closingInstruction("Fix the login form.\n\nKeep the API.", "feat/x"));
     expect(got?.text).toContain("Start from branch `feat/x`");
+    expect(got?.auto).toBeUndefined();
+    expect(got?.worktree).toBeUndefined();
     expect(d.slept).toEqual([]);
+  });
+
+  it("passes metadata.auto and metadata.worktree on, and refuses a value that is not a boolean", async () => {
+    let got: TaskInput | undefined;
+    const d = deps({
+      startTaskAwake: async (input) => {
+        got = input;
+        return { ok: true, task: task() };
+      },
+    });
+    const send = (meta: Record<string, unknown>) =>
+      handleRpc(
+        rpc("SendMessage", {
+          message: message({ workspace: "app", ...meta }, [{ text: "Fix it." }]),
+          configuration: { returnImmediately: true },
+        }),
+        "1.0",
+        d,
+      ) as Promise<any>;
+    await send({ auto: true, worktree: true, branch: "feat/x" });
+    expect(got).toMatchObject({ auto: true, worktree: true, handoff: { origin: "a2a", branch: "feat/x" } });
+    expect(got?.text).toContain("This worktree starts at `origin/feat/x` on a detached HEAD.");
+    expect(got?.text).not.toContain("check out `feat/x`");
+    got = undefined;
+    const bad = await send({ worktree: "yes" });
+    expect(bad.error.code).toBe(-32602);
+    expect(got).toBeUndefined();
   });
 
   it("blocks by default until the task leaves working", async () => {

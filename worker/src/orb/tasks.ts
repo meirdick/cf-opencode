@@ -71,6 +71,10 @@ export interface TaskRecord {
   notify?: PendingNotify;
   notified?: { at: string; status: number; state: TaskState };
   notifyError?: string;
+  /** `run --auto`: the session has no permission prompts (TASK_START_SH), and a read answers any left. */
+  auto?: boolean;
+  /** `run --worktree`: the git worktree the task works in. Absent: the workspace checkout. */
+  worktree?: string;
 }
 
 export interface TaskList {
@@ -98,6 +102,10 @@ export interface TaskInput {
   schema?: unknown;
   /** Where the task came from. With it, the session gets a Handoff block before the task (task-context.ts). */
   handoff?: Handoff;
+  /** Start the session with no permission prompts. */
+  auto?: boolean;
+  /** Start the session in a new git worktree, from handoff.branch on origin. */
+  worktree?: boolean;
 }
 
 export type StartResult = { ok: true; task: TaskRecord } | { ok: false; status: number; error: string };
@@ -168,7 +176,7 @@ export function modelRef(model: string): { providerID: string; id: string } | un
 export function parseTaskInput(
   body: Record<string, unknown>,
 ): { input: TaskInput } | { error: string; fix: string } {
-  const { text, title, model, schema, handoff } = body;
+  const { text, title, model, schema, handoff, auto, worktree } = body;
   if (typeof text !== "string" || !text.trim())
     return { error: "text is empty", fix: 'send { text: "<task>" }' };
   if (text.length > MAX_TASK_CHARS)
@@ -195,6 +203,14 @@ export function parseTaskInput(
     if ("error" in h) return { error: h.error, fix: "send handoff: { origin, branch?, commit?, dirty? }" };
     input.handoff = h.handoff;
   }
+  for (const [key, v] of [
+    ["auto", auto],
+    ["worktree", worktree],
+  ] as const) {
+    if (v === undefined) continue;
+    if (typeof v !== "boolean") return { error: `${key} must be true or false`, fix: `send ${key}: true` };
+    if (v) input[key] = true;
+  }
   if (schema !== undefined) {
     if (JSON.stringify(schema).length > MAX_SCHEMA_CHARS)
       return { error: `the schema is over ${MAX_SCHEMA_CHARS} characters`, fix: "make the schema smaller" };
@@ -220,7 +236,38 @@ async function directoryOf(ctx: Ctx): Promise<string> {
   return (await loadOrb(ctx.kv))?.directory ?? "/home/user/project";
 }
 
-/** Start a session with the task as its first prompt, and keep it in the task list. Wakes nothing. */
+/** Where `run --worktree` makes its worktrees in the workspace. Outside the checkout, on the saved disk. */
+export const WORKTREE_PARENT = "/home/user/worktrees";
+
+/**
+ * The task that holds the workspace checkout, if any: one in the checkout (not in its own worktree) that runs
+ * or waits for an answer. A waiting task counts: its work is in the checkout, and it goes on after the answer.
+ * A stopped task does not: the workspace paused under it, and only a connect continues it.
+ */
+export function checkoutHolder(tasks: TaskRecord[]): TaskRecord | undefined {
+  return tasks.find((t) => !t.worktree && (t.state === "running" || t.state === "waiting"));
+}
+
+/** The one-line refusal for a second task in the checkout. The fix names the caller's own options. */
+export function busyError(id: string, t: TaskRecord, origin: Handoff["origin"] | undefined): string {
+  const how =
+    origin === "mcp"
+      ? "set newWorkspace or worktree to true"
+      : origin === "a2a"
+        ? "set metadata.worktree to true"
+        : "pass --new (a new workspace) or --worktree (a new git worktree in this workspace)";
+  const answer =
+    t.state === "waiting"
+      ? `, or answer it: cf-opencode tasks ${t.id} --workspace ${id} --reply "<text>"`
+      : "";
+  return `Failed: task ${t.id} is ${t.state} in the checkout of workspace ${id}; two tasks in one checkout change the same files — fix: ${how}${answer}`;
+}
+
+/**
+ * Start a session with the task as its first prompt, and keep it in the task list. Wakes nothing. The
+ * caller runs this in one queue for each workspace (session.ts), so the check for a task in the checkout
+ * and the start are one step: two clients cannot both pass the check.
+ */
 export async function startTask(ctx: Ctx, input: TaskInput): Promise<StartResult> {
   const id = ctx.workspaceId;
   if (!ctx.container.running)
@@ -235,6 +282,15 @@ export async function startTask(ctx: Ctx, input: TaskInput): Promise<StartResult
       status: 500,
       error: "Failed: the Worker has no CONTROL_TOKEN — fix: cf-opencode upgrade",
     };
+  if (!input.worktree) {
+    // The saved states first. They can be old, so a live read decides when they say the checkout is in use.
+    const saved = (await ctx.kv.get<Saved>(TASKS_KEY))?.tasks ?? [];
+    if (checkoutHolder(saved)) {
+      const live = (await captureTasks(ctx)) ?? { tasks: saved };
+      const holder = checkoutHolder(live.tasks);
+      if (holder) return { ok: false, status: 409, error: busyError(id, holder, input.handoff?.origin) };
+    }
+  }
   const password = await workspacePassword(ctx.env.CONTROL_TOKEN, id);
   const directory = await directoryOf(ctx);
   const model = input.model ? modelRef(input.model) : undefined;
@@ -247,9 +303,25 @@ export async function startTask(ctx: Ctx, input: TaskInput): Promise<StartResult
     },
     prompt: { text: input.text },
     // Added before the task as a message that does not start the agent. See TASK_START_SH.
-    ...(input.handoff ? { context: { text: handoffBlock(input.handoff), resume: false } } : {}),
+    ...(input.handoff
+      ? {
+          context: {
+            text: handoffBlock(input.handoff, undefined, { worktree: input.worktree === true }),
+            resume: false,
+          },
+        }
+      : {}),
+    ...(input.auto ? { auto: true } : {}),
+    ...(input.worktree
+      ? {
+          worktree: {
+            parent: WORKTREE_PARENT,
+            ...(input.handoff?.branch ? { branch: input.handoff.branch } : {}),
+          },
+        }
+      : {}),
   };
-  let out: { id?: unknown; title?: unknown; base?: unknown; error?: unknown } | undefined;
+  let out: { id?: unknown; title?: unknown; base?: unknown; error?: unknown; worktree?: unknown } | undefined;
   try {
     const [cmd, opts] = sh(TASK_START_SH, {
       PORT: String(ctx.config.serverPort),
@@ -257,7 +329,8 @@ export async function startTask(ctx: Ctx, input: TaskInput): Promise<StartResult
       TASK: JSON.stringify(spec),
       DIRECTORY: directory,
     });
-    const r = await ctx.container.exec(cmd, { ...opts, timeoutMs: 45_000 });
+    // A worktree fetches from origin first.
+    const r = await ctx.container.exec(cmd, { ...opts, timeoutMs: input.worktree ? 120_000 : 45_000 });
     out = r.exitCode === 0 ? (JSON.parse(r.stdout.trim()) as typeof out) : undefined;
     if (!out) throw new Error(oneLine(r.stderr || `exit ${r.exitCode}`, 200));
   } catch (e) {
@@ -271,12 +344,32 @@ export async function startTask(ctx: Ctx, input: TaskInput): Promise<StartResult
   if (typeof out.id !== "string" || !SESSION_ID_RE.test(out.id) || out.error) {
     const why = redactWith(password, oneLine(String(out.error ?? "no session id"), 300));
     const made = typeof out.id === "string" ? ` (session ${out.id} has no task)` : "";
+    if (/^worktree: /.test(why))
+      return {
+        ok: false,
+        status: 502,
+        error: `Failed: no worktree for the task: ${why.slice(10)} — fix: push the branch to origin, or run without --worktree`,
+      };
     return {
       ok: false,
       status: 502,
       error: `Failed: OpenCode refused the task: ${why}${made} — fix: check --model, then retry`,
     };
   }
+  // OpenCode may put the worktree in its own folder; any absolute path that is not the checkout is the task's.
+  const worktree =
+    input.worktree &&
+    typeof out.worktree === "string" &&
+    /^\/[^\0\n]{1,299}$/.test(out.worktree) &&
+    out.worktree !== directory
+      ? out.worktree
+      : undefined;
+  if (input.worktree && !worktree)
+    return {
+      ok: false,
+      status: 502,
+      error: `Failed: the start script made no worktree (session ${out.id} has no task) — fix: cf-opencode logs ${id}`,
+    };
   const now = ctx.clock.now();
   const task: TaskRecord = {
     id: out.id,
@@ -286,6 +379,8 @@ export async function startTask(ctx: Ctx, input: TaskInput): Promise<StartResult
     state: "running",
     ...(typeof out.base === "string" && /^[0-9a-f]{40}$/.test(out.base) ? { base: out.base } : {}),
     ...(input.schema !== undefined ? { schema: input.schema } : {}),
+    ...(input.auto ? { auto: true } : {}),
+    ...(worktree ? { worktree } : {}),
   };
   const saved = (await ctx.kv.get<Saved>(TASKS_KEY)) ?? { tasks: [] };
   await ctx.kv.put(TASKS_KEY, {
@@ -444,25 +539,43 @@ export function applyFacts(tasks: TaskRecord[], facts: GitOut, ids: Set<string>)
   });
 }
 
-/** Run TASK_GIT_SH for these tasks. undefined when it did not answer; facts are a nice to have. */
-async function readFacts(ctx: Ctx, tasks: TaskRecord[], gh: boolean): Promise<GitOut | undefined> {
+/**
+ * Run TASK_GIT_SH for these tasks, once for each checkout: the workspace checkout, and the worktree of each
+ * `run --worktree` task. The branch, unpushed commits and processes are facts of one checkout, so each task
+ * gets those of its own. undefined when no run answered; facts are a nice to have.
+ */
+async function readFacts(ctx: Ctx, tasks: TaskRecord[], gh: boolean): Promise<GitOut[] | undefined> {
   const want = tasks.filter((t) => t.base);
   if (want.length === 0) return undefined;
-  try {
-    const [cmd, opts] = sh(TASK_GIT_SH, {
-      DIRECTORY: await directoryOf(ctx),
-      TASKS: JSON.stringify(
-        want.map((t) => ({ id: t.id, base: t.base, since: Math.floor(t.started / 1000) })),
-      ),
-      GH: gh ? "1" : "0",
-      GH_TOKEN: "cf-opencode-egress",
-    });
-    // Bounded: a pause runs this before its snapshot.
-    const r = await ctx.container.exec(cmd, { ...opts, timeoutMs: 30_000 });
-    return r.exitCode === 0 ? parseGitFacts(r.stdout) : undefined;
-  } catch {
-    return undefined;
+  const main = await directoryOf(ctx);
+  const groups = new Map<string, TaskRecord[]>();
+  for (const t of want) groups.set(t.worktree ?? main, [...(groups.get(t.worktree ?? main) ?? []), t]);
+  const outs: GitOut[] = [];
+  for (const [directory, group] of groups) {
+    try {
+      const [cmd, opts] = sh(TASK_GIT_SH, {
+        DIRECTORY: directory,
+        TASKS: JSON.stringify(
+          group.map((t) => ({ id: t.id, base: t.base, since: Math.floor(t.started / 1000) })),
+        ),
+        GH: gh ? "1" : "0",
+        GH_TOKEN: "cf-opencode-egress",
+      });
+      // Bounded: a pause runs this before its snapshot.
+      const r = await ctx.container.exec(cmd, { ...opts, timeoutMs: 30_000 });
+      const facts = r.exitCode === 0 ? parseGitFacts(r.stdout) : undefined;
+      // Only the tasks of this checkout take its facts.
+      if (facts) {
+        const mine: GitOut["tasks"] = {};
+        for (const t of group) {
+          const f = facts.tasks[t.id];
+          if (f) mine[t.id] = f;
+        }
+        outs.push({ ...facts, tasks: mine });
+      }
+    } catch {}
   }
+  return outs.length ? outs : undefined;
 }
 
 export interface CaptureOptions {
@@ -479,9 +592,14 @@ export async function captureTasks(ctx: Ctx, o: CaptureOptions = {}): Promise<Ta
   if (!before || before.tasks.length === 0) return { tasks: [], live: true };
   try {
     const ids = before.tasks.map((t) => t.id).filter((id) => SESSION_ID_RE.test(id));
+    // run --auto tasks that may still ask: the status read answers their permission requests.
+    const auto = before.tasks
+      .filter((t) => t.auto && (t.state === "running" || t.state === "waiting") && SESSION_ID_RE.test(t.id))
+      .map((t) => t.id);
     const [cmd, opts] = sh(TASK_STATUS_SH, {
       PORT: String(ctx.config.serverPort),
       IDS: ids.join(" "),
+      AUTO: auto.join(" "),
       OPENCODE_SERVER_PASSWORD: await workspacePassword(ctx.env.CONTROL_TOKEN, ctx.workspaceId),
     });
     const r = await ctx.container.exec(cmd, { ...opts, timeoutMs: 20_000 });
@@ -504,7 +622,7 @@ export async function captureTasks(ctx: Ctx, o: CaptureOptions = {}): Promise<Ta
     // a concurrent read cannot mark the same change twice.
     const current = (await ctx.kv.get<Saved>(TASKS_KEY)) ?? before;
     let tasks = applyStatus(current.tasks, status, ctx.clock.now(), { notify });
-    if (facts) tasks = applyFacts(tasks, facts, factIds);
+    for (const f of facts ?? []) tasks = applyFacts(tasks, f, factIds);
     const at = iso(ctx.clock.now());
     await ctx.kv.put(TASKS_KEY, { tasks, at });
     return { tasks, at, live: true };

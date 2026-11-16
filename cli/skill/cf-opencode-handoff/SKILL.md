@@ -20,6 +20,8 @@ here.
 2. In the checkout, run `git status --short` and `git status -sb`. Commit and push what the task needs.
    `cf-opencode run` fails on changes that are not committed or pushed. Use `--allow-dirty` only when the
    user agrees that the workspace works without them.
+3. To start from a branch that is not the checked-out one, pass `--branch <name>`. The check is then only
+   that origin has that branch.
 
 ## 3. Write the brief
 
@@ -42,7 +44,18 @@ Keep it in one quoted argument. Put long details in a file in the repository, pu
 cf-opencode run "<brief>" --title "<short title>" --json
 ```
 
-Read `session` and `workspace` from the JSON. When the user needs a machine-readable answer, add
+Read `session` and `workspace` from the JSON.
+
+One task at a time uses the checkout of a workspace. When `run` fails because a task there is `running` or
+`waiting`, do not wait for it unless the user asks. Start again with `--worktree` (a new git worktree in the
+same workspace) or `--new` (a new workspace, named `<checkout>-<short id>`). Use `--new` when the tasks are
+heavy or need their own processes; it fails at the `maxRunning` limit. A `--new` workspace stays after the
+task; tell the user its name.
+
+`--auto` lets the agent run with no permission prompts, so the task does not stop in `waiting` for one. Use
+it only when the user agrees.
+
+When the user needs a machine-readable answer, add
 `--schema result.json` (a JSON Schema with only `type`, `properties`, `required`, `items`, `enum` and
 `additionalProperties: false`). The result record then has `structured`, or `structuredError`.
 
@@ -77,10 +90,12 @@ and watch again. Tell the user what you did.
 | 2 | `waiting` | The agent asks a question or a permission (`question`). Ask the user. Send the answer to a question with `cf-opencode tasks <session> --workspace <workspace> --reply "<answer>"`. A permission request is answered in OpenCode: `cf-opencode connect <workspace> --session <session>`. Then watch again. |
 | 4 | `stopped` | The workspace paused under the task. Tell the user; `cf-opencode connect <workspace> --session <session>` continues it. |
 
-To get the work locally: `git fetch origin <branch>`.
+To get the work locally: `cf-opencode tasks <session> --workspace <workspace> --pull`. It fetches the
+branch and makes a local branch that tracks it. It does not change local files or the checked-out branch.
+It fails with a fix when the task has no pushed branch or has `unpushed` commits.
 
 ## Rules
 
 - Never print or pass the control token or a workspace password.
-- One task at a time in one workspace, unless the user asks for more.
+- One task at a time in one checkout. More tasks at once need `--worktree` or `--new`.
 - `cf-opencode tasks --unseen` lists results nobody read yet.
