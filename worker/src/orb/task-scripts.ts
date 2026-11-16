@@ -146,8 +146,9 @@ PY
  * and left): a pause stops them. Not OpenCode and what it runs now, not a terminal (tmux, sshd) and what runs
  * in one. Only the program name and its first plain argument are kept, since a command line can hold a secret.
  * A task with no base (started before 0.2) or a base git does not know gets no entry.
- * Commits are base..HEAD with a commit time at or after the start, so commits that a checkout of the task's
- * branch brings from origin do not count as the agent's.
+ * Commits are base..HEAD with a commit time at or after the start, and not on a remote branch other than the
+ * task's own. So what a checkout, a merge or a new branch brings from origin does not count as the agent's,
+ * also when others made it after the task started (a long task, or one that got a reply days later).
  */
 export const TASK_GIT_SH = `
 exec python3 - <<'PY'
@@ -222,12 +223,21 @@ try:
     out["processes"] = left_running()
 except Exception:
     pass
+# Remote branches other than this branch's own: a commit one of them has came from origin.
+own = set()
+if branch:
+    up = (git("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}") or "").strip()
+    for remote in (git("remote") or "").split():
+        own.add(remote + "/" + branch)
+    if up:
+        own.add(up)
+theirs = ["--not"] + ["--exclude=" + r for r in sorted(own)] + ["--remotes"] if (git("remote") or "").strip() else []
 for t in json.loads(os.environ.get("TASKS") or "[]"):
     base, since = t.get("base") or "", int(t.get("since") or 0)
     if len(base) != 40 or git("cat-file", "-e", base + "^{commit}") is None:
         continue
     commits = []
-    for line in (git("log", "--format=%H %ct %s", "-n", "200", base + "..HEAD") or "").splitlines():
+    for line in (git("log", "--format=%H %ct %s", "-n", "200", base + "..HEAD", *theirs) or "").splitlines():
         parts = line.split(" ", 2)
         if len(parts) >= 2 and parts[1].isdigit() and int(parts[1]) >= since:
             commits.append({"sha": parts[0], "subject": (parts[2] if len(parts) > 2 else "")[:200]})

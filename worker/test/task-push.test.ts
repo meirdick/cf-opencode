@@ -586,6 +586,76 @@ function run(script: string, env: Record<string, string>): Promise<string> {
 }
 
 describe.skipIf(!hasTools || process.platform === "win32")("TASK_GIT_SH against a real repository", () => {
+  it("does not count what a merge brings from origin, also when it was made after the task started", async () => {
+    const root = mkdtempSync(join(tmpdir(), "cfoc-merge-"));
+    const origin = join(root, "origin.git");
+    const repo = join(root, "project");
+    const other = join(root, "other");
+    spawnSync("git", ["init", "-q", "--bare", "-b", "main", origin]);
+    const gitIn = (dir: string, date: number, ...a: string[]) => {
+      const r = spawnSync("git", ["-C", dir, "-c", "user.name=t", "-c", "user.email=t@example.com", ...a], {
+        encoding: "utf8",
+        env: { ...process.env, GIT_COMMITTER_DATE: `@${date} +0000`, GIT_AUTHOR_DATE: `@${date} +0000` },
+      });
+      if (r.status !== 0) throw new Error(r.stderr);
+      return r.stdout.trim();
+    };
+    const t0 = 1_800_000_000;
+    mkdirSync(other);
+    gitIn(other, t0 - 100, "init", "-q", "-b", "main");
+    writeFileSync(join(other, "a.txt"), "a\n");
+    gitIn(other, t0 - 100, "add", ".");
+    gitIn(other, t0 - 100, "commit", "-q", "-m", "first");
+    gitIn(other, t0 - 100, "remote", "add", "origin", origin);
+    gitIn(other, t0 - 100, "push", "-q", "-u", "origin", "main");
+    spawnSync("git", ["clone", "-q", origin, repo]);
+    gitIn(repo, t0, "checkout", "-q", "-b", "feat");
+    const base = gitIn(repo, t0, "rev-parse", "HEAD");
+
+    // After the task started, another workstream lands on main: many files, not the task's.
+    for (const f of ["p1.txt", "p2.txt", "p3.txt"]) writeFileSync(join(other, f), "p\n");
+    gitIn(other, t0 + 100, "add", ".");
+    gitIn(other, t0 + 100, "commit", "-q", "-m", "the pipeline");
+    gitIn(other, t0 + 100, "push", "-q", "origin", "main");
+
+    // The agent merges main, then does its own work and pushes its branch.
+    gitIn(repo, t0 + 200, "fetch", "-q", "origin");
+    gitIn(repo, t0 + 200, "merge", "-q", "--no-ff", "-m", "Merge main", "origin/main");
+    writeFileSync(join(repo, "bench.txt"), "b\n");
+    gitIn(repo, t0 + 300, "add", ".");
+    gitIn(repo, t0 + 300, "commit", "-q", "-m", "Bench v2");
+    const env = {
+      PATH: process.env.PATH ?? "/usr/bin:/bin",
+      HOME: root,
+      DIRECTORY: repo,
+      GH: "0",
+      TASKS: JSON.stringify([{ id: "ses_1", base, since: t0 }]),
+    };
+    const before = JSON.parse(await run(TASK_GIT_SH, env));
+    expect(before.tasks.ses_1.commits.map((c: { subject: string }) => c.subject)).toEqual([
+      "Bench v2",
+      "Merge main",
+    ]);
+    expect(before.tasks.ses_1.changedFiles).toEqual(["bench.txt"]);
+    expect(before.unpushed).toBe(2);
+
+    // The push changes nothing in the list: the branch's own remote branch is not "from origin".
+    gitIn(repo, t0 + 400, "push", "-q", "-u", "origin", "feat");
+    const after = JSON.parse(await run(TASK_GIT_SH, env));
+    expect(after.tasks.ses_1.commits).toEqual(before.tasks.ses_1.commits);
+    expect(after.tasks.ses_1.changedFiles).toEqual(["bench.txt"]);
+    expect(after.unpushed).toBe(0);
+
+    // A new branch made from origin/main, in place of a merge: the same answer.
+    gitIn(repo, t0 + 500, "checkout", "-q", "-b", "fix", "origin/main");
+    writeFileSync(join(repo, "fix.txt"), "f\n");
+    gitIn(repo, t0 + 500, "add", ".");
+    gitIn(repo, t0 + 500, "commit", "-q", "-m", "A fix");
+    const fresh = JSON.parse(await run(TASK_GIT_SH, env));
+    expect(fresh.tasks.ses_1.commits.map((c: { subject: string }) => c.subject)).toEqual(["A fix"]);
+    expect(fresh.tasks.ses_1.changedFiles).toEqual(["fix.txt"]);
+  });
+
   it("reports the branch, the commits since the start, the changed files and the pull request", async () => {
     const root = mkdtempSync(join(tmpdir(), "cfoc-git-"));
     const repo = join(root, "project");
