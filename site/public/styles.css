@@ -77,11 +77,10 @@ p { margin: 0; }
 
 /* Hero */
 .hero { padding-block: clamp(2.5rem, 7vw, 5.5rem) clamp(2.5rem, 6vw, 4.5rem); }
-.hero__in { display: grid; gap: clamp(2rem, 5vw, 4rem); align-items: center; }
-@media (min-width: 60rem) { .hero__in { grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr); } }
+.hero__copy { max-width: 50rem; }
 h1 { font-size: clamp(2.4rem, 1.4rem + 4vw, 4.1rem); font-weight: 750; letter-spacing: -0.035em; }
 h1 span { display: block; }
-.lede { margin-top: 1.4rem; font-size: 1.2rem; color: var(--ink-soft); max-width: 34rem; }
+.lede { margin-top: 1.4rem; font-size: 1.2rem; color: var(--ink-soft); max-width: 40rem; }
 .install { margin-top: 1.9rem; display: flex; align-items: center; gap: 0.5rem; width: fit-content; max-width: 100%; background: var(--night); color: var(--night-ink); border-radius: 10px; padding: 0.45rem 0.45rem 0.45rem 1.1rem; }
 .install pre { font-size: 1.02rem; }
 .copy { font: inherit; font-size: 0.9rem; color: var(--night-ink); background: transparent; border: 1px solid #ffffff33; border-radius: 7px; padding: 0.4rem 0.8rem; cursor: pointer; }
@@ -103,7 +102,6 @@ h1 span { display: block; }
 .term .l b { color: var(--work); font-weight: 500; }
 .term .l i { font-style: normal; color: #8f97c4; display: inline-block; min-width: 3.2em; }
 .term .l5, .term .l6 { color: #fff; }
-.term figcaption { border-top: 1px solid #ffffff1f; padding: 0.8rem 1.2rem; font-size: 0.9rem; color: #a6abc9; }
 @media (prefers-reduced-motion: no-preference) {
   .term .l { opacity: 0; animation: line 0.01s linear forwards; }
   .term .l1 { animation-delay: 0.3s; }
@@ -135,14 +133,18 @@ h1 span { display: block; }
   .seg::before { inset: 0 auto 0 0; width: 0.7rem; height: auto; }
 }
 
-/* What you get */
-.get { padding-block: clamp(2.5rem, 6vw, 4.5rem); border-top: 1px solid var(--line); }
+/* Proof: the boot trace */
+.proof__in { display: grid; gap: clamp(1.5rem, 4vw, 3.5rem); align-items: center; }
+@media (min-width: 60rem) { .proof__in { grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); } }
+
+/* Sections with a top rule */
+.problem, .proof, .bill, .faq, .use, .cta { padding-block: clamp(2.5rem, 6vw, 4.5rem); border-top: 1px solid var(--line); }
 .facts { margin: 2rem 0 0; display: grid; gap: 1.8rem 3rem; }
 @media (min-width: 46rem) { .facts { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (min-width: 68rem) { .facts { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (min-width: 68rem) { .facts { grid-template-columns: repeat(3, minmax(0, 1fr)); } .facts--two { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .facts dt { font-weight: 650; font-size: 1.15rem; letter-spacing: -0.01em; }
-.facts dd { margin: 0.35rem 0 0; color: var(--ink-soft); max-width: 30rem; }
-.facts code, .steps p code { background: var(--panel); border: 1px solid var(--line); border-radius: 5px; padding: 0.05em 0.35em; color: var(--ink); }
+.facts dd { margin: 0.35rem 0 0; color: var(--ink-soft); max-width: 34rem; overflow-wrap: anywhere; }
+.facts code, .steps p code, .bill p code { background: var(--panel); border: 1px solid var(--line); border-radius: 5px; padding: 0.05em 0.35em; color: var(--ink); }
 
 /* How it works */
 .how { padding-block: clamp(2.5rem, 6vw, 4.5rem); border-top: 1px solid var(--line); }
@@ -152,14 +154,25 @@ h1 span { display: block; }
 .steps h3::before { content: counter(step) ". "; color: var(--awake); }
 .steps pre { margin-top: 0.8rem; background: var(--night); color: var(--night-ink); padding: 0.75rem 1rem; border-radius: 9px; font-size: 0.92rem; }
 .steps p { margin-top: 0.8rem; color: var(--ink-soft); }
+.steps--two { margin: 0; }
+@media (min-width: 56rem) { .steps--two { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2rem; } }
 
-/* Need and cost */
-.need { padding-block: clamp(2.5rem, 6vw, 4.5rem); border-top: 1px solid var(--line); }
+/* Install and use */
+.use__in { margin-top: 2rem; display: grid; gap: 2.2rem; }
+@media (min-width: 60rem) { .use__in { grid-template-columns: minmax(0, 1fr) minmax(0, 2.4fr); gap: 3rem; } }
+.use__in .plain { margin-top: 0.8rem; }
+
+/* Closing call to action */
+.cta .install { margin-top: 1.6rem; }
+
+/* What Cloudflare bills */
+.bill h3 { margin-top: 0.3rem; }
+.bill .plain { margin-top: 0.9rem; }
 .need__in { display: grid; gap: 2.5rem; }
 @media (min-width: 46rem) { .need__in { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4rem; } }
 .plain { margin: 1.2rem 0 0; padding-left: 1.1rem; }
 .plain li { margin-top: 0.3rem; }
-.need p { margin-top: 1.2rem; color: var(--ink-soft); max-width: 32rem; }
+.bill p { margin-top: 1.2rem; color: var(--ink-soft); max-width: 32rem; }
 .link { color: var(--awake); font-weight: 600; text-underline-offset: 0.25em; }
 
 /* Footer */

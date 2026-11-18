@@ -4,12 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>cf-opencode: OpenCode workspaces on Cloudflare, in your own account</title>
-<meta name="description" content="Run OpenCode in a workspace on Cloudflare Containers, in your own account. The agent keeps working when you close the laptop. The workspace sleeps when it is idle. Open source, Apache-2.0.">
+<meta name="description" content="Run OpenCode in a Linux workspace on Cloudflare Containers, in your own Cloudflare account. Close your laptop and the agent keeps working. Open source, Apache-2.0.">
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#f3f4fa" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#12162b" media="(prefers-color-scheme: dark)">
 <meta property="og:type" content="website">
-<meta property="og:title" content="cf-opencode: close the laptop, the agent keeps working">
+<meta property="og:title" content="cf-opencode: close your laptop, the agent keeps working">
 <meta property="og:description" content="OpenCode workspaces on Cloudflare Containers, in your own account. Open source, Apache-2.0.">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="preload" href="fonts/bricolage-grotesque-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
@@ -33,10 +33,10 @@
 <main id="main">
 
   <section class="hero" aria-labelledby="hero-title">
-    <div class="wrap hero__in">
+    <div class="wrap">
       <div class="hero__copy">
-        <h1 id="hero-title"><span>Close the laptop.</span> <span>The agent keeps working.</span></h1>
-        <p class="lede">cf-opencode runs OpenCode in a workspace on Cloudflare Containers, in your own account. The workspace sleeps when it is idle and wakes when you connect.</p>
+        <h1 id="hero-title"><span>Close your laptop.</span> <span>Your coding agent finishes the pull request.</span></h1>
+        <p class="lede">cf-opencode runs the OpenCode coding agent in Linux workspaces on Cloudflare Containers, in your own Cloudflare account. It is for developers who want an agent to work on private repositories while they are away. A workspace pauses when it is idle and wakes when you connect.</p>
         <div class="install">
           <pre id="install-cmd"><code>npx cf-opencode init</code></pre>
           <button class="copy" type="button" data-copy="install-cmd">Copy</button>
@@ -45,59 +45,26 @@
           <a class="btn btn--primary" href="/docs/quickstart/">Read the quickstart</a>
           <a class="btn" href="https://github.com/meirdick/cf-opencode">View on GitHub</a>
         </div>
-        <p class="fine">Open source, Apache-2.0. Not affiliated with Cloudflare or OpenCode.</p>
+        <p class="fine">Open source under Apache-2.0. Runs in your own Cloudflare account.</p>
       </div>
-
-      <figure class="term" aria-label="Output of cf-opencode connect">
-        <div class="term__bar" aria-hidden="true"><span></span><span></span><span></span></div>
-        <pre class="term__body"><code><span class="l l1"><b>$</b> cf-opencode connect</span><span class="l l2"><i>0.4s</i> container ready</span><span class="l l3"><i>2.4s</i> egress CA: trusted</span><span class="l l4"><i>3.4s</i> repo: cloned</span><span class="l l5"><i>4.9s</i> workspace ready; opencode on port 4096</span><span class="l l6"><i>4.9s</i> spawn done</span></code></pre>
-        <figcaption>A first connect from a private repository. OpenCode opens next.</figcaption>
-      </figure>
     </div>
   </section>
 
-  <section class="day" aria-labelledby="day-title">
+  <section class="problem" aria-labelledby="problem-title">
     <div class="wrap">
-      <h2 id="day-title">One workspace, one day</h2>
-      <p class="sub">You pay for compute while the workspace is awake. It is awake while you or the agent work.</p>
-      <ol class="day__bar">
-        <li class="seg seg--you w16"><span class="seg__t">09:00</span><span class="seg__l">You connect and give the agent a task</span></li>
-        <li class="seg seg--agent w22"><span class="seg__t">09:40</span><span class="seg__l">Laptop closed. The agent works on</span></li>
-        <li class="seg seg--idle w12"><span class="seg__t">11:30</span><span class="seg__l">Task done. 20 idle minutes</span></li>
-        <li class="seg seg--sleep w26"><span class="seg__t">11:50</span><span class="seg__l">Paused. The disk is a snapshot. No compute</span></li>
-        <li class="seg seg--you w24"><span class="seg__t">15:10</span><span class="seg__l">You connect. It wakes in a few seconds, with the session</span></li>
-      </ol>
-      <p class="day__note">An example day. The times are an illustration; the 20-minute idle pause is the default.</p>
-    </div>
-  </section>
-
-  <section class="get" aria-labelledby="get-title">
-    <div class="wrap">
-      <h2 id="get-title">What you get</h2>
+      <h2 id="problem-title">The problem</h2>
       <dl class="facts">
         <div>
-          <dt>Your account, your data</dt>
-          <dd>The Worker, the containers and the snapshots are in your Cloudflare account. There is no hosted service between you and them.</dd>
+          <dt>A local agent stops with your laptop</dt>
+          <dd>It stops when you close the laptop or lose Wi-Fi. It also runs shell commands and <code>sudo</code> installs on your real machine.</dd>
         </div>
         <div>
-          <dt>No model key</dt>
-          <dd>Models run through your account's Workers AI and AI Gateway. You make no API key and store none.</dd>
+          <dt>A hosted agent keeps your code elsewhere</dt>
+          <dd>It stays awake, but your private repositories, environment state and credentials are on someone else's servers.</dd>
         </div>
         <div>
-          <dt>Private repositories work</dt>
-          <dd>Setup connects GitHub one time. Workspaces clone, push and run <code>gh</code>. The token stays in the Worker and never enters a workspace.</dd>
-        </div>
-        <div>
-          <dt>Idle time costs nothing</dt>
-          <dd>An idle workspace saves its disk and stops. The next connect restores the files, the installed tools and the session.</dd>
-        </div>
-        <div>
-          <dt>A full Linux machine</dt>
-          <dd>A terminal in tmux, SSH, <code>sudo apt-get</code>, web search and a browser. <code>cf-opencode preview 3000</code> opens the agent's dev server at <code>localhost</code> on your machine.</dd>
-        </div>
-        <div>
-          <dt>Hand off a task</dt>
-          <dd><code>cf-opencode run "&lt;task&gt;"</code> starts an agent in the workspace and returns. <code>cf-opencode tasks</code> shows the result: the summary, the branch and the pull request.</dd>
+          <dt>cf-opencode runs in your account</dt>
+          <dd>Each workspace is its own Linux container in your Cloudflare account. There is no hosted service between you and your workspaces.</dd>
         </div>
       </dl>
     </div>
@@ -108,39 +75,143 @@
       <h2 id="how-title">How it works</h2>
       <ol class="steps">
         <li>
-          <h3>Install</h3>
-          <pre><code>npx cf-opencode init</code></pre>
-          <p>This checks your machine, then deploys one Worker and the workspace image into your Cloudflare account.</p>
+          <h3>Deploy once to your account</h3>
+          <p>Setup checks your machine, connects GitHub one time, and deploys one Worker and the workspace image into your Cloudflare account.</p>
         </li>
         <li>
-          <h3>Connect</h3>
-          <pre><code>npx cf-opencode connect</code></pre>
-          <p>Run it in a git checkout. It starts a workspace, clones the repository there, and opens your local OpenCode against it.</p>
+          <h3>Work live or hand off a task</h3>
+          <p>Attach your local OpenCode, or start a task in the background. The agent gets a terminal in tmux, SSH, <code>sudo apt-get</code>, web search and a browser. <code>cf-opencode preview 3000</code> opens the agent's dev server at <code>localhost</code> on your machine.</p>
         </li>
         <li>
-          <h3>Leave and come back</h3>
-          <pre><code>npx cf-opencode connect --continue</code></pre>
-          <p>The agent works with no client attached. When you return, this opens the last session in the workspace.</p>
+          <h3>Pause when idle, wake with your session</h3>
+          <p>After 20 idle minutes by default, the workspace saves its disk to a snapshot and pauses. Your next connect restores your files, installed tools and OpenCode session.</p>
         </li>
       </ol>
     </div>
   </section>
 
-  <section class="need" aria-labelledby="need-title">
+  <section class="proof" aria-labelledby="proof-title">
+    <div class="wrap proof__in">
+      <div>
+        <h2 id="proof-title">What a first connect to a private repository does</h2>
+        <p class="sub">This is a first connect from a private repository. OpenCode opens next.</p>
+      </div>
+      <figure class="term" aria-label="Output of cf-opencode connect">
+        <div class="term__bar" aria-hidden="true"><span></span><span></span><span></span></div>
+        <pre class="term__body"><code><span class="l l1"><b>$</b> cf-opencode connect</span><span class="l l2"><i>0.4s</i> container ready</span><span class="l l3"><i>2.4s</i> egress CA: trusted</span><span class="l l4"><i>3.4s</i> repo: cloned</span><span class="l l5"><i>4.9s</i> workspace ready; opencode on port 4096</span><span class="l l6"><i>4.9s</i> spawn done</span></code></pre>
+      </figure>
+    </div>
+  </section>
+
+  <section class="day" aria-labelledby="day-title">
+    <div class="wrap">
+      <h2 id="day-title">One workspace across a workday</h2>
+      <p class="sub">The workspace is awake while you or the agent work. It pauses when the work stops.</p>
+      <ol class="day__bar">
+        <li class="seg seg--you w16"><span class="seg__t">09:00</span><span class="seg__l">Connect and give the agent a task</span></li>
+        <li class="seg seg--agent w22"><span class="seg__t">09:40</span><span class="seg__l">Close your laptop. The agent keeps working</span></li>
+        <li class="seg seg--idle w12"><span class="seg__t">11:30</span><span class="seg__l">Task finishes. 20 idle minutes pass</span></li>
+        <li class="seg seg--sleep w26"><span class="seg__t">11:50</span><span class="seg__l">Workspace pauses. The disk is saved as a snapshot</span></li>
+        <li class="seg seg--you w24"><span class="seg__t">15:10</span><span class="seg__l">Reconnect. It wakes with your session</span></li>
+      </ol>
+      <p class="day__note">The times are an illustration. The 20-minute idle pause is the default.</p>
+    </div>
+  </section>
+
+  <section class="bill" aria-labelledby="bill-title">
     <div class="wrap need__in">
       <div>
-        <h2 id="need-title">What you need</h2>
-        <ul class="plain">
-          <li>Node 22 or newer</li>
-          <li>Docker, with the buildx plugin</li>
-          <li>A Cloudflare account on the Workers Paid plan</li>
-          <li>OpenCode 2 on your machine</li>
-        </ul>
+        <h2 id="bill-title">What Cloudflare bills</h2>
+        <p>Everything is billed to your own Cloudflare account. Cloudflare bills compute while a container runs. That includes the idle minutes before a pause and the warm period after it. Model usage and browser hours are billed too.</p>
+        <p>Containers need the Workers Paid plan.</p>
       </div>
       <div>
-        <h2>What it costs</h2>
-        <p>cf-opencode is free. Cloudflare bills your account for what a workspace uses: container time while it is awake, model usage, and browser hours. The docs list the limits.</p>
-        <p><a class="link" href="/docs/limits/">Limits and costs</a></p>
+        <h3>Current prices</h3>
+        <ul class="plain">
+          <li><a class="link" href="https://developers.cloudflare.com/containers/pricing/">Containers pricing</a></li>
+          <li><a class="link" href="https://developers.cloudflare.com/workers-ai/platform/pricing/">Workers AI pricing</a></li>
+          <li><a class="link" href="/docs/limits/">Limits and costs</a></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="faq" aria-labelledby="faq-title">
+    <div class="wrap">
+      <h2 id="faq-title">Questions</h2>
+      <dl class="facts facts--two">
+        <div>
+          <dt>Where do my code and snapshots live?</dt>
+          <dd>In your Cloudflare account. The Worker, the containers and the disk snapshots are there. No hosted service sits between you and your data.</dd>
+        </div>
+        <div>
+          <dt>Can the agent leak my GitHub token?</dt>
+          <dd>Setup connects GitHub one time, so workspaces can clone, push and run <code>gh</code>. Your GitHub token stays in the Worker and never enters a workspace container.</dd>
+        </div>
+        <div>
+          <dt>Which models work, and do I need an API key?</dt>
+          <dd>You need no API key. The default model is <code>cloudflare-workers-ai/@cf/zai-org/glm-5.3</code>, and any Workers AI <code>@cf</code> model works. Anthropic, OpenAI, Google and others run through AI Gateway on credits. To use your own keys, set <code>ANTHROPIC_API_KEY</code> or <code>OPENAI_API_KEY</code> as Worker secrets.</dd>
+        </div>
+        <div>
+          <dt>What size is a workspace, and how many can run?</dt>
+          <dd>By default a workspace has 2 vCPU, 6 GiB of memory and a 20 GB disk. The <code>instance</code> setting also accepts <code>lite</code> and <code>standard-1</code> to <code>standard-4</code>. Up to 10 workspaces run at once by default. Set <code>maxRunning</code> from 1 to 100. <a class="link" href="/docs/limits/">Limits and costs</a></dd>
+        </div>
+      </dl>
+    </div>
+  </section>
+
+  <section class="use" aria-labelledby="use-title">
+    <div class="wrap">
+      <h2 id="use-title">Install and use</h2>
+      <div class="use__in">
+        <div>
+          <h3>What you need</h3>
+          <ul class="plain">
+            <li>Node 22 or newer</li>
+            <li>Docker, with the buildx plugin</li>
+            <li>A Cloudflare account on the Workers Paid plan</li>
+            <li>OpenCode 2 on your machine</li>
+          </ul>
+        </div>
+        <ol class="steps steps--two">
+          <li>
+            <h3>Install into your account</h3>
+            <pre><code>npx cf-opencode init</code></pre>
+            <p>Checks your machine, then deploys one Worker and the workspace image into your Cloudflare account.</p>
+          </li>
+          <li>
+            <h3>Connect from a git checkout</h3>
+            <pre><code>npx cf-opencode connect</code></pre>
+            <p>Starts a workspace, clones the repository there, and opens your local OpenCode against it.</p>
+          </li>
+          <li>
+            <h3>Leave and reconnect later</h3>
+            <pre><code>npx cf-opencode connect --continue</code></pre>
+            <p>The agent works with no client attached. When you return, this opens the last session in the workspace.</p>
+          </li>
+          <li>
+            <h3>Hand off a background task</h3>
+            <pre><code>cf-opencode run "&lt;task&gt;"
+cf-opencode tasks</code></pre>
+            <p><code>run</code> starts an agent in the workspace and returns at once. <code>tasks</code> shows the summary, the branch and the pull request.</p>
+          </li>
+        </ol>
+      </div>
+    </div>
+  </section>
+
+  <section class="cta" aria-labelledby="cta-title">
+    <div class="wrap">
+      <h2 id="cta-title">Run OpenCode in your own cloud</h2>
+      <p class="sub">Deploy once. Close your laptop. Come back to a live session or a finished pull request.</p>
+      <div class="install">
+        <pre id="cta-cmd"><code>npx cf-opencode init</code></pre>
+        <button class="copy" type="button" data-copy="cta-cmd">Copy</button>
+      </div>
+      <div class="actions">
+        <a class="btn btn--primary" href="/docs/quickstart/">Read the quickstart</a>
+        <a class="btn" href="https://github.com/meirdick/cf-opencode">View on GitHub</a>
+        <a class="btn" href="/docs/limits/">Limits and costs</a>
       </div>
     </div>
   </section>
