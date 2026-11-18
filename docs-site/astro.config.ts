@@ -7,7 +7,7 @@ import { tableScroll } from "@cloudflare/nimbus-docs/markdown";
 
 const nimbusConfig = defineNimbusConfig({
   // Origin of the home site, no trailing slash. The docs are served at /docs on it (see `base` below).
-  site: "https://cf-opencode-site.mdick85.workers.dev",
+  site: "https://cf-opencode.system3inference.dev",
   title: "cf-opencode",
   description:
     "OpenCode workspaces on Cloudflare Containers, in your own Cloudflare account. Install, connect and operate them.",

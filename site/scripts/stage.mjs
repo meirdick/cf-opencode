@@ -1,6 +1,6 @@
 // Stage one assets folder for the cf-opencode-site Worker:
 // landing page (site/public) at /, user docs (docs-site/dist) at /docs/.
-import { cpSync, existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -28,5 +28,13 @@ if (existsSync(docsHeaders)) {
   rmSync(docsHeaders);
 }
 writeFileSync(join(out, "_headers"), headers);
+
+// page-view script on every docs page (the landing pages carry the tag in their own HTML)
+for (const f of readdirSync(join(out, "docs"), { recursive: true })) {
+  if (!String(f).endsWith(".html")) continue;
+  const file = join(out, "docs", String(f));
+  const html = readFileSync(file, "utf8");
+  if (!html.includes("/t.js")) writeFileSync(file, html.replace("</body>", '<script src="/t.js" defer></script></body>'));
+}
 
 console.log("Staged site/.deploy: landing at /, docs at /docs/");

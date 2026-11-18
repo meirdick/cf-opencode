@@ -1,12 +1,19 @@
 {
   "$schema": "../node_modules/wrangler/config-schema.json",
-  // Static site for cf-opencode. Assets only: no Worker script, no binding.
+  // Static site for cf-opencode. The Worker (worker.js) only answers /api/event; assets serve the rest.
   // Landing page at /, user docs at /docs/ (staged by scripts/stage.mjs).
   "name": "cf-opencode-site",
   "compatibility_date": "2026-10-30",
   "workers_dev": true,
+  // custom domain on the same Worker: workers.dev and this host serve the same deploy
+  "routes": [{ "pattern": "cf-opencode.system3inference.dev", "custom_domain": true }],
+  "main": "worker.js",
   "assets": {
     "directory": "./.deploy",
-    "not_found_handling": "404-page"
-  }
+    "binding": "ASSETS",
+    "not_found_handling": "404-page",
+    "run_worker_first": ["/api/event"]
+  },
+  // page views go to the shared dataset read by meirdick.com/stats/
+  "analytics_engine_datasets": [{ "binding": "EVENTS", "dataset": "meirdick_events" }]
 }

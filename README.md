@@ -34,7 +34,7 @@ cf-opencode init
 ```
 
 Without a global install, put `npx` before each command: `npx cf-opencode init`.
-Docs: <https://cf-opencode-site.mdick85.workers.dev/docs/>.
+Docs: <https://cf-opencode.system3inference.dev/docs/>.
 
 From a checkout:
 
