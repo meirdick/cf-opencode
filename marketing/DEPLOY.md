@@ -1,6 +1,22 @@
 # Deployment Guide
 
-## Cloudflare Pages (Recommended)
+## ✅ Currently Deployed
+
+**Live URL**: https://cf-opencode-marketing.mdick85.workers.dev
+
+Deployed via Wrangler CLI to Cloudflare Workers (latest Pages platform).
+
+## Updating the Site
+
+From the `marketing/` directory:
+
+```bash
+wrangler deploy
+```
+
+## Cloudflare Pages (Alternative - Git Integration)
+
+For automatic deployments on git push:
 
 1. Go to [Cloudflare Dashboard](https://dash.cloudflare.com/)
 2. Navigate to Workers & Pages > Create Application > Pages
@@ -12,8 +28,6 @@
    - **Build output directory**: `marketing`
    - **Root directory**: `/`
 5. Click "Save and Deploy"
-
-Your site will be live at `https://cf-opencode-marketing.pages.dev` (or your custom domain).
 
 ## Custom Domain
 
